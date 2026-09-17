@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>yadg</AssemblyName><RootNamespace>Yadg.Cli</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Yadg.Core\Yadg.Core.csproj" />
+    <ProjectReference Include="..\Yadg.Word\Yadg.Word.csproj" />
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+  </ItemGroup>
+</Project>

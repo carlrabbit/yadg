@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Yadg.Core</AssemblyName><RootNamespace>Yadg.Core</RootNamespace></PropertyGroup>
+  <ItemGroup><PackageReference Include="Markdig" Version="0.38.0" /></ItemGroup>
+</Project>
