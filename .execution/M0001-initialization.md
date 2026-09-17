@@ -16,7 +16,7 @@ Complete.
 
 | Milestone obligation | Implementation/evidence |
 |---|---|
-| Clean checkout build/test/check flow | `Yadg.sln`, `eng/validate.ps1`, `eng/check.ps1`, and `README.md`; `./eng/validate.ps1` passed with exit 0. |
+| Clean checkout build/test/check flow | `Yadg.slnx`, `eng/validate.ps1`, `eng/check.ps1`, and `README.md`; `./eng/validate.ps1` passed with exit 0. |
 | Office-independent component separation | `src/Yadg.Core`, `src/Yadg.Word`, and `src/Yadg.Cli`; Core has no Open XML dependency and Word has no Office dependency. |
 | Executable `yadg check` | `src/Yadg.Cli/Program.cs`; valid synthetic template check passed with exit 0. |
 | Explicit stable section ID resolves semantically | `MarkdownDocumentParser` and `m0001-valid.md` use `{#architecture}`. |

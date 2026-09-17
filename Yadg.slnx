@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Yadg.Cli/Yadg.Cli.csproj" />
+  <Project Path="src/Yadg.Core/Yadg.Core.csproj" />
+  <Project Path="src/Yadg.Word/Yadg.Word.csproj" />
+  <Project Path="tests/Yadg.IntegrationTests/Yadg.IntegrationTests.csproj" />
+</Solution>
