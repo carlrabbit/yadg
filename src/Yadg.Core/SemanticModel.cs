@@ -1,21 +1,31 @@
-using System.Collections.ObjectModel;
-
 namespace Yadg.Core;
 
-public sealed record Diagnostic(string Code, string Message, bool IsError = true)
+public sealed record Diagnostic(string Code, string Message, bool IsError = true, string? Location = null)
 {
-    public override string ToString() => $"{Code}: {Message}";
+    public override string ToString() => Location is null ? $"{Code}: {Message}" : $"{Code}: {Location}: {Message}";
 }
 
-public sealed record YadgDocument(IReadOnlyList<YadgSection> Sections)
+public abstract record YadgBlock;
+public sealed record YadgHeading(int Level, string Text, string? Id = null) : YadgBlock;
+public sealed record YadgParagraph(IReadOnlyList<YadgInline> Inlines) : YadgBlock;
+
+public abstract record YadgInline;
+public sealed record YadgText(string Value) : YadgInline;
+public sealed record YadgEmphasis(IReadOnlyList<YadgInline> Inlines) : YadgInline;
+public sealed record YadgStrong(IReadOnlyList<YadgInline> Inlines) : YadgInline;
+public sealed record YadgHardBreak : YadgInline;
+public sealed record YadgSoftBreak : YadgInline;
+
+public sealed record YadgSection(string Id, YadgHeading Heading, IReadOnlyList<YadgBlock> Body)
 {
-    public YadgSection? FindSection(string id) => Sections.SingleOrDefault(s => s.Id == id);
+    public IReadOnlyList<YadgBlock> Select(SectionSelection selection) => selection == SectionSelection.Section
+        ? new[] { Heading }.Concat(Body).ToArray()
+        : Body;
 }
 
-public sealed record YadgSection(string Id, string Heading, int Level, IReadOnlyList<string> BodyLines)
+public sealed record YadgDocument(IReadOnlyList<YadgBlock> Blocks, IReadOnlyDictionary<string, YadgSection> References)
 {
-    public string SectionText => string.Join(Environment.NewLine, new[] { Heading }.Concat(BodyLines));
-    public string ContentText => string.Join(Environment.NewLine, BodyLines);
+    public YadgSection? FindSection(string id) => References.TryGetValue(id, out var section) ? section : null;
 }
 
 public enum SectionSelection { Section, Content }
@@ -26,24 +36,18 @@ public sealed record SectionReference(string Id, SectionSelection Selection)
     {
         reference = null;
         diagnostic = null;
-        const string prefix = "{{yadg:section:content:";
-        if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !value.EndsWith("}}", StringComparison.Ordinal))
+        var match = System.Text.RegularExpressions.Regex.Match(value, @"^\{\{(content|section):([A-Za-z][A-Za-z0-9_-]*)\}\}$");
+        if (!match.Success)
         {
-            diagnostic = new("YADG-TAG-001", $"Malformed tag '{value}'. Expected {{yadg:section:content:<stable-id>}}.");
+            diagnostic = new("YADG-TAG-001", $"Malformed or unsupported tag '{value}'. Expected {{content:<stable-id>}} or {{section:<stable-id>}}.");
             return false;
         }
-        var id = value[prefix.Length..^2];
-        if (string.IsNullOrWhiteSpace(id) || id.Any(char.IsWhiteSpace))
-        {
-            diagnostic = new("YADG-TAG-001", $"Malformed tag '{value}': stable ID is empty or contains whitespace.");
-            return false;
-        }
-        reference = new(id, SectionSelection.Content);
+        reference = new(match.Groups[2].Value, match.Groups[1].Value == "section" ? SectionSelection.Section : SectionSelection.Content);
         return true;
     }
 }
 
 public sealed record ParseResult(YadgDocument? Document, IReadOnlyList<Diagnostic> Diagnostics)
 {
-    public bool IsValid => Diagnostics.All(d => !d.IsError) && Document is not null;
+    public bool IsValid => Document is not null && Diagnostics.All(d => !d.IsError);
 }

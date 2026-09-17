@@ -16,7 +16,7 @@ The following ownership rules are normative:
 4. The Office-independent authoring pipeline is authoritative for semantic resolution and OOXML transformation.
 5. Layout-dependent finalization belongs to a separate renderer/finalizer.
 
-YADG should preserve template-owned formatting by default rather than copying presentation settings from Markdown.
+YADG preserves template-owned formatting by default rather than recreating Word presentation from Markdown.
 
 ## Processing model
 
@@ -28,35 +28,148 @@ YADG has three conceptual stages:
 
 Stages 1 and 2 must not require Microsoft Office.
 
-Stage 3 is isolated from authoring. The initial implementation may use Microsoft Word through Office Interop, but the authoring architecture must not make Word a transitive dependency.
+Stage 3 is isolated from authoring. The initial renderer may use Microsoft Word through Office Interop, but the authoring architecture must not make Word a transitive dependency.
+
+## Workspaces
+
+### Root and invocation
+
+A YADG workspace is a directory containing a root-level file named exactly:
+
+```text
+YADG.md
+```
+
+M0002 processes exactly one workspace per `check` or `build` invocation.
+
+The CLI contract is:
+
+```text
+yadg check [--workspace <path>]
+yadg build [--workspace <path>]
+```
+
+`--workspace` defaults to the current working directory.
+
+A supplied workspace path must identify the workspace root itself. Parent-directory discovery of multiple workspaces is not part of M0002.
+
+The M0001 prototype arguments `--markdown`, `--template`, and `--output` are not a compatibility surface and may be removed when the workspace contract is implemented.
+
+### Workspace marker
+
+`YADG.md` identifies the workspace but is not document source content.
+
+For M0002, its body may contain human-readable notes. M0002 does not define machine-readable configuration inside `YADG.md`; future configuration must be introduced by later project authority rather than inferred from arbitrary Markdown content.
+
+### Conventional directories
+
+M0002 uses these fixed workspace conventions:
+
+```text
+<workspace>/
+  YADG.md
+  YadgTemplates/
+    *.docx
+  YadgPreWords/
+    <generated outputs>
+  ... Markdown sources ...
+```
+
+`YadgTemplates/` contains prepared source templates.
+
+`YadgPreWords/` contains authored DOCX outputs and is derived-artifact storage.
+
+For every top-level `.docx` file directly inside `YadgTemplates/`, a successful build produces or replaces:
+
+```text
+YadgPreWords/<same-file-name>.docx
+```
+
+M0002 does not recursively discover templates below `YadgTemplates/`.
+
+A valid workspace contains at least one template and at least one Markdown source file.
+
+### Markdown source discovery
+
+Markdown source files are `.md` files discovered recursively below the workspace root, excluding:
+
+- the root `YADG.md`;
+- `YadgTemplates/`;
+- `YadgPreWords/`;
+- directories whose names begin with `.`.
+
+Source-file order has no document-composition meaning. Templates select semantic objects through stable IDs.
+
+A second `YADG.md` discovered below the workspace root is a nested-workspace error. Nested workspaces are not implicitly processed or shared.
+
+M0002 does not implement Markdown link/include files or any other cross-workspace sharing mechanism.
+
+Workspace discovery must not follow symbolic-link/reparse-point directories. A candidate Markdown source or template that is itself a symbolic link/reparse point is invalid for M0002. Discovered product inputs therefore remain physically within the declared workspace.
 
 ## Markdown semantic model
 
-The Markdown parser must expose semantic nodes sufficient to represent at least:
+The Markdown parser exposes structured semantic nodes rather than pre-rendered text.
 
-- headings/sections;
-- paragraphs with supported inline content;
-- lists;
-- tables;
-- images/figures;
-- stable references/IDs;
-- simple values or substitutions;
-- extension-produced semantic content.
+M0002 requires semantic representation sufficient for:
 
-The Word transformation layer consumes this semantic model. Markdown parsing must not directly manipulate OOXML.
+- headings;
+- paragraphs;
+- inline text;
+- emphasis;
+- strong emphasis;
+- soft line breaks;
+- hard line breaks;
+- stable section IDs;
+- document/section hierarchy.
+
+OOXML/Open XML SDK types must not appear in the semantic Markdown model.
+
+### M0002 supported Markdown subset
+
+M0002 authors:
+
+- ATX headings (`#` through `######`);
+- paragraphs;
+- plain inline text;
+- emphasis;
+- strong emphasis;
+- soft line breaks, rendered as normal paragraph whitespace;
+- Markdown hard line breaks, rendered as Word line breaks.
+
+A heading may end with an explicit stable ID:
+
+```markdown
+## Architecture {#architecture}
+```
+
+The stable-ID suffix is metadata and is not part of rendered heading text.
+
+Headings without IDs remain semantic headings and may appear inside selected content, but only an object with a stable ID can be referenced directly from a template.
+
+M0002 does not author lists, tables, images, block quotes, fenced/indented code blocks, raw HTML, or Markdown hyperlinks. Encountering an unsupported construct in a discovered source is a `check` error; it must not be silently flattened to plain text.
+
+Later milestones may extend the supported Markdown subset without changing the reference identity model.
 
 ## Stable reference semantics
 
-References must use stable semantic IDs rather than presentation text.
+Stable IDs are case-sensitive and workspace-wide.
+
+The M0002 stable-ID syntax is:
+
+```text
+[A-Za-z][A-Za-z0-9_-]*
+```
+
+Duplicate stable IDs anywhere in one workspace are errors.
 
 Changing a heading caption must not require changing a template reference when the heading's stable ID remains unchanged.
 
-At minimum, heading-based content selection distinguishes:
+Heading-based selection distinguishes:
 
 - **section** — the referenced heading plus its complete section body;
 - **content** — the referenced section body without the referenced heading.
 
-Nested subsections belong to the parent section body until a heading of the same or higher level terminates the section.
+Nested headings belong to the parent section body until a heading of the same or higher level terminates the section.
 
 Example:
 
@@ -67,67 +180,175 @@ Intro.
 
 ### Components
 
-...
+Component text.
 
 ### Deployment
 
-...
+Deployment text.
 ```
 
-A `section` reference to `architecture` resolves the `## Architecture` heading plus all shown content. A `content` reference resolves `Intro`, `### Components`, and `### Deployment` with their respective bodies, but not the `## Architecture` heading.
+`{{section:architecture}}` selects the `## Architecture` heading and all shown content.
 
-The design must not model this distinction as a generic `append` versus `replace` switch.
+`{{content:architecture}}` selects the intro, `### Components`, `### Deployment`, and their bodies, but excludes the `## Architecture` heading.
+
+The design must not model this distinction as generic `append` versus `replace`.
 
 ## Word template tags
 
-YADG templates use visible textual tags. This is an intentional authoring requirement.
+### Vocabulary
 
-Template maintainers must be able to:
+The explicit textual tag vocabulary is:
 
-- type a tag with ordinary Word editing;
-- see the tag in document context;
-- copy and search tags;
-- preserve and inspect native Word structure such as headings and TOCs without YADG-specific Word tooling.
+```text
+{{content:<stable-id>}}
+{{section:<stable-id>}}
+{{value:<stable-id>}}
+```
 
-YADG must not require Word content controls for ordinary template authoring.
+Tag keywords and stable IDs are case-sensitive. Whitespace inside a tag is not permitted.
 
-The exact finalized tag grammar is milestone-controlled until implemented, but it must remain intentionally small and must not evolve into a general programming language.
+M0002 implements `content` and `section`.
+
+`value` is reserved as the scalar-replacement vocabulary for a later milestone. A `value` tag encountered during M0002 is diagnosed as recognized-but-unsupported rather than ignored.
+
+The M0001 prototype spelling:
+
+```text
+{{yadg:section:content:<stable-id>}}
+```
+
+is not a supported compatibility surface after M0002.
+
+### Block-tag placement
+
+`content` and `section` are block tags.
+
+For M0002 a block tag must be the only non-whitespace logical content of a Word paragraph in the main document body.
+
+A block tag embedded in ordinary prose, or located in a table, header, footer, textbox, footnote/endnote, comment, or other unsupported Word part/container, is invalid for M0002 and must produce a diagnostic rather than being silently ignored.
+
+YADG must detect YADG-shaped tags in unsupported locations sufficiently to report that the template is not supported instead of incorrectly declaring it valid.
 
 ### OOXML run handling
 
-A visually contiguous textual tag can be split across multiple OOXML runs by Word. Tag discovery therefore operates on logical text at a supported container boundary, not on individual `w:t` elements.
+A visually contiguous textual tag can be split across multiple OOXML runs by Word.
 
-Replacement must preserve unaffected template-owned formatting and structure.
+Tag discovery therefore operates on logical paragraph text, not individual `w:t` elements.
+
+Replacement must preserve unaffected template-owned structure and formatting.
+
+## Word block rendering for M0002
+
+The block-tag paragraph is an insertion anchor and is replaced by the selected Markdown block sequence.
+
+### Paragraphs
+
+Generated ordinary Markdown paragraphs inherit the insertion anchor's paragraph properties/style.
+
+M0002 relies on template styles for presentation. It does not copy arbitrary font/paragraph settings from Markdown.
+
+Arbitrary direct run formatting from the tag text itself is not a formatting contract; template authors should express paragraph presentation through Word styles.
+
+### Headings
+
+Generated Markdown headings retain their Markdown heading level.
+
+They are authored using Word paragraph style IDs:
+
+```text
+Heading1
+Heading2
+Heading3
+Heading4
+Heading5
+Heading6
+```
+
+according to the Markdown level.
+
+The template remains authoritative for what those styles look like. If a selected heading requires a corresponding heading style that is absent from the template, `check` fails rather than synthesizing a replacement style.
+
+### Inlines
+
+Strong emphasis is represented semantically as bold Word run formatting.
+
+Emphasis is represented semantically as italic Word run formatting.
+
+Hard line breaks become Word line breaks within the paragraph.
+
+No Markdown inline syntax is emitted literally merely because the renderer lacks semantic support.
 
 ## Template-owned headings
 
-Where a Word template already owns a heading, the normal pattern is to insert only Markdown section content beneath that heading.
+Where a Word template already owns a heading, the normal pattern is:
 
-Where a template intentionally delegates a section's heading and body to Markdown, a complete section selection may be used.
+```text
+Template heading
+{{content:architecture}}
+```
 
-The product should make this ownership distinction visible and statically checkable.
+Where a template intentionally delegates the referenced heading and body to Markdown, use:
+
+```text
+{{section:architecture}}
+```
+
+This distinction is visible in the template and statically validated.
+
+## Check semantics
+
+`yadg check` validates the complete workspace without producing normal authored outputs.
+
+M0002 validation includes at least:
+
+- workspace marker and directory validity;
+- nested workspace detection;
+- regular-file/path-boundary rules;
+- source and template presence;
+- Markdown parsing and supported-subset validation;
+- workspace-wide duplicate stable IDs;
+- template tag syntax;
+- unsupported tag kinds/locations;
+- unresolved stable IDs;
+- required Word heading styles for selected headings.
+
+Validation should accumulate independent diagnostics where practical rather than stopping at the first unrelated error.
+
+A successful `check` means the workspace is eligible for Office-independent authoring under the implemented feature set. It does not claim Microsoft Word rendering/layout correctness.
+
+## Build semantics
+
+`yadg build` first performs the same semantic/template validation required by `check`.
+
+If validation fails, `build` fails before modifying normal output artifacts.
+
+On successful validation, each top-level template in `YadgTemplates/` is copied/transformed into `YadgPreWords/` with the same filename.
+
+Existing output files corresponding to current templates may be replaced.
+
+Build does not delete unrelated files from `YadgPreWords/`.
+
+An operational I/O failure after output writing begins fails the command and must be reported clearly; M0002 does not require transactionally rolling back already written artifacts after such an external failure.
+
+A successfully completed build must not leave unresolved supported YADG tags in authored outputs.
 
 ## Tables and figures
 
-Markdown tables and figures may populate prepared template structures or be inserted as generated semantic elements.
+Markdown tables and figures are outside M0002.
 
-When a template provides a specialized Word table, template formatting remains authoritative. YADG may populate its rows/cells according to the tag contract.
+A later structured-content milestone will define their semantic nodes, template-population rules, captions, and Word-specific structures.
 
-Captions and referenceable figure/table identity must use stable semantic IDs.
+## Lists
+
+Markdown lists are outside M0002.
+
+Word list numbering is a structured Word concern and must be specified with its numbering/style contract before implementation. M0002 diagnoses lists as unsupported rather than flattening or approximating them with literal bullet/number characters.
 
 ## Simple values
 
-Simple substitutions such as dates, document names, versions, and other scalar content must be representable as named values.
+Simple substitutions such as dates, document names, versions, and other scalar content will use the reserved `value` vocabulary.
 
-Dynamic values must remain explicitly addressable so callers can override them where project workflow requires it.
-
-## Workspaces
-
-A YADG working directory contains project-local configuration and Markdown source.
-
-Workspace discovery, link/include behavior, path-boundary rules, and the final configuration filename remain implementation decisions for a later milestone unless promoted into authority before then.
-
-Nested workspace behavior must be explicit before implemented; it must not emerge accidentally from recursive file discovery.
+Their value-source and override semantics are outside M0002.
 
 ## Extensions
 
@@ -140,9 +361,11 @@ Two extension shapes are anticipated:
 
 Direct OOXML extension points require an explicit later architectural decision.
 
+Extensions are outside M0002.
+
 ## CLI surface
 
-The intended command vocabulary is:
+The intended command vocabulary remains:
 
 ```text
 yadg check
@@ -151,14 +374,9 @@ yadg render
 yadg publish
 ```
 
-Semantics:
+M0002 establishes workspace-aware `check` and `build`.
 
-- `check` parses and validates project and template consistency without producing normal product artifacts;
-- `build` produces structurally complete DOCX artifacts without requiring Office;
-- `render` performs layout-dependent finalization through an available renderer;
-- `publish` composes build/finalization and later publication-specific preparation as project authority defines.
-
-The initial milestone does not have to implement all four commands.
+`render` and `publish` remain later capabilities.
 
 ## Diagnostics
 
@@ -171,7 +389,7 @@ Where feasible, diagnostics identify:
 - the offending reference or tag;
 - enough context for a maintainer to correct the problem.
 
-`check` is expected to grow into a major product capability, covering unresolved references, duplicate IDs, malformed directives/tags, invalid template structure, unsupported Markdown constructs, assets, and integration constraints as those features are implemented.
+Exact diagnostic code allocation is implementation-owned as long as established codes are not silently repurposed to mean incompatible errors.
 
 ## Non-goals
 

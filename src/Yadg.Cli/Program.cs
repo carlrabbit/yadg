@@ -18,51 +18,57 @@ public static class Program
 
     private static Command CreateCheckCommand(Action fail)
     {
-        var command = new Command("check", "Parse Markdown and validate visible template references.");
-        var markdown = new Option<FileInfo>("--markdown") { IsRequired = true };
-        var template = new Option<FileInfo>("--template") { IsRequired = true };
-        command.AddOption(markdown); command.AddOption(template);
-        command.SetHandler((FileInfo md, FileInfo docx) =>
+        var command = new Command("check", "Validate one YADG workspace without producing outputs.");
+        var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
+        command.AddOption(workspace);
+        command.SetHandler((DirectoryInfo? path) =>
         {
-            var result = MarkdownDocumentParser.Parse(File.ReadAllText(md.FullName));
-            foreach (var diagnostic in result.Diagnostics) Console.Error.WriteLine(diagnostic);
-            if (!result.IsValid) { fail(); return; }
-            try
-            {
-                var tags = WordAuthoring.FindTags(docx.FullName);
-                if (tags.Count == 0) throw new WordAuthoringException(new("YADG-TAG-002", "Template contains no supported visible YADG section-content tag."));
-                foreach (var tag in tags)
-                {
-                    if (!SectionReference.TryParseTag(tag, out var reference, out var tagDiagnostic)) throw new WordAuthoringException(tagDiagnostic!);
-                    var resolved = MarkdownDocumentParser.Resolve(result.Document!, reference!);
-                    if (resolved.Diagnostic is not null) throw new WordAuthoringException(resolved.Diagnostic);
-                }
-                Console.WriteLine($"check: valid ({tags.Count} visible tag(s), {result.Document!.Sections.Count} section(s))");
-            }
-            catch (WordAuthoringException ex) { Console.Error.WriteLine(ex.Diagnostic); fail(); }
-        }, markdown, template);
+            var loaded = WorkspaceLoader.Load(path?.FullName);
+            var diagnostics = ValidateTemplates(loaded);
+            PrintDiagnostics(diagnostics);
+            if (diagnostics.Any(d => d.IsError)) { fail(); return; }
+            Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {loaded.Document.References.Count} reference(s))");
+        }, workspace);
         return command;
     }
 
     private static Command CreateBuildCommand(Action fail)
     {
-        var command = new Command("build", "Author a DOCX from Markdown and a prepared template without Microsoft Word.");
-        var markdown = new Option<FileInfo>("--markdown") { IsRequired = true };
-        var template = new Option<FileInfo>("--template") { IsRequired = true };
-        var output = new Option<FileInfo>("--output") { IsRequired = true };
-        command.AddOption(markdown); command.AddOption(template); command.AddOption(output);
-        command.SetHandler((FileInfo md, FileInfo docx, FileInfo resultPath) =>
+        var command = new Command("build", "Build all workspace templates without Microsoft Word.");
+        var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
+        command.AddOption(workspace);
+        command.SetHandler((DirectoryInfo? path) =>
         {
-            var parsed = MarkdownDocumentParser.Parse(File.ReadAllText(md.FullName));
-            foreach (var diagnostic in parsed.Diagnostics) Console.Error.WriteLine(diagnostic);
-            if (!parsed.IsValid) { fail(); return; }
+            var loaded = WorkspaceLoader.Load(path?.FullName);
+            var diagnostics = ValidateTemplates(loaded);
+            PrintDiagnostics(diagnostics);
+            if (diagnostics.Any(d => d.IsError)) { fail(); return; }
+            var output = Path.Combine(loaded.Root, "YadgPreWords");
+            Directory.CreateDirectory(output);
             try
             {
-                WordAuthoring.Author(docx.FullName, resultPath.FullName, parsed.Document!);
-                Console.WriteLine($"build: wrote {resultPath.FullName}");
+                foreach (var template in loaded.Templates)
+                    WordAuthoring.Author(template, Path.Combine(output, Path.GetFileName(template)), loaded.Document);
+                Console.WriteLine($"build: wrote {loaded.Templates.Count} template output(s) to {output}");
             }
-            catch (WordAuthoringException ex) { Console.Error.WriteLine(ex.Diagnostic); fail(); }
-        }, markdown, template, output);
+            catch (Exception ex) { Console.Error.WriteLine(new Diagnostic("YADG-BUILD-001", $"Unable to author workspace output: {ex.Message}", true, output)); fail(); }
+        }, workspace);
         return command;
+    }
+
+    private static IReadOnlyList<Diagnostic> ValidateTemplates(YadgWorkspace workspace)
+    {
+        var diagnostics = workspace.Diagnostics.ToList();
+        foreach (var template in workspace.Templates)
+        {
+            try { diagnostics.AddRange(WordAuthoring.Analyze(template, workspace.Document).Diagnostics); }
+            catch (Exception ex) { diagnostics.Add(new("YADG-WORD-OPEN", $"Cannot inspect DOCX template: {ex.Message}", true, template)); }
+        }
+        return diagnostics;
+    }
+
+    private static void PrintDiagnostics(IEnumerable<Diagnostic> diagnostics)
+    {
+        foreach (var diagnostic in diagnostics.Where(d => d.IsError)) Console.Error.WriteLine(diagnostic);
     }
 }

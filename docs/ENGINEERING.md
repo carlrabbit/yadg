@@ -8,9 +8,9 @@ This document defines repository-wide engineering and validation policy for YADG
 
 YADG is implemented in C#/.NET.
 
-The CLI is expected to use `System.CommandLine`.
+The CLI uses `System.CommandLine`.
 
-DOCX authoring is based on OOXML, preferably through the Open XML SDK (`DocumentFormat.OpenXml`) unless implementation evidence requires a different package-level approach.
+DOCX authoring is based on OOXML through the Open XML SDK (`DocumentFormat.OpenXml`) unless later implementation evidence produces a project-level decision to change that boundary.
 
 The Microsoft Word renderer/finalizer is a separate Windows-specific executable or component and may use Office Interop.
 
@@ -20,7 +20,7 @@ YADG is a product/tool repository, not a `dotnet-library` product. Internal clas
 
 ### Office-independent path
 
-Parsing, checking, semantic-model creation, and DOCX authoring must execute without Microsoft Office installed.
+Parsing, checking, semantic-model creation, workspace discovery, and DOCX authoring must execute without Microsoft Office installed.
 
 The implementation should remain portable across ordinary .NET environments to the extent supported by selected dependencies. Do not introduce Windows-only dependencies into the authoring components without changing architecture authority.
 
@@ -35,23 +35,29 @@ Validation that depends on Microsoft Word targets:
 
 The renderer must fail clearly when its required runtime is unavailable. A non-Word substitute is not evidence of Word behavior.
 
+M0002 does not invoke this path.
+
 ## Canonical engineering interface
 
-The repository will expose canonical `eng/` commands or launchers as implementation proceeds. Implementation agents must use documented commands rather than inventing validation invocations.
+The canonical repository validation command established by M0001 is:
 
-M0001 is responsible for establishing the initial repository-specific engineering interface.
+```powershell
+./eng/validate.ps1
+```
 
-Cross-platform launchers may wrap the same repository logic, but complex product semantics must not live in shell/PowerShell wrappers.
+Repository-specific focused commands may live under `eng/`, but product semantics must remain in product code rather than PowerShell/shell wrappers.
+
+Implementation agents must use documented repository commands rather than inventing alternative validation interfaces when an applicable canonical command exists.
 
 ## Test strategy
 
 YADG uses **integration-first testing** where correctness materially depends on a boundary such as:
 
 - Markdown parser behavior;
+- workspace/filesystem discovery;
 - OOXML package structure;
 - Word run/container representation;
 - DOCX relationships and fields;
-- filesystem paths/assets;
 - process boundaries;
 - Microsoft Word rendering.
 
@@ -67,19 +73,23 @@ Formatting, compilation of touched projects when cheap, schema/JSON sanity, and 
 
 ### Tier 1 — focused validation
 
-Narrow tests for the changed semantic or OOXML behavior.
+Narrow tests for changed semantic, workspace, Markdown, or OOXML behavior.
 
 ### Tier 2 — repository validation
 
-The normal Office-independent build and test suite for the repository.
+The normal Office-independent repository validation command is:
 
-Tier 2 must be runnable without Microsoft Word.
+```powershell
+./eng/validate.ps1
+```
+
+Tier 2 must remain runnable without Microsoft Word.
 
 ### Tier 3 — integration validation
 
 Representative boundary validation against the concrete required target.
 
-For ordinary authoring this includes real DOCX packages and prepared fixture templates, not mocks of OOXML behavior where package representation is material.
+For ordinary authoring this includes real filesystem workspaces, real Markdown parsing, and real DOCX packages/prepared fixture templates rather than mocks where those representations materially determine correctness.
 
 For Word-dependent renderer behavior the target is a real installed Microsoft Word runtime on Windows.
 
@@ -95,6 +105,8 @@ Use milestone-scoped human review when automation cannot establish whether gener
 
 Human review is evidence for the milestone that requires it, not a permanent requirement to re-review historical milestones after unrelated changes.
 
+M0002 does not require human review because its acceptance contract is structural and semantic, not layout-rendering acceptance.
+
 ## DOCX validation
 
 Do not use byte-for-byte DOCX equality as the primary correctness contract.
@@ -104,14 +116,27 @@ DOCX is a ZIP package and may contain volatile metadata, relationship identifier
 Prefer structural assertions such as:
 
 - expected Word element/style exists;
-- expected heading/table/figure count or placement exists;
+- expected heading/paragraph placement exists;
 - target tag is resolved;
 - unrelated template content remains;
-- stable bookmark/reference/field structures resolve;
 - package relationships point to valid parts;
 - no forbidden unresolved YADG tags remain.
 
 Golden documents may be used selectively for end-to-end regression evidence, especially after real rendering, but structural diagnostics remain the primary automated contract.
+
+## Workspace/filesystem validation
+
+Workspace behavior must be tested against real temporary directory trees where discovery semantics are material.
+
+M0002 validation must cover:
+
+- root-marker discovery;
+- recursive Markdown discovery/exclusions;
+- nested-workspace rejection;
+- template/output conventions;
+- symlink/reparse-point rejection where the test platform can create the relevant filesystem object.
+
+When the current platform cannot create a particular link/reparse-point form without additional privileges, the unavailable case does not block portable Tier 2 validation. Platform-capable focused validation should cover it, and implementation must not weaken the project rule merely because one CI locus cannot construct the fixture.
 
 ## Fixtures
 
@@ -125,7 +150,7 @@ Do not commit confidential bank documents as fixtures.
 
 ## Determinism and provenance
 
-Given equivalent source inputs, template inputs, configuration, and relevant tool versions, YADG should produce semantically equivalent authored artifacts.
+Given equivalent source inputs, template inputs, configuration/conventions, and relevant tool versions, YADG should produce semantically equivalent authored artifacts.
 
 Where volatile DOCX metadata prevents binary determinism, validation must explicitly ignore or normalize only the known volatile portions rather than weakening semantic assertions.
 
@@ -135,7 +160,9 @@ Generated evidence should identify enough provenance to determine what command/t
 
 Validation failures should prefer actionable diagnostics over raw library exceptions.
 
-User-facing failures should eventually carry stable codes where the class of failure is part of the supported product contract.
+User-facing failures should carry stable codes where the class of failure is part of the supported product contract.
+
+Established diagnostic codes must not be silently reassigned to incompatible meanings.
 
 ## Dependency constraints
 
@@ -161,7 +188,7 @@ Synthetic fixtures must be used for public tests and examples.
 
 ## Documentation changes
 
-Implementation directly updates authority documents only when implementation would otherwise contradict them.
+Implementation directly updates authority or public documentation when implemented behavior would otherwise contradict it.
 
 Broad documentation normalization is deferred to a separate documentation-sync pass.
 

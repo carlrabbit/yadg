@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Yadg.Core;
@@ -10,66 +11,135 @@ public sealed class WordAuthoringException(Diagnostic diagnostic) : Exception(di
     public Diagnostic Diagnostic { get; } = diagnostic;
 }
 
+public sealed record TemplateAnalysis(IReadOnlyList<(Paragraph Anchor, SectionReference Reference)> Replacements, IReadOnlyList<Diagnostic> Diagnostics)
+{
+    public bool IsValid => Diagnostics.All(d => !d.IsError);
+}
+
 public static class WordAuthoring
 {
-    private static readonly Regex TagPattern = new(@"\{\{yadg:section:content:[^{}]+\}\}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex TagLike = new(@"\{\{[^{}]*\}\}", RegexOptions.Compiled);
+    private static readonly Regex ValueTag = new(@"^\{\{value:[A-Za-z][A-Za-z0-9_-]*\}\}$", RegexOptions.Compiled);
+    private static readonly Regex SupportedTag = new(@"^\{\{(content|section):([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
 
-    public static IReadOnlyList<string> FindTags(string templatePath)
+    public static TemplateAnalysis Analyze(string templatePath, YadgDocument model)
     {
         using var document = WordprocessingDocument.Open(templatePath, false);
-        return document.MainDocumentPart!.Document.Body!.Descendants<Paragraph>()
-            .SelectMany(p => TagPattern.Matches(LogicalText(p)).Select(m => m.Value))
-            .ToArray();
+        return AnalyzeOpen(document, templatePath, model);
     }
 
-    public static void Author(string templatePath, string outputPath, YadgDocument model)
+    private static TemplateAnalysis AnalyzeOpen(WordprocessingDocument document, string templatePath, YadgDocument model)
     {
+        var diagnostics = new List<Diagnostic>();
+        var replacements = new List<(Paragraph Anchor, SectionReference Reference)>();
+        var main = document.MainDocumentPart;
+        if (main?.Document.Body is null)
+        {
+            diagnostics.Add(new("YADG-WORD-001", "DOCX has no main document body.", true, templatePath));
+            return new(replacements, diagnostics);
+        }
+
+        var styles = main.StyleDefinitionsPart?.Styles;
+        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, replacements, diagnostics, true, styles);
+        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, replacements, diagnostics, false, styles);
+        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, replacements, diagnostics, false, styles);
+        return new(replacements, diagnostics);
+    }
+
+    public static void Author(string templatePath, string outputPath, YadgDocument model, TemplateAnalysis? analysis = null)
+    {
+        analysis ??= Analyze(templatePath, model);
+        if (!analysis.IsValid) throw new WordAuthoringException(analysis.Diagnostics.First(d => d.IsError));
         File.Copy(templatePath, outputPath, true);
         using var document = WordprocessingDocument.Open(outputPath, true);
-        var body = document.MainDocumentPart!.Document.Body!;
-        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var paragraph in body.Descendants<Paragraph>())
+        var outputAnalysis = AnalyzeOpen(document, outputPath, model);
+        if (!outputAnalysis.IsValid) throw new WordAuthoringException(outputAnalysis.Diagnostics.First(d => d.IsError));
+        foreach (var (anchor, reference) in outputAnalysis.Replacements.Reverse())
         {
-            var textNodes = paragraph.Descendants<Text>().ToArray();
-            var logical = string.Concat(textNodes.Select(t => t.Text));
-            var matches = TagPattern.Matches(logical).Cast<Match>().ToArray();
-            foreach (var match in matches.Reverse())
-            {
-                if (!SectionReference.TryParseTag(match.Value, out var reference, out var tagDiagnostic))
-                    throw new WordAuthoringException(tagDiagnostic!);
-                var resolved = MarkdownDocumentParser.Resolve(model, reference!);
-                if (resolved.Diagnostic is not null) throw new WordAuthoringException(resolved.Diagnostic);
-                ReplaceLogicalRange(textNodes, match.Index, match.Length, resolved.Content!);
-                found.Add(match.Value);
-            }
+            var resolved = MarkdownDocumentParser.Resolve(model, reference, outputPath);
+            if (resolved.Diagnostic is not null) throw new WordAuthoringException(resolved.Diagnostic);
+            var blocks = resolved.Blocks!;
+            var generated = blocks.Select(block => CreateParagraph(block, anchor)).ToArray();
+            foreach (var paragraph in generated) anchor.InsertBeforeSelf(paragraph);
+            anchor.Remove();
         }
-        if (found.Count == 0)
-            throw new WordAuthoringException(new("YADG-TAG-002", "Template contains no supported visible YADG section-content tag."));
-        document.MainDocumentPart.Document.Save();
+        document.MainDocumentPart!.Document.Save();
     }
 
-    private static string LogicalText(Paragraph paragraph) => string.Concat(paragraph.Descendants<Text>().Select(t => t.Text));
-
-    private static void ReplaceLogicalRange(IReadOnlyList<Text> nodes, int start, int length, string replacement)
+    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, List<(Paragraph Anchor, SectionReference Reference)> replacements, List<Diagnostic> diagnostics, bool supportedMainBody, Styles? styles)
     {
-        var end = start + length;
-        var position = 0;
-        var first = -1;
-        for (var i = 0; i < nodes.Count; i++)
+        foreach (var paragraph in paragraphs)
         {
-            var nodeStart = position;
-            var nodeEnd = position + nodes[i].Text.Length;
-            if (first < 0 && start >= nodeStart && start < nodeEnd) first = i;
-            if (first >= 0 && nodeStart < end && nodeEnd > start)
+            var logical = string.Concat(paragraph.Descendants<Text>().Select(t => t.Text));
+            var matches = TagLike.Matches(logical).Cast<Match>().ToArray();
+            if (matches.Length == 0) continue;
+            if (!supportedMainBody || paragraph.Parent is not Body || paragraph.Ancestors<Table>().Any())
             {
-                var localStart = Math.Max(start - nodeStart, 0);
-                var localEnd = Math.Min(end - nodeStart, nodes[i].Text.Length);
-                var before = nodes[i].Text[..localStart];
-                var after = nodes[i].Text[localEnd..];
-                nodes[i].Text = i == first ? before + replacement + after : before + after;
+                diagnostics.Add(new("YADG-WORD-LOCATION", "YADG tags are supported only as standalone paragraphs in the main document body.", true, templatePath));
+                continue;
             }
-            position = nodeEnd;
+            foreach (var match in matches)
+            {
+                var trimmed = logical.Trim();
+                if (!string.Equals(trimmed, match.Value, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(new("YADG-WORD-BLOCK", $"Block tag '{match.Value}' must be the only non-whitespace content in its paragraph.", true, templatePath));
+                    continue;
+                }
+                if (ValueTag.IsMatch(match.Value))
+                {
+                    diagnostics.Add(new("YADG-VALUE-UNSUPPORTED", $"Reserved value tag '{match.Value}' is not supported in M0002.", true, templatePath));
+                    continue;
+                }
+                if (!SupportedTag.IsMatch(match.Value))
+                {
+                    diagnostics.Add(new("YADG-TAG-001", $"Malformed or obsolete tag '{match.Value}'. Use {{content:<stable-id>}} or {{section:<stable-id>}}.", true, templatePath));
+                    continue;
+                }
+                if (!SectionReference.TryParseTag(match.Value, out var reference, out var tagDiagnostic)) { diagnostics.Add(tagDiagnostic! with { Location = templatePath }); continue; }
+                var resolved = MarkdownDocumentParser.Resolve(model, reference!, templatePath);
+                if (resolved.Diagnostic is not null) diagnostics.Add(resolved.Diagnostic);
+                else
+                {
+                    replacements.Add((paragraph, reference!));
+                    foreach (var heading in resolved.Blocks!.OfType<YadgHeading>())
+                    {
+                        var styleId = $"Heading{heading.Level}";
+                        if (styles is null || !styles.Descendants<Style>().Any(style => string.Equals(style.StyleId?.Value, styleId, StringComparison.Ordinal)))
+                            diagnostics.Add(new("YADG-WORD-STYLE", $"Selected heading level {heading.Level} requires existing Word style '{styleId}'.", true, templatePath));
+                    }
+                }
+            }
         }
-        if (first < 0) throw new InvalidOperationException("Logical tag range did not map to OOXML text nodes.");
+    }
+
+    private static Paragraph CreateParagraph(YadgBlock block, Paragraph anchor)
+    {
+        var paragraph = new Paragraph();
+        if (block is YadgHeading heading)
+            paragraph.Append(new ParagraphProperties(new ParagraphStyleId { Val = $"Heading{heading.Level}" }));
+        else if (anchor.ParagraphProperties is not null)
+            paragraph.Append(anchor.ParagraphProperties.CloneNode(true));
+        if (block is YadgHeading headingBlock) AppendInlines(paragraph, new[] { new YadgText(headingBlock.Text) });
+        if (block is YadgParagraph paragraphBlock) AppendInlines(paragraph, paragraphBlock.Inlines);
+        return paragraph;
+    }
+
+    private static void AppendInlines(Paragraph paragraph, IReadOnlyList<YadgInline> inlines, bool italic = false, bool bold = false)
+    {
+        foreach (var inline in inlines)
+        {
+            switch (inline)
+            {
+                case YadgText text:
+                    var run = new Run();
+                    if (italic || bold) run.Append(new RunProperties { Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null });
+                    run.Append(new Text(text.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(run); break;
+                case YadgHardBreak: paragraph.Append(new Run(new Break())); break;
+                case YadgSoftBreak: paragraph.Append(new Run(new Text(" "))); break;
+                case YadgEmphasis emphasis: AppendInlines(paragraph, emphasis.Inlines, true || italic, bold); break;
+                case YadgStrong strong: AppendInlines(paragraph, strong.Inlines, italic, true || bold); break;
+            }
+        }
     }
 }
