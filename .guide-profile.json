@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "guideSystem": {
+    "repository": "carlrabbit/agentic-project-guides",
+    "version": "0.8.0"
+  },
+  "appliedProfiles": [
+    {
+      "id": "base",
+      "version": "0.8.0",
+      "scopes": [
+        {
+          "kind": "repository"
+        }
+      ]
+    },
+    {
+      "id": "artifact-first-runtime",
+      "version": "0.8.0",
+      "scopes": [
+        {
+          "kind": "repository"
+        }
+      ]
+    }
+  ],
+  "repositoryRole": "product-tool",
+  "maturityStage": "initial-implementation",
+  "executionModel": {
+    "baselineImplementationModel": "GPT-5.6 Luna",
+    "defaultImplementationMode": "ai-executed-human-reviewed",
+    "documentationSync": "separate-pass",
+    "releaseReadiness": "separate-pass",
+    "humanReview": "milestone-scoped"
+  },
+  "engineeringCommands": {
+    "canonicalInterface": "eng",
+    "implementation": "repository-specific",
+    "supportedLaunchers": [
+      "PowerShell",
+      "POSIX shell"
+    ],
+    "testedPlatforms": []
+  },
+  "activeDocumentationLayers": [
+    "engineering",
+    "milestones",
+    "specs",
+    "architecture",
+    "terminology"
+  ],
+  "inactiveDocumentationLayers": [
+    "tbps",
+    "issue-templates",
+    "repository-guide-copies",
+    "research"
+  ]
+}

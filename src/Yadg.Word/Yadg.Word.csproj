@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Yadg.Word</AssemblyName><RootNamespace>Yadg.Word</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Yadg.Core\Yadg.Core.csproj" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.1" />
+  </ItemGroup>
+</Project>
