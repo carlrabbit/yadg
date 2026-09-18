@@ -37,13 +37,14 @@ public static class WorkspaceLoader
 
         var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path)));
         var document = MarkdownDocumentParser.Merge(parsed, diagnostics);
+        document = AssetValidation.AttachAndValidate(document, root, diagnostics);
         return new(root, sources, templates, document, diagnostics);
     }
 
     private static YadgWorkspace Invalid(string root, List<Diagnostic> diagnostics, Diagnostic diagnostic)
     {
         diagnostics.Add(diagnostic);
-        return new(root, Array.Empty<string>(), Array.Empty<string>(), new YadgDocument(Array.Empty<YadgBlock>(), new Dictionary<string, YadgSection>()), diagnostics);
+        return new(root, Array.Empty<string>(), Array.Empty<string>(), new YadgDocument(Array.Empty<YadgBlock>(), new Dictionary<string, YadgSection>(), new Dictionary<string, YadgTable>(), new Dictionary<string, YadgFigure>()), diagnostics);
     }
 
     private static void Enumerate(string directory, List<string> files, List<Diagnostic> diagnostics)

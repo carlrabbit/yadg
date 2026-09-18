@@ -30,8 +30,8 @@ public sealed class M0002IntegrationTests
         Assert.Contains(paragraph.Inlines, inline => inline is YadgHardBreak);
         Assert.Equal("Heading", Assert.IsType<YadgHeading>(parsed.Document.Blocks[0]).Text);
 
-        var unsupported = MarkdownDocumentParser.Parse("- list");
-        Assert.Contains(unsupported.Diagnostics, d => d.Code == "YADG-MD-UNSUPPORTED");
+        var list = MarkdownDocumentParser.Parse("- list");
+        Assert.IsType<YadgList>(list.Document!.Blocks[0]);
     }
 
     [Fact]

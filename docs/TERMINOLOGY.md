@@ -8,7 +8,7 @@ The Office-independent transformation of Markdown and prepared Word templates in
 
 ## Renderer / finalizer
 
-A separate executable or runtime component that opens an authored DOCX in a real rendering engine and updates layout-dependent state such as fields, references, indexes, table of contents data, pagination-related values, and optional PDF output.
+A separate component that opens an authored DOCX in a real rendering engine and updates layout-dependent state such as fields, references, indexes, TOCs, pagination-related values, and optional PDF output.
 
 The initial concrete renderer target is Microsoft Word through Office Interop on Windows.
 
@@ -16,72 +16,96 @@ The initial concrete renderer target is Microsoft Word through Office Interop on
 
 One YADG documentation unit processed by one `check` or `build` invocation.
 
-A workspace is rooted at a directory containing the canonical marker file `YADG.md`. M0002 processes exactly one workspace per invocation.
+A workspace is rooted at a directory containing `YADG.md`.
 
 ## Workspace marker
 
-The root-level `YADG.md` file that identifies a YADG workspace.
+The root-level `YADG.md` file identifying a YADG workspace.
 
-For M0002 its Markdown body is optional human-facing documentation and is not document source content. No machine-readable configuration syntax inside `YADG.md` is defined by M0002.
+Its body is optional human-facing documentation and is not document source content.
 
 ## Template
 
-A prepared DOCX document that remains authoritative for document structure and presentation unless a specific template location explicitly delegates a structure element to Markdown.
+A prepared DOCX document authoritative for structure and presentation unless a specific location delegates structure or placement to YADG.
 
 ## Template-owned structure
 
-Headings, cover pages, section ordering, styles, captions, tables, and other document structure intentionally present in the Word template.
+Headings, cover pages, section ordering, styles, captions/style definitions, tables, and other structure intentionally present in the Word template.
 
 ## Markdown-owned content
 
-Maintainable source content stored in Markdown and version control. Markdown content is selected by stable semantic references.
+Maintainable source content and semantic objects stored in Markdown and version control.
 
 ## Tag
 
-A visible textual YADG marker embedded in a DOCX template. Tags are deliberately ordinary document text rather than Word content controls.
+A visible textual YADG marker embedded in a DOCX template.
 
-Tag recognition operates on logical paragraph text and cannot assume that one tag maps to one OOXML text run.
+Tags are ordinary document text, not Word content controls, and are parsed from logical paragraph text across OOXML run boundaries.
 
 ## Block tag
 
-A tag whose replacement produces one or more Word block elements such as headings or paragraphs.
+A tag whose replacement produces one or more Word block elements.
 
-For M0002, `content` and `section` tags are block tags and must be the only non-whitespace logical content of their Word paragraph.
+Current block tags must be the only non-whitespace logical content of their Word paragraph.
 
 ## Stable ID
 
-An explicit, case-sensitive semantic identifier used to reference a Markdown object.
-
-Stable IDs use the syntax:
+An explicit, case-sensitive semantic identifier with syntax:
 
 ```text
 [A-Za-z][A-Za-z0-9_-]*
 ```
 
-Display text, heading text, caption text, position, and filenames are not stable semantic identity.
-
-## Section
-
-A Markdown heading with a stable ID together with the content structurally belonging to that heading up to the next heading of the same or higher level.
-
-## Section content
-
-The body belonging to a section, excluding the referenced section heading itself but including nested headings and their content.
+Stable IDs are workspace-wide across all referenceable object types.
 
 ## Reference registry
 
-The workspace-wide mapping from stable IDs to semantic Markdown objects.
+The workspace-wide mapping from stable IDs to referenceable semantic objects, including sections, tables, and figures.
 
-M0002 requires section IDs to be unique across every discovered Markdown source file in the workspace.
+## Section
+
+A Markdown heading with a stable ID together with content belonging to that heading up to the next heading of the same or higher level.
+
+## Section content
+
+The section body excluding the referenced section heading while retaining nested headings and blocks.
+
+## Structured object
+
+A semantic block with independent stable identity and render behavior.
+
+M0003 structured objects are tables and figures.
+
+## Natural anchor
+
+The semantic source position of a structured object in Markdown.
+
+Without a placement override, rendering a selection containing the anchor renders the object at that position.
+
+## Placement override
+
+A unique direct `table` or `figure` tag in a Word template that takes responsibility for the physical placement of that semantic object in the generated document.
+
+A placement override suppresses natural-anchor rendering for that object in that template.
+
+It is relocation, not duplication.
+
+## Figure
+
+A block image semantic object with stable identity, an image asset, and optional caption text.
+
+In M0003, figure caption text comes from Markdown image alt text.
 
 ## Derived artifact
 
-A generated output such as an authored DOCX, finalized DOCX, PDF, validation report, or evidence bundle. Derived artifacts are rebuildable outputs, not project source authority.
+A generated output such as an authored DOCX, finalized DOCX, PDF, validation report, or evidence bundle.
+
+Derived artifacts are rebuildable outputs, not source authority.
 
 ## Validation target
 
-The concrete system whose behavior is being established by a validation path, for example the OOXML package representation or a locally installed Microsoft Word runtime.
+The concrete system whose behavior establishes required evidence, such as a real DOCX/OOXML package or installed Microsoft Word runtime.
 
 ## Validation locus
 
-Where validation executes, for example ordinary local/CI .NET execution or a Windows machine with Microsoft Word installed.
+Where validation executes, such as an ordinary local/CI .NET environment or a Windows machine with Microsoft Word installed.
