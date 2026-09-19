@@ -40,13 +40,13 @@ public static class WordAuthoring
     private static readonly Regex TagLike = new(@"\{\{[^{}]*\}\}", RegexOptions.Compiled);
     private static readonly Regex DirectTag = new(@"^\{\{(table|figure):([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
 
-    public static TemplateAnalysis Analyze(string templatePath, YadgDocument model)
+    public static TemplateAnalysis Analyze(string templatePath, YadgDocument model, IReadOnlyDictionary<string, string>? values = null)
     {
         using var document = WordprocessingDocument.Open(templatePath, false);
-        return AnalyzeOpen(document, templatePath, model);
+        return AnalyzeOpen(document, templatePath, model, values ?? new Dictionary<string, string>(StringComparer.Ordinal));
     }
 
-    private static TemplateAnalysis AnalyzeOpen(WordprocessingDocument document, string templatePath, YadgDocument model, TemplateMetadata? supplied = null)
+    private static TemplateAnalysis AnalyzeOpen(WordprocessingDocument document, string templatePath, YadgDocument model, IReadOnlyDictionary<string, string> values, TemplateMetadata? supplied = null)
     {
         var diagnostics = new List<Diagnostic>();
         var placements = new List<TemplatePlacement>();
@@ -55,20 +55,21 @@ public static class WordAuthoring
         var metadata = supplied ?? ReadMetadata(main.Document.Body, templatePath, diagnostics);
         var styles = main.StyleDefinitionsPart?.Styles;
         var numbering = main.NumberingDefinitionsPart?.Numbering;
-        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, true);
-        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, false);
-        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, false);
+        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, values, "body");
+        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, values, "header");
+        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, values, "footer");
         foreach (var duplicate in placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).GroupBy(p => (p.Kind, p.Id)).Where(g => g.Count() > 1))
             diagnostics.Add(new("YADG-PLACEMENT-002", $"Structured object '{duplicate.Key.Id}' has more than one direct placement in this template.", true, templatePath));
         ValidateReferences(document, templatePath, model, metadata, placements, diagnostics);
         return new(placements, diagnostics, metadata);
     }
 
-    public static void Author(string templatePath, string outputPath, YadgDocument model)
+    public static void Author(string templatePath, string outputPath, YadgDocument model, IReadOnlyDictionary<string, string>? values = null)
     {
+        values ??= new Dictionary<string, string>(StringComparer.Ordinal);
         using (var analysisDocument = WordprocessingDocument.Open(templatePath, false))
         {
-            var analysis = AnalyzeOpen(analysisDocument, templatePath, model);
+            var analysis = AnalyzeOpen(analysisDocument, templatePath, model, values);
             if (!analysis.IsValid) throw new WordAuthoringException(analysis.Diagnostics.First(d => d.IsError));
         }
         File.Copy(templatePath, outputPath, true);
@@ -77,7 +78,7 @@ public static class WordAuthoring
         var metadata = ReadMetadata(document.MainDocumentPart!.Document.Body!, outputPath, outputDiagnostics);
         RemoveControlRegion(metadata);
         document.MainDocumentPart.Document.Save();
-        var analysisOutput = AnalyzeOpen(document, outputPath, model, metadata);
+        var analysisOutput = AnalyzeOpen(document, outputPath, model, values, metadata);
         if (!analysisOutput.IsValid) throw new WordAuthoringException(analysisOutput.Diagnostics.First(d => d.IsError));
         var direct = analysisOutput.Placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).Select(p => (p.Kind, p.Id)).ToHashSet();
         var targetMap = BuildTargets(model, analysisOutput, document, outputPath);
@@ -96,10 +97,11 @@ public static class WordAuthoring
             foreach (var element in elements) placement.Anchor.InsertBeforeSelf(element);
             placement.Anchor.Remove();
         }
+        ReplaceValues(document, values);
         document.MainDocumentPart!.Document.Save();
     }
 
-    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, List<TemplatePlacement> placements, List<Diagnostic> diagnostics, bool mainBody)
+    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, List<TemplatePlacement> placements, List<Diagnostic> diagnostics, IReadOnlyDictionary<string, string> values, string location)
     {
         foreach (var paragraph in paragraphs)
         {
@@ -107,10 +109,30 @@ public static class WordAuthoring
             var logical = string.Concat(paragraph.Descendants<Text>().Select(t => t.Text));
             var matches = TagLike.Matches(logical).Cast<Match>().ToArray();
             if (matches.Length == 0) continue;
-            if (!mainBody || paragraph.Parent is not Body || paragraph.Ancestors<Table>().Any())
-            { diagnostics.Add(new("YADG-WORD-LOCATION", "YADG tags are supported only as standalone paragraphs in the main document body.", true, templatePath)); continue; }
+            var valueMatches = matches.Where(m => m.Value.StartsWith("{{value:", StringComparison.Ordinal)).ToArray();
+            var inTextBox = paragraph.Ancestors().Any(a => a.GetType().Name is "TextBoxContent" or "AlternateContent" or "Drawing");
+            var valueLocationAllowed = location is "body" or "header" or "footer" && !inTextBox;
+            if (valueMatches.Length > 0)
+            {
+                if (!valueLocationAllowed) diagnostics.Add(new("YADG-VALUE-LOCATION", "Workspace value tags are not supported in this Word location.", true, templatePath));
+                foreach (var match in valueMatches)
+                {
+                    var id = Regex.Match(match.Value, @"^\{\{value:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}$");
+                    if (!id.Success) diagnostics.Add(new("YADG-VALUE-001", $"Malformed workspace value tag '{match.Value}'.", true, templatePath));
+                    else if (!values.ContainsKey(id.Groups["id"].Value))
+                    {
+                        diagnostics.Add(new("YADG-VALUE-002", $"Workspace value '{id.Groups["id"].Value}' is not defined.", true, templatePath));
+                        diagnostics.Add(new("YADG-VALUE-UNSUPPORTED", $"Workspace value tag '{match.Value}' cannot be resolved.", true, templatePath));
+                    }
+                }
+            }
+            var nonValueMatches = matches.Where(m => !m.Value.StartsWith("{{value:", StringComparison.Ordinal)).ToArray();
+            if (valueMatches.Length > 0 && nonValueMatches.Length == 0) continue;
+            if (location != "body" || paragraph.Parent is not Body)
+            { diagnostics.Add(new("YADG-WORD-LOCATION", "Non-value YADG tags are supported only as standalone paragraphs in the main document body.", true, templatePath)); continue; }
             foreach (var match in matches)
             {
+                if (match.Value.StartsWith("{{value:", StringComparison.Ordinal)) continue;
                 if (!string.Equals(logical.Trim(), match.Value, StringComparison.Ordinal)) { diagnostics.Add(new("YADG-WORD-BLOCK", $"Block tag '{match.Value}' must be the only non-whitespace paragraph content.", true, templatePath)); continue; }
                 var direct = DirectTag.Match(match.Value);
                 if (direct.Success)
@@ -129,7 +151,6 @@ public static class WordAuthoring
                     ValidateBlocks(resolved.Blocks!, styles, numbering, metadata, paragraph, templatePath, diagnostics);
                     placements.Add(new(paragraph, PlacementKind.Section, sectionReference!.Id, sectionReference));
                 }
-                else if (match.Value.StartsWith("{{value:", StringComparison.Ordinal)) diagnostics.Add(new("YADG-VALUE-UNSUPPORTED", $"Reserved value tag '{match.Value}' is not supported in M0003.", true, templatePath));
                 else diagnostics.Add(new("YADG-TAG-001", $"Malformed or unsupported tag '{match.Value}'.", true, templatePath));
             }
         }
@@ -244,7 +265,7 @@ public static class WordAuthoring
         if (metadata.PrototypeBindings.TryGetValue(binding, out var id) && metadata.Prototypes.TryGetValue(id, out var prototype))
         {
             var clone = (Paragraph)prototype.Paragraph.CloneNode(true);
-            ReplaceLogicalText(clone, "{{caption}}", text, targets);
+            ReplaceLogicalText(clone, "{{caption}}", text);
             if (targets.TryGetValue(targetId, out var bookmark)) WrapSequenceInBookmark(clone, bookmark);
             return clone;
         }
@@ -337,7 +358,22 @@ public static class WordAuthoring
     private static string LogicalText(OpenXmlElement element) => string.Concat(element.Descendants<Text>().Select(t => t.Text));
     private static void RemoveControlRegion(TemplateMetadata metadata) { foreach (var paragraph in metadata.ControlParagraphs.ToArray()) paragraph.Remove(); }
 
-    private static void ReplaceLogicalText(Paragraph paragraph, string oldText, string replacement, IReadOnlyDictionary<string, string> _)
+    private static void ReplaceValues(WordprocessingDocument document, IReadOnlyDictionary<string, string> values)
+    {
+        var main = document.MainDocumentPart!;
+        var paragraphs = main.Document.Body?.Descendants<Paragraph>().ToList() ?? new List<Paragraph>();
+        paragraphs.AddRange(main.HeaderParts.SelectMany(p => p.Header.Descendants<Paragraph>()));
+        paragraphs.AddRange(main.FooterParts.SelectMany(p => p.Footer.Descendants<Paragraph>()));
+        foreach (var paragraph in paragraphs)
+        {
+            var combined = LogicalText(paragraph);
+            var matches = Regex.Matches(combined, @"\{\{value:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}").Cast<Match>().ToArray();
+            foreach (var match in matches.Reverse())
+                ReplaceLogicalText(paragraph, match.Value, values[match.Groups["id"].Value]);
+        }
+    }
+
+    private static void ReplaceLogicalText(Paragraph paragraph, string oldText, string replacement)
     {
         var texts = paragraph.Descendants<Text>().ToArray(); var combined = string.Concat(texts.Select(t => t.Text)); var at = combined.IndexOf(oldText, StringComparison.Ordinal); if (at < 0) return;
         var endAt = at + oldText.Length; var offset = 0; var startIndex = 0; var endIndex = 0;

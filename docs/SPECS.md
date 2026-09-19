@@ -8,81 +8,66 @@ The product is template-first rather than a general-purpose DOCX layout generato
 
 ## Product authority model
 
-The following ownership rules are normative:
-
 1. Markdown is authoritative for maintainable document content and semantic document objects.
-2. Prepared DOCX templates are authoritative for document structure, presentation, presentation vocabulary, numbering conventions, and Word-native document structures unless a template location explicitly delegates structure or placement to YADG.
-3. Generated DOCX and PDF files are derived artifacts.
-4. The Office-independent authoring pipeline is authoritative for semantic resolution and OOXML transformation.
-5. Layout-dependent field evaluation and finalization belong to a separate renderer/finalizer.
-
-YADG preserves template-owned formatting and Word-native conventions rather than recreating them from project-global configuration.
+2. `YADG.md` is authoritative for workspace-level scalar values and workspace notes.
+3. Prepared DOCX templates are authoritative for structure, presentation, presentation vocabulary, numbering conventions, and Word-native structures unless explicitly delegated.
+4. Generated DOCX/PDF files are derived artifacts.
+5. Office-independent authoring is authoritative for semantic resolution and OOXML transformation.
+6. Layout-dependent field evaluation/finalization belongs to a renderer.
 
 ## Processing model
 
-YADG has three conceptual stages:
+YADG:
 
-1. parse/analyze Markdown into an OOXML-free semantic model;
-2. author DOCX by resolving tags, template-local bindings, semantic references, and OOXML structures;
-3. render/finalize layout-dependent document state in a real rendering engine.
+1. parses workspace metadata and Markdown into an OOXML-free semantic model plus workspace values;
+2. authors DOCX through tags, value substitution, template-local bindings, semantic references, and OOXML structures;
+3. renders/finalizes layout-dependent state with a concrete renderer.
 
-Stages 1 and 2 do not require Microsoft Office.
+Stages 1 and 2 require neither Microsoft Office nor LibreOffice.
 
 ## Workspace and CLI
 
 A workspace is rooted at `YADG.md`.
 
-The Office-independent CLI remains:
+`YADG.md` may contain optional machine-readable front matter followed by human-facing notes. It is not ordinary Markdown document source.
 
 ```text
 yadg check [--workspace <path>]
 yadg build [--workspace <path>]
+yadg render [--workspace <path>] [--renderer libreoffice] [--renderer-path <path>]
 ```
 
-Templates remain top-level `YadgTemplates/*.docx`; authored outputs remain same-named `YadgPreWords/*.docx`.
+Templates are top-level `YadgTemplates/*.docx`; authored outputs are `YadgPreWords/*.docx`; M0005 finalized outputs are `YadgWords/*.docx` and `YadgPdfs/*.pdf`.
 
-## Semantic model and stable identity
+## Identity
 
-The semantic model remains OOXML-independent and includes headings, paragraphs, lists, tables, figures, structured-object anchors, supported inlines, and M0004 semantic cross-reference inlines.
-
-Stable IDs are case-sensitive and workspace-wide:
+Semantic object IDs are case-sensitive and workspace-wide:
 
 ```text
 [A-Za-z][A-Za-z0-9_-]*
 ```
 
-Display text, labels, captions, filenames, source positions, Word bookmark names, and field codes are not semantic identity.
+Workspace value IDs use the same lexical form but occupy a separate namespace.
 
-## Sections
-
-Section/content selection remains:
-
-```text
-{{content:<id>}}
-{{section:<id>}}
-```
-
-A semantic section is numerically referenceable only when its Markdown heading is rendered exactly once and has effective Word numbering in that template. Detailed rules are in `docs/specs/WORD-REFERENCES.md`.
+Display text, labels, captions, filenames, source positions, bookmark names, and field codes are not semantic identity.
 
 ## Template vocabulary
 
-Ordinary authoring tags remain:
-
 ```text
-{{content:<id>}}
-{{section:<id>}}
-{{table:<id>}}
-{{figure:<id>}}
-{{value:<id>}}
+{{content:<stable-id>}}
+{{section:<stable-id>}}
+{{table:<stable-id>}}
+{{figure:<stable-id>}}
+{{value:<value-id>}}
 ```
 
-`value` remains reserved and unsupported.
+`content`, `section`, `table`, and `figure` are block operations.
 
-Template-control and prototype markers are defined separately in `docs/specs/WORD-REFERENCES.md`.
+`value` is the inline scalar substitution operation defined in `docs/specs/WORKSPACE-VALUES.md`.
 
-## Markdown support
+Template-control/prototype markers are defined in `docs/specs/WORD-REFERENCES.md`.
 
-M0004 adds semantic numeric references:
+## Markdown references
 
 ```markdown
 See Figure [@system-context].
@@ -90,73 +75,51 @@ See Table [@interface-matrix].
 See Section [@architecture].
 ```
 
-`[@id]` emits only the numeric target result. Human-facing labels and grammar remain author/template-owned.
+`[@id]` resolves semantic objects only and emits the numeric target result.
 
-Ordinary Markdown hyperlinks remain unsupported.
+Workspace values are not interpolated into Markdown in M0006.
 
-## Structured content
+## Structured content and Word references
 
-Lists, generated tables, figures, assets, captions, and float-like placement remain governed by:
+Structured content is governed by `docs/specs/STRUCTURED-CONTENT.md`.
 
-```text
-docs/specs/STRUCTURED-CONTENT.md
-```
+Caption/reference/template-prototype behavior is governed by `docs/specs/WORD-REFERENCES.md`.
 
-M0004 extends table caption metadata and numbered caption/reference behavior through `docs/specs/WORD-REFERENCES.md`.
+## Workspace values
 
-## Template-local front matter and prototypes
+Workspace scalar values come only from optional YAML front matter in root `YADG.md`.
 
-A template may contain visible removable YADG front matter that maps semantic roles to existing Word style IDs and template-owned prototypes.
+M0006 values are case-sensitive, single-line strings in a namespace separate from semantic object IDs.
 
-Front matter is template-local, not workspace-global presentation configuration.
+Template `{{value:<id>}}` tags substitute them literally while preserving template-owned surrounding formatting.
 
-Caption prototypes may own literal labels, `SEQ` identifiers, field switches, punctuation, style, and formatting. YADG clones/adapts those structures instead of synthesizing localized presentation conventions.
+The schema, supported Word locations, formatting rule, and validation behavior are authoritative in `docs/specs/WORKSPACE-VALUES.md`.
 
-The control format and compatibility rules are authoritative in `docs/specs/WORD-REFERENCES.md`.
+## Template-local metadata
 
-## Cross-references
-
-M0004 semantic references resolve by stable ID and are type-aware.
-
-- figure/table references use bookmarked cloned `SEQ` fields plus Word `REF`;
-- section references use uniquely rendered numbered headings plus Word `REF` paragraph-number semantics.
-
-Generated bookmark names are implementation-private artifact mechanics.
-
-## Template-owned indexes and lists
-
-Existing template TOC, list-of-figures, and list-of-tables field structures remain template authority.
-
-M0004 preserves them and authors compatible field structures, but does not evaluate or refresh them.
+Template front matter maps semantic roles to existing template styles/prototypes. It is presentation binding, not workspace content/value authority.
 
 ## Check and build
 
-`check` validates the complete workspace and each template without producing authored outputs.
+`check` validates the complete workspace and each template without outputs.
 
-M0004 additionally validates:
+M0006 additionally validates workspace front matter and all supported template value references.
 
-- front-matter syntax/schema;
-- mapped style existence;
-- prototype existence/structure;
-- semantic cross-reference resolution;
-- target numbering eligibility and uniqueness;
-- bookmark/field construction prerequisites.
+`build` performs equivalent validation before modifying normal outputs.
 
-`build` validates before modifying normal outputs.
-
-M0004 may author bookmarks, `SEQ`, and `REF` structures, but displayed/cached field results are not authoritative until a renderer evaluates them.
+Value replacement is complete during Office-independent authoring and requires no renderer evaluation.
 
 ## Renderer boundary
 
-The later renderer/finalizer owns evaluation of `SEQ`, `REF`, TOC, list-of-figures, list-of-tables, pagination-dependent, and related Word field state.
+M0005 implements LibreOffice as the first renderer under `docs/specs/RENDERING.md`.
 
-## Simple values
+The renderer evaluates layout/field/index state and produces finalized DOCX/PDF artifacts.
 
-`value` remains reserved; scalar value-source/override semantics remain undefined.
+Workspace values require no renderer-specific semantics.
 
 ## Diagnostics
 
-Diagnostics remain first-class and should identify stable code, source/template location, offending object/tag/binding, and corrective context where feasible.
+Diagnostics are first-class and should identify stable code, source/template location, offending object/tag/value/binding, and corrective context where feasible.
 
 ## Non-goals
 
