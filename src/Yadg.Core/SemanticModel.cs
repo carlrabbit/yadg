@@ -8,6 +8,12 @@ public sealed record Diagnostic(string Code, string Message, bool IsError = true
 public abstract record YadgBlock;
 public sealed record YadgHeading(int Level, string Text, string? Id = null) : YadgBlock;
 public sealed record YadgParagraph(IReadOnlyList<YadgInline> Inlines) : YadgBlock;
+public sealed record YadgList(bool Ordered, IReadOnlyList<YadgListItem> Items) : YadgBlock;
+public sealed record YadgListItem(IReadOnlyList<YadgInline> Inlines);
+public sealed record YadgTable(string Id, IReadOnlyList<IReadOnlyList<YadgInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<YadgInline>>> Rows) : YadgBlock;
+public sealed record YadgFigure(string Id, string AltText, string AssetPath, string SourcePath, ImageAsset? Asset = null) : YadgBlock;
+
+public sealed record ImageAsset(string FullPath, string Format, int WidthPixels, int HeightPixels);
 
 public abstract record YadgInline;
 public sealed record YadgText(string Value) : YadgInline;
@@ -23,9 +29,16 @@ public sealed record YadgSection(string Id, YadgHeading Heading, IReadOnlyList<Y
         : Body;
 }
 
-public sealed record YadgDocument(IReadOnlyList<YadgBlock> Blocks, IReadOnlyDictionary<string, YadgSection> References)
+public sealed record YadgDocument(
+    IReadOnlyList<YadgBlock> Blocks,
+    IReadOnlyDictionary<string, YadgSection> References,
+    IReadOnlyDictionary<string, YadgTable> Tables,
+    IReadOnlyDictionary<string, YadgFigure> Figures)
 {
     public YadgSection? FindSection(string id) => References.TryGetValue(id, out var section) ? section : null;
+    public YadgTable? FindTable(string id) => Tables.TryGetValue(id, out var table) ? table : null;
+    public YadgFigure? FindFigure(string id) => Figures.TryGetValue(id, out var figure) ? figure : null;
+    public object? FindObject(string id) => FindSection(id) ?? (object?)FindTable(id) ?? FindFigure(id);
 }
 
 public enum SectionSelection { Section, Content }
