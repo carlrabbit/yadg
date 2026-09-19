@@ -10,7 +10,7 @@ public sealed record YadgHeading(int Level, string Text, string? Id = null) : Ya
 public sealed record YadgParagraph(IReadOnlyList<YadgInline> Inlines) : YadgBlock;
 public sealed record YadgList(bool Ordered, IReadOnlyList<YadgListItem> Items) : YadgBlock;
 public sealed record YadgListItem(IReadOnlyList<YadgInline> Inlines);
-public sealed record YadgTable(string Id, IReadOnlyList<IReadOnlyList<YadgInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<YadgInline>>> Rows) : YadgBlock;
+public sealed record YadgTable(string Id, IReadOnlyList<IReadOnlyList<YadgInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<YadgInline>>> Rows, string? Caption = null) : YadgBlock;
 public sealed record YadgFigure(string Id, string AltText, string AssetPath, string SourcePath, ImageAsset? Asset = null) : YadgBlock;
 
 public sealed record ImageAsset(string FullPath, string Format, int WidthPixels, int HeightPixels);
@@ -21,6 +21,7 @@ public sealed record YadgEmphasis(IReadOnlyList<YadgInline> Inlines) : YadgInlin
 public sealed record YadgStrong(IReadOnlyList<YadgInline> Inlines) : YadgInline;
 public sealed record YadgHardBreak : YadgInline;
 public sealed record YadgSoftBreak : YadgInline;
+public sealed record YadgReference(string Id) : YadgInline;
 
 public sealed record YadgSection(string Id, YadgHeading Heading, IReadOnlyList<YadgBlock> Body)
 {
