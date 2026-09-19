@@ -9,9 +9,9 @@ namespace Yadg.Core;
 public static class MarkdownDocumentParser
 {
     private static readonly Regex StableId = new(@"^(?<text>.*?)\s*\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\s*$", RegexOptions.Compiled);
-    private static readonly Regex TableId = new(@"^\s*\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\s*$", RegexOptions.Compiled);
+    private static readonly Regex TableId = new("^\\s*\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\\\"(?<caption>[^\\\"]*)\\\")?\\}\\s*$", RegexOptions.Compiled);
     private static readonly Regex FigureLine = new("^\\s*!\\[(?<alt>.*?)\\]\\((?<path>[^\\s\\)]+)(?:\\s+\"(?<title>[^\"]*)\")?\\)\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)\\}\\s*$", RegexOptions.Compiled);
-    private sealed record RawTable(string? Id, string[] Header, string[][] Rows);
+    private sealed record RawTable(string? Id, string? Caption, string[] Header, string[][] Rows);
 
     public static ParseResult Parse(string markdown, string location = "<input>")
     {
@@ -92,7 +92,7 @@ public static class MarkdownDocumentParser
             var raw = rawTables[tableOrdinal++];
             var header = raw.Header.Select(cell => ParseCell(cell, diagnostics, location)).ToArray();
             var rows = raw.Rows.Select(row => (IReadOnlyList<IReadOnlyList<YadgInline>>)row.Select(cell => ParseCell(cell, diagnostics, location)).ToArray()).ToArray();
-            return new YadgTable(raw.Id!, header, rows);
+            return new YadgTable(raw.Id!, header, rows, raw.Caption);
         }
         if (block is ListBlock list)
         {
@@ -141,8 +141,8 @@ public static class MarkdownDocumentParser
             if (!IsPipeRow(lines[i]) || !IsSeparatorRow(lines[i + 1])) continue;
             var header = SplitPipeRow(lines[i]); var rows = new List<string[]>(); var j = i + 2;
             while (j < lines.Length && IsPipeRow(lines[j])) { rows.Add(SplitPipeRow(lines[j])); j++; }
-            string? id = null; if (j < lines.Length) { var match = TableId.Match(lines[j]); if (match.Success) id = match.Groups["id"].Value; }
-            tables.Add(new(id, header, rows.ToArray())); i = j;
+            string? id = null; string? caption = null; if (j < lines.Length) { var match = TableId.Match(lines[j]); if (match.Success) { id = match.Groups["id"].Value; caption = match.Groups["caption"].Success ? match.Groups["caption"].Value : null; } }
+            tables.Add(new(id, caption, header, rows.ToArray())); i = j;
         }
         return tables;
     }
@@ -160,8 +160,7 @@ public static class MarkdownDocumentParser
             switch (inline)
             {
                 case LiteralInline literal:
-                    var value = literal.Content.ToString(); var parts = value.Split('\n');
-                    for (var i = 0; i < parts.Length; i++) { if (parts[i].Length > 0) result.Add(new YadgText(parts[i])); if (i < parts.Length - 1) result.Add(new YadgSoftBreak()); }
+                    AppendLiteral(result, literal.Content.ToString());
                     break;
                 case LineBreakInline lineBreak: result.Add(lineBreak.IsHard ? new YadgHardBreak() : new YadgSoftBreak()); break;
                 case EmphasisInline emphasis:
@@ -169,7 +168,36 @@ public static class MarkdownDocumentParser
                 default: diagnostics.Add(new("YADG-MD-UNSUPPORTED", $"Unsupported Markdown inline '{inline.GetType().Name}'.", true, location)); break;
             }
         }
+        for (var i = 0; i < result.Count; i++)
+        {
+            if (result[i] is not YadgText) continue;
+            var combined = (YadgText)result[i]; var j = i + 1;
+            while (j < result.Count && result[j] is YadgText next) { combined = new YadgText(combined.Value + next.Value); result[i] = combined; result.RemoveAt(j); }
+            var pieces = new List<YadgInline>(); var cursor = 0;
+            foreach (Match match in Regex.Matches(combined.Value, @"\[@(?<id>[A-Za-z][A-Za-z0-9_-]*)\]"))
+            { if (match.Index > cursor) pieces.Add(new YadgText(combined.Value[cursor..match.Index])); pieces.Add(new YadgReference(match.Groups["id"].Value)); cursor = match.Index + match.Length; }
+            if (pieces.Count > 0) { if (cursor < combined.Value.Length) pieces.Add(new YadgText(combined.Value[cursor..])); result.RemoveAt(i); result.InsertRange(i, pieces); i += pieces.Count - 1; }
+        }
         return result;
+    }
+
+    private static void AppendLiteral(List<YadgInline> result, string value)
+    {
+        var reference = new Regex(@"\[@(?<id>[A-Za-z][A-Za-z0-9_-]*)\]", RegexOptions.Compiled);
+        var cursor = 0;
+        foreach (Match match in reference.Matches(value))
+        {
+            if (match.Index > cursor) AppendTextWithBreaks(result, value[cursor..match.Index]);
+            result.Add(new YadgReference(match.Groups["id"].Value));
+            cursor = match.Index + match.Length;
+        }
+        if (cursor < value.Length) AppendTextWithBreaks(result, value[cursor..]);
+    }
+
+    private static void AppendTextWithBreaks(List<YadgInline> result, string value)
+    {
+        var parts = value.Split('\n');
+        for (var i = 0; i < parts.Length; i++) { if (parts[i].Length > 0) result.Add(new YadgText(parts[i])); if (i < parts.Length - 1) result.Add(new YadgSoftBreak()); }
     }
 
     private static string InlineText(ContainerInline? inline) => inline is null ? string.Empty : string.Concat(inline.Select(i => i switch { LiteralInline literal => literal.Content.ToString(), EmphasisInline emphasis => InlineText(emphasis), LineBreakInline => " ", _ => string.Empty }));
