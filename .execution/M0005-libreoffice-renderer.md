@@ -1,6 +1,6 @@
 # M0005 — LibreOffice Renderer and Finalization
 
-Status: AWAITING HUMAN REVIEW.
+Status: Complete.
 
 ## Authority and implementation boundary
 
@@ -37,8 +37,8 @@ All implementation work and automated validation are complete. Tier 0–2 remain
 - Real Tier 3 focused test `Render_uses_real_libreoffice_to_refresh_fields_and_write_both_artifacts` — passed against `C:\Program Files\LibreOffice\program\soffice.com`.
 - Runtime evidence: LibreOffice `26.8.0.3`, Windows `10.0.26200.0`, isolated temporary UNO profile/session per render, finalized DOCX and same-session PDF under `artifacts/review/evidence/M0005/`.
 - `artifacts/review/evidence/M0005/review-manifest.md` records input/output provenance and SHA-256 hashes. `artifacts/review/session/M0005-render-final/page-1.png` was rendered with the documents verification workflow and visually inspected; the representative image is visibly present.
-- `./eng/review-check.ps1 --milestone M0005` intentionally remains blocked because `.review/pending/HR-M0005-01.md` is still pending. No approval or waiver was recorded by the implementation agent.
+- Human reviewer approval is recorded in `.review/records/HR-M0005-01.md`; `./eng/review-check.ps1 -Milestone M0005` passes with `HR-M0005-01: approved`. No waiver was recorded.
 
 ## Closure reconciliation
 
-The freshly reread M0005 milestone, Required Authority documents, pending review request, implementation, tests, review scripts, evidence manifest, README, and this ledger agree on the LibreOffice renderer boundary, artifact lifecycle, provenance requirements, and blocking human gate. The image defect was traced to malformed `w:p`/`w:drawing` authoring markup, malformed synthetic table structure, and an incorrect relationship-target normalization path; production and fixture authoring now wrap drawings in runs, the fixture is schema-valid before rendering, and the finalized artifact retains and visibly renders the image. Repository evidence covers CLI discovery/path precedence, preflight diagnostics, isolated local UNO rendering, field/index refresh, same-session DOCX/PDF production, cleanup bounds, and review tooling. The remaining completion action is external human review of `HR-M0005-01`; after a durable human decision is recorded, run `./eng/review-check.ps1 --milestone M0005`.
+The freshly reread M0005 milestone, Required Authority documents, review request and decision, implementation, tests, review scripts, evidence manifest, README, and this ledger agree on the LibreOffice renderer boundary, artifact lifecycle, provenance requirements, and review gate. The image defect was traced to malformed `w:p`/`w:drawing` authoring markup, malformed synthetic table structure, and an incorrect relationship-target normalization path; production and fixture authoring now wrap drawings in runs, the fixture is schema-valid before rendering, and the finalized artifact retains and visibly renders the image. Repository evidence covers CLI discovery/path precedence, preflight diagnostics, isolated local UNO rendering, field/index refresh, same-session DOCX/PDF production, cleanup bounds, and review tooling. Human approval is recorded and the required review check passes.
