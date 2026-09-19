@@ -12,6 +12,7 @@ namespace Yadg.Word;
 
 public enum PlacementKind { Section, Table, Figure }
 public sealed record TemplatePlacement(Paragraph Anchor, PlacementKind Kind, string Id, SectionReference? SectionReference = null);
+public sealed record PreparedTableBinding(Table Table, TableRow MarkerRow, TableRow PrototypeRow, string Id);
 public sealed record CaptionPrototype(string Id, Paragraph Paragraph, int SequenceFields, int CaptionPlaceholders);
 public sealed record TemplateMetadata(
     int Version,
@@ -25,7 +26,7 @@ public sealed record TemplateMetadata(
         ["unordered"] = "ListBullet", ["ordered"] = "ListNumber", ["generatedTable"] = "TableGrid", ["caption"] = "Caption" },
         new Dictionary<string, string>(StringComparer.Ordinal), new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal), Array.Empty<Paragraph>());
 }
-public sealed record TemplateAnalysis(IReadOnlyList<TemplatePlacement> Placements, IReadOnlyList<Diagnostic> Diagnostics, TemplateMetadata Metadata)
+public sealed record TemplateAnalysis(IReadOnlyList<TemplatePlacement> Placements, IReadOnlyList<Diagnostic> Diagnostics, TemplateMetadata Metadata, IReadOnlyList<PreparedTableBinding>? PreparedBindings = null)
 {
     public bool IsValid => Diagnostics.All(d => !d.IsError);
 }
@@ -39,6 +40,8 @@ public static class WordAuthoring
 {
     private static readonly Regex TagLike = new(@"\{\{[^{}]*\}\}", RegexOptions.Compiled);
     private static readonly Regex DirectTag = new(@"^\{\{(table|figure):([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
+    private static readonly Regex PreparedTag = new(@"^\{\{table-rows:([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
+    private static readonly Regex CellTag = new(@"\{\{cell\}\}", RegexOptions.Compiled);
 
     public static TemplateAnalysis Analyze(string templatePath, YadgDocument model, IReadOnlyDictionary<string, string>? values = null)
     {
@@ -50,18 +53,24 @@ public static class WordAuthoring
     {
         var diagnostics = new List<Diagnostic>();
         var placements = new List<TemplatePlacement>();
+        var prepared = new List<PreparedTableBinding>();
         var main = document.MainDocumentPart;
         if (main?.Document.Body is null) return new(placements, new[] { new Diagnostic("YADG-WORD-001", "DOCX has no main document body.", true, templatePath) }, TemplateMetadata.Defaults);
         var metadata = supplied ?? ReadMetadata(main.Document.Body, templatePath, diagnostics);
         var styles = main.StyleDefinitionsPart?.Styles;
         var numbering = main.NumberingDefinitionsPart?.Numbering;
-        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, values, "body");
-        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, values, "header");
-        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, diagnostics, values, "footer");
+        AnalyzePreparedTables(main.Document.Body, templatePath, model, prepared, diagnostics);
+        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "body");
+        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "header");
+        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "footer");
         foreach (var duplicate in placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).GroupBy(p => (p.Kind, p.Id)).Where(g => g.Count() > 1))
             diagnostics.Add(new("YADG-PLACEMENT-002", $"Structured object '{duplicate.Key.Id}' has more than one direct placement in this template.", true, templatePath));
-        ValidateReferences(document, templatePath, model, metadata, placements, diagnostics);
-        return new(placements, diagnostics, metadata);
+        foreach (var duplicate in prepared.GroupBy(p => p.Id).Where(g => g.Count() > 1))
+            diagnostics.Add(new("YADG-PLACEMENT-002", $"Structured object '{duplicate.Key}' has more than one prepared placement in this template.", true, templatePath));
+        foreach (var conflict in prepared.Select(p => p.Id).Intersect(placements.Where(p => p.Kind == PlacementKind.Table).Select(p => p.Id), StringComparer.Ordinal))
+            diagnostics.Add(new("YADG-PLACEMENT-003", $"Table '{conflict}' cannot have both prepared and generated direct placement.", true, templatePath));
+        ValidateReferences(document, templatePath, model, metadata, placements, prepared, diagnostics);
+        return new(placements, diagnostics, metadata, prepared);
     }
 
     public static void Author(string templatePath, string outputPath, YadgDocument model, IReadOnlyDictionary<string, string>? values = null)
@@ -81,7 +90,15 @@ public static class WordAuthoring
         var analysisOutput = AnalyzeOpen(document, outputPath, model, values, metadata);
         if (!analysisOutput.IsValid) throw new WordAuthoringException(analysisOutput.Diagnostics.First(d => d.IsError));
         var direct = analysisOutput.Placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).Select(p => (p.Kind, p.Id)).ToHashSet();
+        foreach (var binding in analysisOutput.PreparedBindings ?? Array.Empty<PreparedTableBinding>()) direct.Add((PlacementKind.Table, binding.Id));
         var targetMap = BuildTargets(model, analysisOutput, document, outputPath);
+        foreach (var binding in analysisOutput.PreparedBindings ?? Array.Empty<PreparedTableBinding>())
+        {
+            var table = model.FindTable(binding.Id)!;
+            PopulatePreparedTable(binding, table, targetMap, metadata);
+            if (!string.IsNullOrWhiteSpace(table.Caption))
+                binding.Table.InsertAfterSelf(CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targetMap));
+        }
         foreach (var placement in analysisOutput.Placements.Reverse())
         {
             var blocks = placement.Kind == PlacementKind.Section
@@ -101,11 +118,12 @@ public static class WordAuthoring
         document.MainDocumentPart!.Document.Save();
     }
 
-    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, List<TemplatePlacement> placements, List<Diagnostic> diagnostics, IReadOnlyDictionary<string, string> values, string location)
+    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, List<TemplatePlacement> placements, List<PreparedTableBinding> prepared, List<Diagnostic> diagnostics, IReadOnlyDictionary<string, string> values, string location)
     {
         foreach (var paragraph in paragraphs)
         {
             if (metadata.ControlParagraphs.Contains(paragraph)) continue;
+            if (prepared.Any(p => paragraph.Ancestors<TableRow>().Contains(p.MarkerRow) || paragraph.Ancestors<TableRow>().Contains(p.PrototypeRow))) continue;
             var logical = string.Concat(paragraph.Descendants<Text>().Select(t => t.Text));
             var matches = TagLike.Matches(logical).Cast<Match>().ToArray();
             if (matches.Length == 0) continue;
@@ -153,6 +171,56 @@ public static class WordAuthoring
                 }
                 else diagnostics.Add(new("YADG-TAG-001", $"Malformed or unsupported tag '{match.Value}'.", true, templatePath));
             }
+        }
+    }
+
+    private static void AnalyzePreparedTables(Body body, string location, YadgDocument model, List<PreparedTableBinding> bindings, List<Diagnostic> diagnostics)
+    {
+        foreach (var table in body.Descendants<Table>().Where(t => t.Ancestors<Table>().FirstOrDefault() is null))
+        {
+            var rows = table.Elements<TableRow>().ToArray();
+            for (var i = 0; i < rows.Length; i++)
+            {
+                var markerText = LogicalText(rows[i]);
+                var match = PreparedTag.Match(markerText.Trim());
+                if (!match.Success)
+                {
+                    if (TagLike.Matches(markerText).Cast<Match>().Any(m => m.Value.StartsWith("{{table-rows:", StringComparison.Ordinal)))
+                        diagnostics.Add(new("YADG-PREPARED-001", "Prepared marker row must contain only one table-rows marker and whitespace.", true, location));
+                    continue;
+                }
+                if (!string.Equals(markerText.Trim(), match.Value, StringComparison.Ordinal) || rows[i].Elements<TableCell>().SelectMany(c => c.Descendants<Text>()).Any(t => t.Text?.Contains("{{table-rows:", StringComparison.Ordinal) == true && !markerText.Trim().Equals(match.Value, StringComparison.Ordinal)))
+                    diagnostics.Add(new("YADG-PREPARED-001", "Prepared marker row must contain only one table-rows marker and whitespace.", true, location));
+                var id = match.Groups[1].Value;
+                var semantic = model.FindTable(id);
+                if (semantic is null) { diagnostics.Add(new("YADG-REF-003", $"Prepared marker '{match.Value}' does not resolve to a table.", true, location)); continue; }
+                if (i + 1 >= rows.Length) { diagnostics.Add(new("YADG-PREPARED-002", $"Prepared table '{id}' has no prototype row immediately after its marker.", true, location)); continue; }
+                var prototype = rows[i + 1];
+                ValidatePrototype(prototype, semantic, id, location, diagnostics);
+                bindings.Add(new(table, rows[i], prototype, id));
+            }
+        }
+    }
+
+    private static void ValidatePrototype(TableRow prototype, YadgTable semantic, string id, string location, List<Diagnostic> diagnostics)
+    {
+        var cells = prototype.Elements<TableCell>().ToArray();
+        if (cells.Length != semantic.Header.Count)
+            diagnostics.Add(new("YADG-PREPARED-003", $"Prepared table '{id}' prototype has {cells.Length} cells but the semantic table has {semantic.Header.Count} columns.", true, location));
+        if (prototype.Descendants<GridSpan>().Any(g => (g.Val?.Value ?? 1) > 1)) diagnostics.Add(new("YADG-PREPARED-004", $"Prepared table '{id}' prototype cannot contain horizontal grid spans.", true, location));
+        if (prototype.Descendants<VerticalMerge>().Any()) diagnostics.Add(new("YADG-PREPARED-005", $"Prepared table '{id}' prototype cannot contain vertical merges.", true, location));
+        foreach (var cell in cells)
+        {
+            var paragraphCount = cell.Elements<Paragraph>().Count();
+            if (paragraphCount != 1 || cell.Elements<OpenXmlElement>().Any(e => e is not Paragraph && e is not TableCellProperties))
+                diagnostics.Add(new("YADG-PREPARED-006", $"Each prepared table '{id}' prototype cell must contain exactly one ordinary paragraph.", true, location));
+            if (cell.Descendants<Table>().Any() || cell.Descendants<Drawing>().Any() || cell.Descendants<SdtElement>().Any() || cell.Descendants<BookmarkStart>().Any() || cell.Descendants<BookmarkEnd>().Any() || cell.Descendants<SimpleField>().Any() || cell.Descendants<FieldChar>().Any() || cell.Descendants<FieldCode>().Any())
+                diagnostics.Add(new("YADG-PREPARED-007", $"Prepared table '{id}' prototype contains a forbidden nested structure, field, bookmark, drawing, or content control.", true, location));
+            var text = LogicalText(cell);
+            if (CellTag.Matches(text).Count != 1)
+                diagnostics.Add(new("YADG-PREPARED-008", $"Each prepared table '{id}' prototype cell must contain exactly one logical {{cell}} placeholder.", true, location));
+            foreach (var tag in TagLike.Matches(text).Cast<Match>())
+                if (!string.Equals(tag.Value, "{{cell}}", StringComparison.Ordinal)) diagnostics.Add(new("YADG-PREPARED-009", $"Prepared table '{id}' prototype contains forbidden YADG tag '{tag.Value}'.", true, location));
         }
     }
 
@@ -205,6 +273,100 @@ public static class WordAuthoring
 
     private static bool HasStyle(Styles? styles, string id) => styles?.Descendants<Style>().Any(s => s.StyleId?.Value == id) == true;
     private static string StyleFor(TemplateMetadata metadata, string role, string fallback) => metadata.Styles.TryGetValue(role, out var value) ? value : fallback;
+
+    private static void PopulatePreparedTable(PreparedTableBinding binding, YadgTable semantic, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata)
+    {
+        var prototype = binding.PrototypeRow;
+        foreach (var sourceRow in semantic.Rows)
+        {
+            var clone = (TableRow)prototype.CloneNode(true);
+            var cells = clone.Elements<TableCell>().ToArray();
+            for (var i = 0; i < cells.Length && i < sourceRow.Count; i++)
+            {
+                var paragraph = cells[i].Elements<Paragraph>().Single();
+                PopulatePreparedCell(paragraph, sourceRow[i], targets);
+            }
+            prototype.InsertBeforeSelf(clone);
+        }
+        binding.MarkerRow.Remove();
+        prototype.Remove();
+    }
+
+    private static void PopulatePreparedCell(Paragraph prototype, IReadOnlyList<YadgInline> source, IReadOnlyDictionary<string, string> targets)
+    {
+        var combined = LogicalText(prototype);
+        var start = combined.IndexOf("{{cell}}", StringComparison.Ordinal);
+        if (start < 0) return;
+        var end = start + "{{cell}}".Length;
+        var runs = prototype.Elements<Run>().ToArray();
+        Run? baseRun = null;
+        var runOffset = 0;
+        foreach (var run in runs)
+        {
+            var runText = string.Concat(run.Descendants<Text>().Select(t => t.Text));
+            if (start >= runOffset && start < runOffset + runText.Length) { baseRun = run; break; }
+            runOffset += runText.Length;
+        }
+        var result = new Paragraph();
+        if (prototype.ParagraphProperties is not null) result.Append(prototype.ParagraphProperties.CloneNode(true));
+        var generated = CreatePreparedRuns(source, targets, baseRun?.RunProperties);
+        var offset = 0;
+        var inserted = false;
+        foreach (var child in prototype.Elements())
+        {
+            if (child is not Run run)
+            {
+                result.Append(child.CloneNode(true));
+                continue;
+            }
+            var text = string.Concat(run.Descendants<Text>().Select(t => t.Text));
+            if (text.Length == 0) { result.Append(run.CloneNode(true)); continue; }
+            var rangeEnd = offset + text.Length;
+            if (rangeEnd <= start || offset >= end)
+            {
+                result.Append(run.CloneNode(true));
+            }
+            else
+            {
+                var before = Math.Max(0, Math.Min(text.Length, start - offset));
+                var afterStart = Math.Max(0, Math.Min(text.Length, end - offset));
+                if (before > 0) result.Append(TextRun(run, text[..before]));
+                if (!inserted) { foreach (var generatedRun in generated) result.Append(generatedRun); inserted = true; }
+                if (afterStart < text.Length) result.Append(TextRun(run, text[afterStart..]));
+            }
+            offset = rangeEnd;
+        }
+        prototype.RemoveAllChildren();
+        prototype.Append(result.Elements().Select(e => e.CloneNode(true)));
+    }
+
+    private static Run TextRun(Run source, string value)
+    {
+        var result = new Run();
+        if (source.RunProperties is not null) result.Append(source.RunProperties.CloneNode(true));
+        result.Append(new Text(value) { Space = SpaceProcessingModeValues.Preserve });
+        return result;
+    }
+
+    private static IReadOnlyList<Run> CreatePreparedRuns(IReadOnlyList<YadgInline> source, IReadOnlyDictionary<string, string> targets, RunProperties? baseProperties)
+    {
+        var temporary = new Paragraph();
+        AppendInlines(temporary, source, targets);
+        var result = new List<Run>();
+        foreach (var run in temporary.Elements<Run>())
+        {
+            var clone = (Run)run.CloneNode(true);
+            if (baseProperties is not null)
+            {
+                var combined = (RunProperties)baseProperties.CloneNode(true);
+                if (clone.RunProperties?.Bold is not null && combined.Bold is null) combined.Append(clone.RunProperties.Bold.CloneNode(true));
+                if (clone.RunProperties?.Italic is not null && combined.Italic is null) combined.Append(clone.RunProperties.Italic.CloneNode(true));
+                clone.RunProperties = combined;
+            }
+            result.Add(clone);
+        }
+        return result;
+    }
 
     private static IEnumerable<OpenXmlElement> CreateElements(YadgBlock block, Paragraph anchor, WordprocessingDocument document, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets)
     {
@@ -413,11 +575,12 @@ public static class WordAuthoring
         firstRun.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe }); lastRun.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId });
     }
 
-    private static void ValidateReferences(WordprocessingDocument document, string location, YadgDocument model, TemplateMetadata metadata, IReadOnlyList<TemplatePlacement> placements, List<Diagnostic> diagnostics)
+    private static void ValidateReferences(WordprocessingDocument document, string location, YadgDocument model, TemplateMetadata metadata, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, List<Diagnostic> diagnostics)
     {
         var styles = document.MainDocumentPart?.StyleDefinitionsPart?.Styles; var numbering = document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering;
-        var targets = BuildTargets(model, placements, metadata, styles, numbering, diagnostics, location);
-        foreach (var reference in placements.SelectMany(p => p.Kind == PlacementKind.Section ? MarkdownDocumentParser.Resolve(model, p.SectionReference!, location).Blocks ?? Array.Empty<YadgBlock>() : p.Kind == PlacementKind.Table ? new YadgBlock[] { model.FindTable(p.Id)! } : new YadgBlock[] { model.FindFigure(p.Id)! }).SelectMany(ReferencesIn))
+        var targets = BuildTargets(model, placements, prepared, metadata, styles, numbering, diagnostics, location);
+        var blocks = placements.SelectMany(p => p.Kind == PlacementKind.Section ? MarkdownDocumentParser.Resolve(model, p.SectionReference!, location).Blocks ?? Array.Empty<YadgBlock>() : p.Kind == PlacementKind.Table ? new YadgBlock[] { model.FindTable(p.Id)! } : new YadgBlock[] { model.FindFigure(p.Id)! }).Concat(prepared.Select(p => (YadgBlock)model.FindTable(p.Id)!));
+        foreach (var reference in blocks.SelectMany(ReferencesIn))
         {
             if (model.FindObject(reference.Id) is null) { diagnostics.Add(new("YADG-REF-004", $"Unresolved semantic reference '[@{reference.Id}]'.", true, location)); continue; }
             if (!targets.ContainsKey(reference.Id)) diagnostics.Add(new("YADG-REF-005", $"Semantic reference '[@{reference.Id}]' has no uniquely rendered numbered target in this template.", true, location));
@@ -426,14 +589,15 @@ public static class WordAuthoring
 
     private static IReadOnlyDictionary<string, string> BuildTargets(YadgDocument model, TemplateAnalysis analysis, WordprocessingDocument document, string location)
     {
-        var diagnostics = new List<Diagnostic>(); var result = BuildTargets(model, analysis.Placements, analysis.Metadata, document.MainDocumentPart?.StyleDefinitionsPart?.Styles, document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering, diagnostics, location);
+        var diagnostics = new List<Diagnostic>(); var result = BuildTargets(model, analysis.Placements, analysis.PreparedBindings ?? Array.Empty<PreparedTableBinding>(), analysis.Metadata, document.MainDocumentPart?.StyleDefinitionsPart?.Styles, document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering, diagnostics, location);
         if (diagnostics.Any(d => d.IsError)) throw new WordAuthoringException(diagnostics.First(d => d.IsError));
         return result;
     }
 
-    private static Dictionary<string, string> BuildTargets(YadgDocument model, IReadOnlyList<TemplatePlacement> placements, TemplateMetadata metadata, Styles? styles, Numbering? numbering, List<Diagnostic> diagnostics, string location)
+    private static Dictionary<string, string> BuildTargets(YadgDocument model, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, TemplateMetadata metadata, Styles? styles, Numbering? numbering, List<Diagnostic> diagnostics, string location)
     {
         var direct = placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).Select(p => (p.Kind, p.Id)).ToHashSet();
+        foreach (var binding in prepared) direct.Add((PlacementKind.Table, binding.Id));
         var counts = new Dictionary<string, int>(StringComparer.Ordinal); var sections = new HashSet<string>(StringComparer.Ordinal);
         foreach (var placement in placements)
         {
@@ -445,7 +609,7 @@ public static class WordAuthoring
                 if (block is YadgFigure figure && (!direct.Contains((PlacementKind.Figure, figure.Id)) || placement.Kind == PlacementKind.Figure)) counts[figure.Id] = counts.GetValueOrDefault(figure.Id) + 1;
             }
         }
-        foreach (var p in placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure)) counts[p.Id] = counts.GetValueOrDefault(p.Id) + (direct.Count(x => x == (p.Kind, p.Id)) == 1 ? 0 : 0);
+        foreach (var binding in prepared) counts[binding.Id] = counts.GetValueOrDefault(binding.Id) + 1;
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (id, count) in counts)
         {

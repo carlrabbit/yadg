@@ -1,102 +1,47 @@
 # Architecture
 
-## Architectural objective
+## Objective
 
-YADG separates content semantics, Word package transformation, template-local Word conventions, and document rendering so each dependency is owned by the layer that requires it.
+YADG separates workspace/content semantics, Word package transformation, template-owned presentation/prototypes, and rendering.
 
-## Durable components
+## `authoring-core`
 
-### `authoring-core`
+Owns workspace discovery/values, Markdown parsing, OOXML-free semantic sections/tables/figures, stable IDs/references, and Office-independent validation.
 
-Responsibilities:
+A semantic table contains header schema, body rows, optional caption, and stable identity independent of Word.
 
-- discover/parse Markdown;
-- build the OOXML-free semantic model;
-- resolve stable IDs and semantic cross-references;
-- perform content/workspace validation independent of Word rendering.
+## `word-authoring`
 
-Must not depend on Office, Office Interop, Windows-only APIs, or OOXML element types.
+Owns template tags/front matter/prototypes, value substitution, generated tables/figures, prepared-table analysis, per-template placement planning, row cloning/population, styles, captions, bookmarks, and fields.
 
-### `word-authoring`
+OOXML row/cell types do not leak into core semantic models.
 
-Responsibilities:
-
-- inspect prepared DOCX templates;
-- discover visible YADG authoring tags and template-control regions;
-- parse template-local front matter;
-- map semantic roles to existing Word styles/prototypes;
-- validate and clone template-owned prototypes;
-- create Word-native bookmarks and field structures required by semantic references;
-- preserve unrelated template structure/styles/fields;
-- produce structurally complete DOCX artifacts.
-
-May use Open XML SDK; must not require Word.
-
-### `cli`
-
-Owns deterministic commands, workspace selection, orchestration, exit codes, and diagnostics. Business/document semantics do not belong in argument plumbing.
-
-### `renderer`
-
-Owns the engine-specific finalization boundary. M0005 provides an isolated LibreOffice/UNO renderer that opens authored DOCX packages, refreshes fields and indexes, saves the finalized DOCX, and exports a matching PDF. It reports the exact executable, version, session profile, and output provenance. The renderer does not change semantic Markdown or authoring-core types.
-
-Future rendering engines may be added behind this boundary, but field and pagination equivalence must be validated per engine. Microsoft Word and Office Interop are not dependencies of the M0005 authoring or validation graph.
-
-## Artifact pipeline
+## Prepared-table adapter
 
 ```text
-Markdown
-  -> semantic model + semantic references
-  -> Office-independent validation
-
-DOCX template
-  + authoring tags
-  + optional visible front matter
-  + optional Word-native prototypes
-  -> OOXML authoring
-  -> bookmarks + SEQ/REF fields
-  -> authored DOCX
-     (field results not authoritative)
-  -> renderer/finalizer
-  -> finalized DOCX / later PDF
+semantic table -> generated Word table
 ```
 
-## Template control region
+or:
 
-Template metadata remains visible ordinary Word content.
+```text
+semantic table
++ existing Word table
++ marker row
++ prototype row
+-> populated existing Word table
+```
 
-When present, the removable initial control region contains front matter and prototypes. It is authoring metadata, not output content.
+Prepared binding participates in the same per-template physical placement plan as direct `{{table:id}}`.
 
-Exact syntax is in `docs/specs/WORD-REFERENCES.md`.
+## Renderer
 
-## Prototype ownership
+The renderer owns field/index/layout finalization only. Prepared-row population is not deferred to LibreOffice or Word.
 
-A prototype is a template-owned Word structure that YADG clones/adapts.
+## Preservation
 
-For M0004 caption prototypes own label text, `SEQ` field identifier/switches, punctuation, style, and formatting. YADG owns semantic substitution and reference-target adaptation only.
+Prepared-table authoring clones template row/cell/paragraph/run presentation structures and replaces only control placeholders with semantic source-cell content. Table widths, borders, header presentation, style, and unrelated rows remain template authority.
 
-## Identity boundary
+## Runtime
 
-Semantic stable IDs and Word bookmark names are separate namespaces.
-
-Stable IDs belong to the semantic model. Generated bookmark names belong to the authored artifact and are implementation mechanics.
-
-## Rendering boundary
-
-OOXML authoring may create structurally valid fields but does not calculate Word field results.
-
-Field evaluation, pagination, and TOC/list refresh belong to renderer/finalizer validation.
-
-## Style ownership
-
-Existing template styles remain authoritative.
-
-M0004 front matter may map semantic roles to alternative existing style IDs; it does not define formatting properties.
-
-## Alternative renderers
-
-Alternative renderers remain possible later, but semantic equivalence of field evaluation is not assumed without validation.
-
-## Security and path handling
-
-Existing workspace path/link constraints remain in force. M0004 introduces no network/include boundary.
+M0007 introduces no new external runtime, filesystem, credential, or network boundary.
