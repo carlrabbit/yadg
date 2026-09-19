@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Validation;
 using DocumentFormat.OpenXml.Wordprocessing;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using A = DocumentFormat.OpenXml.Drawing;
@@ -19,6 +20,11 @@ public sealed class M0005IntegrationTests
         using var workspace = RenderWorkspace.Create();
         var evidenceRoot = Environment.GetEnvironmentVariable("YADG_REVIEW_EVIDENCE_ROOT");
         if (!string.IsNullOrWhiteSpace(evidenceRoot)) { Directory.CreateDirectory(evidenceRoot); File.Copy(Path.Combine(workspace.Root, "YadgPreWords", "review.docx"), Path.Combine(evidenceRoot, "review-input.docx"), true); }
+        using (var authored = WordprocessingDocument.Open(Path.Combine(workspace.Root, "YadgPreWords", "review.docx"), false))
+        {
+            var authoredErrors = new OpenXmlValidator().Validate(authored).ToArray();
+            Assert.True(authoredErrors.Length == 0, string.Join(Environment.NewLine, authoredErrors.Select(error => $"{error.Description} at {error.Path?.XPath}")));
+        }
         var result = RunCli(workspace.Root, "render", "--renderer-path", lo);
         Assert.True(result.ExitCode == 0, result.Output);
         var finalized = Path.Combine(workspace.Root, "YadgWords", "review.docx"); var pdf = Path.Combine(workspace.Root, "YadgPdfs", "review.pdf");
@@ -32,6 +38,13 @@ public sealed class M0005IntegrationTests
         Assert.Contains("Template-owned list item", texts);
         Assert.NotEmpty(body.Descendants<Table>());
         Assert.Contains(body.Descendants<FieldCode>(), field => field.Text?.Contains("TOC", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.NotEmpty(document.MainDocumentPart.ImageParts);
+        Assert.NotEmpty(body.Descendants<Drawing>());
+        foreach (var blip in body.Descendants<A.Blip>())
+        {
+            Assert.NotNull(blip.Embed);
+            Assert.IsAssignableFrom<ImagePart>(document.MainDocumentPart.GetPartById(blip.Embed!.Value!));
+        }
         if (!string.IsNullOrWhiteSpace(evidenceRoot))
         {
             Directory.CreateDirectory(evidenceRoot); File.Copy(finalized, Path.Combine(evidenceRoot, "libreoffice-review.docx"), true); File.Copy(pdf, Path.Combine(evidenceRoot, "libreoffice-review.pdf"), true);
@@ -90,10 +103,9 @@ public sealed class M0005IntegrationTests
             new Paragraph(new Run(new Text("Table ")), new BookmarkStart { Id = "13", Name = "yadg_table" }, new Run(new FieldChar { FieldCharType = FieldCharValues.Begin }), new Run(new FieldCode(" SEQ Table \\* ARABIC ")), new Run(new FieldChar { FieldCharType = FieldCharValues.Separate }), new Run(new Text("0")), new Run(new FieldChar { FieldCharType = FieldCharValues.End }), new BookmarkEnd { Id = "13" }, new Run(new Text(": Interfaces"))),
             new Paragraph(new Run(new Text("Contents")), new Run(new FieldChar { FieldCharType = FieldCharValues.Begin }), new Run(new FieldCode(" TOC \\o \"1-3\" ")), new Run(new FieldChar { FieldCharType = FieldCharValues.Separate }), new Run(new Text("0")), new Run(new FieldChar { FieldCharType = FieldCharValues.End })),
             new SectionProperties(new PageSize { Width = 12240, Height = 15840 }, new PageMargin { Top = 1440, Bottom = 1440, Left = 1440, Right = 1440 }));
-         main.Document = new Document(body); main.Document.Save(); var figureParagraph = main.Document.Body!.Elements<Paragraph>().ElementAt(3);
-        var image = main.AddImagePart(ImagePartType.Jpeg); using (var stream = new MemoryStream(Convert.FromBase64String("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCABGAHgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5/ooor9bPyQKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//2Q=="))) image.FeedData(stream); var rel = main.GetIdOfPart(image);
-        figureParagraph.Append(new Run(new Text("Figure asset: "))); figureParagraph.Append(new DocumentFormat.OpenXml.Wordprocessing.Drawing(new DW.Inline(new DW.Extent { Cx = 3657600, Cy = 1371600 }, new DW.DocProperties { Id = 2U, Name = "review-figure" }, new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }), new A.Graphic(new A.GraphicData(new PIC.Picture(new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = "review.jpg" }, new PIC.NonVisualPictureDrawingProperties()), new PIC.BlipFill(new A.Blip { Embed = rel }, new A.Stretch(new A.FillRectangle())), new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = 3657600, Cy = 1371600 }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }))) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" }))));
-        var validImage = main.AddImagePart(ImagePartType.Png); using (var validStream = new MemoryStream(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAHgAAABGCAIAAACIdsdYAAAAtklEQVR4nO3SQQ0AIAADMUAJwpCEaFRwr9bAksvmPnfw3wo2ELrj0RGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCj8YDMT0BlKR9idUAAAAASUVORK5CYII="))) validImage.FeedData(validStream); figureParagraph.Descendants<A.Blip>().Single().Embed = main.GetIdOfPart(validImage);
+         main.Document = new Document(body); main.Document.Save(); var figureParagraph = main.Document.Body!.Elements<Paragraph>().ElementAt(3); main.Document.Body.Elements<Table>().Single().InsertAt(new TableGrid(new GridColumn(), new GridColumn()), 1);
+        var image = main.AddImagePart(ImagePartType.Png); using (var stream = new MemoryStream(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAHgAAABGCAIAAACIdsdYAAAAtklEQVR4nO3SQQ0AIAADMUAJwpCEaFRwr9bAksvmPnfw3wo2ELrj0RGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCj8YDMT0BlKR9idUAAAAASUVORK5CYII="))) image.FeedData(stream); var rel = main.GetIdOfPart(image);
+        figureParagraph.Append(new Run(new Text("Figure asset: "))); figureParagraph.Append(new Run(new DocumentFormat.OpenXml.Wordprocessing.Drawing(new DW.Inline(new DW.Extent { Cx = 3657600, Cy = 1371600 }, new DW.DocProperties { Id = 2U, Name = "review-figure" }, new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }), new A.Graphic(new A.GraphicData(new PIC.Picture(new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = "review.png" }, new PIC.NonVisualPictureDrawingProperties()), new PIC.BlipFill(new A.Blip { Embed = rel }, new A.Stretch(new A.FillRectangle())), new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = 3657600, Cy = 1371600 }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }))) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })))));
         main.Document.Save();
         package.Dispose(); NormalizeFixturePackage(path);
     }
@@ -101,28 +113,23 @@ public sealed class M0005IntegrationTests
     private static void NormalizeFixturePackage(string path)
     {
         using var archive = ZipFile.Open(path, ZipArchiveMode.Update);
-        var source = archive.GetEntry("media/image.jpg")!;
-        var target = archive.CreateEntry("word/media/image.jpg", CompressionLevel.Optimal);
+        var source = archive.GetEntry("media/image.png")!;
+        var target = archive.CreateEntry("word/media/image.png", CompressionLevel.Optimal);
         using (var input = source.Open()) using (var output = target.Open()) input.CopyTo(output);
         var relationships = archive.GetEntry("word/_rels/document.xml.rels")!;
         string xml; using (var input = relationships.Open()) using (var buffer = new MemoryStream()) { input.CopyTo(buffer); xml = System.Text.Encoding.UTF8.GetString(buffer.ToArray()); }
-        xml = System.Text.RegularExpressions.Regex.Replace(xml, "<Relationship[^>]*Target=\"/media/image.jpg\"[^>]*/>", string.Empty, System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-        relationships.Delete(); var replacement = archive.CreateEntry("word/_rels/document.xml.rels"); using (var writer = new StreamWriter(replacement.Open())) writer.Write(xml.Replace("/media/image.jpg", "media/image.jpg", StringComparison.Ordinal));
+        relationships.Delete(); var replacement = archive.CreateEntry("word/_rels/document.xml.rels"); using (var writer = new StreamWriter(replacement.Open())) writer.Write(xml.Replace("/media/image.png", "media/image.png", StringComparison.Ordinal));
         var contentTypes = archive.GetEntry("[Content_Types].xml")!;
         string types; using (var input = contentTypes.Open()) using (var buffer = new MemoryStream()) { input.CopyTo(buffer); types = System.Text.Encoding.UTF8.GetString(buffer.ToArray()); }
         types = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"xml\" ContentType=\"application/xml\" /><Default Extension=\"jpg\" ContentType=\"image/jpeg\" /><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\" /><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\" /><Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\" /><Override PartName=\"/word/numbering.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml\" /></Types>";
         types = types.Replace("<Default Extension=\"jpg\"", "<Default Extension=\"png\" ContentType=\"image/png\" /><Default Extension=\"jpg\"", StringComparison.Ordinal);
-        contentTypes.Delete(); var typesReplacement = archive.CreateEntry("[Content_Types].xml"); using (var writer = new StreamWriter(typesReplacement.Open())) writer.Write(types);
+        contentTypes.Delete(); var typeReplacement = archive.CreateEntry("[Content_Types].xml"); using (var writer = new StreamWriter(typeReplacement.Open())) writer.Write(types);
         var documentXml = archive.GetEntry("word/document.xml")!;
         string document; using (var input = documentXml.Open()) using (var buffer = new MemoryStream()) { input.CopyTo(buffer); document = System.Text.Encoding.UTF8.GetString(buffer.ToArray()); }
         documentXml.Delete(); var documentReplacement = archive.CreateEntry("word/document.xml"); using (var writer = new StreamWriter(documentReplacement.Open())) writer.Write(document.Replace("<w:document ", "<w:document xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\" ", StringComparison.Ordinal));
         var packageRelationships = archive.GetEntry("_rels/.rels")!;
         string packageXml; using (var input = packageRelationships.Open()) using (var buffer = new MemoryStream()) { input.CopyTo(buffer); packageXml = System.Text.Encoding.UTF8.GetString(buffer.ToArray()); }
         packageRelationships.Delete(); var packageReplacement = archive.CreateEntry("_rels/.rels"); using (var writer = new StreamWriter(packageReplacement.Open())) writer.Write(packageXml.Replace("Target=\"/word/document.xml\"", "Target=\"word/document.xml\"", StringComparison.Ordinal));
-        var png = archive.Entries.Single(entry => entry.FullName.StartsWith("media/", StringComparison.OrdinalIgnoreCase) && entry.FullName.EndsWith(".png", StringComparison.OrdinalIgnoreCase));
-        var pngTarget = archive.CreateEntry("word/" + png.FullName, CompressionLevel.Optimal); using (var input = png.Open()) using (var output = pngTarget.Open()) input.CopyTo(output);
-        var relsForPng = archive.GetEntry("word/_rels/document.xml.rels")!; string relsXml; using (var input = relsForPng.Open()) using (var buffer = new MemoryStream()) { input.CopyTo(buffer); relsXml = System.Text.Encoding.UTF8.GetString(buffer.ToArray()); }
-        relsForPng.Delete(); var relsReplacement = archive.CreateEntry("word/_rels/document.xml.rels"); using (var writer = new StreamWriter(relsReplacement.Open())) writer.Write(relsXml.Replace("/" + png.FullName, png.FullName, StringComparison.Ordinal));
-        source.Delete(); png.Delete();
+        source.Delete();
     }
 }

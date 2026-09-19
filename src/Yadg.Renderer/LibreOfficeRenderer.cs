@@ -128,8 +128,11 @@ public sealed class LibreOfficeRenderer
             {
                 string xml; using (var read = relationship.Open()) using (var buffer = new MemoryStream()) { read.CopyTo(buffer); xml = System.Text.Encoding.UTF8.GetString(buffer.ToArray()); }
                 // A document relationship is resolved relative to /word/, so use the
-                // canonical relative target after moving the package part.
-                var updated = xml.Replace("/" + source.FullName, "/" + targetName, StringComparison.Ordinal);
+                // canonical relative target after moving the package part. Content
+                // types use package-root part names and must not receive this rewrite.
+                var updated = relationship.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)
+                    ? xml.Replace("/" + source.FullName, targetName["word/".Length..], StringComparison.Ordinal)
+                    : xml;
                 if (!string.Equals(xml, updated, StringComparison.Ordinal)) replacements.Add((relationship, updated));
             }
             source.Delete();
