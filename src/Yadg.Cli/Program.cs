@@ -50,7 +50,7 @@ public static class Program
             try
             {
                 foreach (var template in loaded.Templates)
-                    WordAuthoring.Author(template, Path.Combine(output, Path.GetFileName(template)), loaded.Document);
+                    WordAuthoring.Author(template, Path.Combine(output, Path.GetFileName(template)), loaded.Document, loaded.Values.Values);
                 Console.WriteLine($"build: wrote {loaded.Templates.Count} template output(s) to {output}");
             }
             catch (Exception ex) { Console.Error.WriteLine(new Diagnostic("YADG-BUILD-001", $"Unable to author workspace output: {ex.Message}", true, output)); fail(); }
@@ -81,7 +81,7 @@ public static class Program
         var diagnostics = workspace.Diagnostics.ToList();
         foreach (var template in workspace.Templates)
         {
-            try { diagnostics.AddRange(WordAuthoring.Analyze(template, workspace.Document).Diagnostics); }
+            try { diagnostics.AddRange(WordAuthoring.Analyze(template, workspace.Document, workspace.Values.Values).Diagnostics); }
             catch (Exception ex) { diagnostics.Add(new("YADG-WORD-OPEN", $"Cannot inspect DOCX template: {ex.Message}", true, template)); }
         }
         return diagnostics;

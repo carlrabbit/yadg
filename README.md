@@ -2,6 +2,24 @@
 
 YADG is a template-first document authoring tool. It validates and authors a single Office-independent workspace from Markdown sources and prepared DOCX templates.
 
+## Workspace values
+
+`YADG.md` may begin with schema-versioned YAML front matter. Its body remains human-facing workspace notes and is not document source. M0006 supports case-sensitive, single-line string values:
+
+```yaml
+---
+yadg:
+  version: 1
+values:
+  document-version: "2.3"
+  reporting-date: "2026-09-30"
+  owner: "Liquidity Risk"
+---
+Workspace notes go here.
+```
+
+Prepared DOCX templates use values inline with `{{value:document-version}}`. Values can be mixed with ordinary text in body paragraphs, table cells, headers, and footers. They are literal substitutions; values are not interpolated into Markdown.
+
 ## Canonical engineering interface
 
 From a PowerShell checkout:

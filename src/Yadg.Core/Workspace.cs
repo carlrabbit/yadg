@@ -1,6 +1,6 @@
 namespace Yadg.Core;
 
-public sealed record YadgWorkspace(string Root, IReadOnlyList<string> Sources, IReadOnlyList<string> Templates, YadgDocument Document, IReadOnlyList<Diagnostic> Diagnostics)
+public sealed record YadgWorkspace(string Root, IReadOnlyList<string> Sources, IReadOnlyList<string> Templates, YadgDocument Document, WorkspaceValues Values, IReadOnlyList<Diagnostic> Diagnostics)
 {
     public bool IsValid => Diagnostics.All(d => !d.IsError);
 }
@@ -17,7 +17,9 @@ public static class WorkspaceLoader
             return Invalid(root, diagnostics, new("YADG-WS-006", "Workspace root must not be a symbolic link or reparse point."));
 
         var marker = Path.Combine(root, "YADG.md");
+        var values = WorkspaceValues.Empty;
         if (!File.Exists(marker) || IsReparse(marker)) diagnostics.Add(new("YADG-WS-001", $"Missing regular workspace marker '{marker}'.", true, marker));
+        else values = WorkspaceValuesParser.Parse(marker, diagnostics);
         var templateDir = Path.Combine(root, "YadgTemplates");
         if (!Directory.Exists(templateDir) || IsReparse(templateDir)) diagnostics.Add(new("YADG-WS-004", $"Missing regular template directory '{templateDir}'.", true, templateDir));
         var outputDir = Path.Combine(root, "YadgPreWords");
@@ -38,13 +40,13 @@ public static class WorkspaceLoader
         var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path)));
         var document = MarkdownDocumentParser.Merge(parsed, diagnostics);
         document = AssetValidation.AttachAndValidate(document, root, diagnostics);
-        return new(root, sources, templates, document, diagnostics);
+        return new(root, sources, templates, document, values, diagnostics);
     }
 
     private static YadgWorkspace Invalid(string root, List<Diagnostic> diagnostics, Diagnostic diagnostic)
     {
         diagnostics.Add(diagnostic);
-        return new(root, Array.Empty<string>(), Array.Empty<string>(), new YadgDocument(Array.Empty<YadgBlock>(), new Dictionary<string, YadgSection>(), new Dictionary<string, YadgTable>(), new Dictionary<string, YadgFigure>()), diagnostics);
+        return new(root, Array.Empty<string>(), Array.Empty<string>(), new YadgDocument(Array.Empty<YadgBlock>(), new Dictionary<string, YadgSection>(), new Dictionary<string, YadgTable>(), new Dictionary<string, YadgFigure>()), WorkspaceValues.Empty, diagnostics);
     }
 
     private static void Enumerate(string directory, List<string> files, List<Diagnostic> diagnostics)
