@@ -1,111 +1,102 @@
 # Terminology
 
-This document defines YADG terms used as project authority.
-
 ## Authoring
 
-The Office-independent transformation of Markdown and prepared Word templates into structurally complete DOCX artifacts through parsing, semantic resolution, validation, and OOXML manipulation.
+Office-independent transformation of Markdown and prepared Word templates into structurally complete DOCX artifacts.
 
 ## Renderer / finalizer
 
-A separate component that opens an authored DOCX in a real rendering engine and updates layout-dependent state such as fields, references, indexes, TOCs, pagination-related values, and optional PDF output.
+Separate real-rendering component that evaluates field/layout-dependent state such as `SEQ`, `REF`, TOC, lists, pagination, and later PDF output.
 
-The initial concrete renderer target is Microsoft Word through Office Interop on Windows.
+## Template front matter
 
-## Workspace
+Optional visible YAML stored in a removable control region at the start of a Word template.
 
-One YADG documentation unit processed by one `check` or `build` invocation.
+It maps YADG semantic roles to template-local existing styles/prototypes. It does not define product semantics or formatting.
 
-A workspace is rooted at a directory containing `YADG.md`.
+## Template control region
 
-## Workspace marker
+Removable main-body prefix containing YADG front matter and prototypes. It does not appear in authored output.
 
-The root-level `YADG.md` file identifying a YADG workspace.
+## Prototype
 
-Its body is optional human-facing documentation and is not document source content.
+Template-owned Word-native structure identified by a template-local prototype ID and cloned/adapted by YADG.
 
-## Template
+M0004 caption prototypes carry literal labels, `SEQ` fields/switches, punctuation, style, and formatting.
 
-A prepared DOCX document authoritative for structure and presentation unless a specific location delegates structure or placement to YADG.
+## Semantic cross-reference
 
-## Template-owned structure
+Markdown inline `[@stable-id]` resolving to a referenceable semantic object and authored as a Word `REF` field.
 
-Headings, cover pages, section ordering, styles, captions/style definitions, tables, and other structure intentionally present in the Word template.
+Surrounding prose supplies human-facing labels.
 
-## Markdown-owned content
+## Numbered target
 
-Maintainable source content and semantic objects stored in Markdown and version control.
+A uniquely rendered Word target whose numeric value can be referenced: in M0004, a numbered figure/table caption or uniquely rendered numbered section heading.
 
-## Tag
+## Internal bookmark
 
-A visible textual YADG marker embedded in a DOCX template.
+Word bookmark generated in an authored artifact so Word fields can target a numbered object.
 
-Tags are ordinary document text, not Word content controls, and are parsed from logical paragraph text across OOXML run boundaries.
+Bookmark names are implementation mechanics, not semantic stable IDs.
 
-## Block tag
+## Field result
 
-A tag whose replacement produces one or more Word block elements.
-
-Current block tags must be the only non-whitespace logical content of their Word paragraph.
+Displayed/cached value associated with a Word field. After Office-independent `build`, it is non-authoritative until evaluated by a renderer.
 
 ## Stable ID
 
-An explicit, case-sensitive semantic identifier with syntax:
-
-```text
-[A-Za-z][A-Za-z0-9_-]*
-```
-
-Stable IDs are workspace-wide across all referenceable object types.
-
-## Reference registry
-
-The workspace-wide mapping from stable IDs to referenceable semantic objects, including sections, tables, and figures.
-
-## Section
-
-A Markdown heading with a stable ID together with content belonging to that heading up to the next heading of the same or higher level.
-
-## Section content
-
-The section body excluding the referenced section heading while retaining nested headings and blocks.
+Explicit case-sensitive workspace-wide semantic identity, separate from template prototype IDs and Word bookmark names.
 
 ## Structured object
 
-A semantic block with independent stable identity and render behavior.
-
-M0003 structured objects are tables and figures.
+Referenceable semantic block such as a table or figure.
 
 ## Natural anchor
 
-The semantic source position of a structured object in Markdown.
-
-Without a placement override, rendering a selection containing the anchor renders the object at that position.
+Semantic source position of a structured object in Markdown.
 
 ## Placement override
 
-A unique direct `table` or `figure` tag in a Word template that takes responsibility for the physical placement of that semantic object in the generated document.
-
-A placement override suppresses natural-anchor rendering for that object in that template.
-
-It is relocation, not duplication.
-
-## Figure
-
-A block image semantic object with stable identity, an image asset, and optional caption text.
-
-In M0003, figure caption text comes from Markdown image alt text.
+Unique direct table/figure tag that relocates a structured object for one template.
 
 ## Derived artifact
 
-A generated output such as an authored DOCX, finalized DOCX, PDF, validation report, or evidence bundle.
-
-Derived artifacts are rebuildable outputs, not source authority.
+Rebuildable generated output such as authored/finalized DOCX, PDF, or validation evidence.
 
 ## Validation target
 
-The concrete system whose behavior establishes required evidence, such as a real DOCX/OOXML package or installed Microsoft Word runtime.
+Concrete system whose behavior establishes evidence, such as a real DOCX package or installed Word runtime.
 
 ## Validation locus
 
-Where validation executes, such as an ordinary local/CI .NET environment or a Windows machine with Microsoft Word installed.
+Where validation executes, such as ordinary local/CI .NET or Windows with Microsoft Word.
+
+
+## Authored DOCX / PreWord
+
+The Office-independent DOCX produced by `build` under `YadgPreWords/`. It contains semantic content and Word-native field structures but does not claim evaluated layout/field results.
+
+## Finalized DOCX / Word artifact
+
+The renderer-processed DOCX produced under `YadgWords/` with renderer-evaluated field/index state for the validated renderer.
+
+## Renderer ID
+
+A stable CLI selector for a concrete rendering engine implementation. M0005 defines `libreoffice`.
+
+## LibreOffice renderer
+
+The M0005 renderer implementation that loads authored DOCX files in an isolated LibreOffice process, refreshes fields/indexes, saves finalized DOCX, and exports PDF.
+
+## Renderer session
+
+One isolated loaded-document state in a concrete renderer from which the finalized DOCX and PDF are produced.
+
+## Review request
+
+A milestone-owned durable request under `.review/pending/` defining human evidence and acceptance criteria.
+
+## Review record
+
+A durable human decision under `.review/records/` for one milestone-owned review. Completed records are historical evidence, not perpetual approval of future repository state.

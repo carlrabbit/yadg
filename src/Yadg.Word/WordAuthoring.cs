@@ -236,7 +236,7 @@ public static class WordAuthoring
         using (var stream = File.OpenRead(asset.FullPath)) part.FeedData(stream);
         var relation = main.GetIdOfPart(part); var width = Math.Min((long)asset.WidthPixels * 9525, EffectiveWidth(anchor)); var height = Math.Max(1, (long)asset.HeightPixels * 9525 * width / ((long)asset.WidthPixels * 9525));
         var drawing = new Drawing(new DW.Inline(new DW.Extent { Cx = width, Cy = height }, new DW.DocProperties { Id = 1U, Name = figure.Id }, new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }), new A.Graphic(new A.GraphicData(new PIC.Picture(new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = figure.AssetPath }, new PIC.NonVisualPictureDrawingProperties()), new PIC.BlipFill(new A.Blip { Embed = relation }, new A.Stretch(new A.FillRectangle())), new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = width, Cy = height }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }))) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })));
-        return new Paragraph(drawing);
+        return new Paragraph(new Run(drawing));
     }
 
     private static Paragraph CreateCaption(string targetId, string text, string binding, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets)

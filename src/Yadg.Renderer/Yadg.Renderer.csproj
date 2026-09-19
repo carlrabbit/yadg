@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Yadg.Renderer</AssemblyName><RootNamespace>Yadg.Renderer</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <None Include="uno_renderer.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

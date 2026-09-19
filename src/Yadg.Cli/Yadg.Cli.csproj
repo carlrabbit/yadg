@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Yadg.Core\Yadg.Core.csproj" />
     <ProjectReference Include="..\Yadg.Word\Yadg.Word.csproj" />
+    <ProjectReference Include="..\Yadg.Renderer\Yadg.Renderer.csproj" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
   </ItemGroup>
 </Project>
