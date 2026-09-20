@@ -2,71 +2,88 @@
 
 ## Objective
 
-YADG separates workspace/content semantics, external source transformation, Word package transformation, template-owned presentation, and document rendering.
-
-## `authoring-core`
-
-Owns workspace discovery/front matter, Markdown parsing, OOXML-free semantic objects, stable IDs/references, and producer-independent semantic validation.
-
-M0008 Mermaid blocks enter the semantic model as generated figures without leaking process/OOXML types into core.
-
-## `content-producer` boundary
-
-An external producer is a separate process invoked through a constrained adapter.
-
-M0008 provides:
+YADG separates:
 
 ```text
-Markdown Mermaid block
-        |
-        v
-Mermaid producer adapter
-        |
-        +--> configured executable + argument prefix
-        |
-        +--> temporary .mmd input
-        +<-- temporary .png output
-        |
-        v
-semantic/generated figure asset
+workspace/content semantics
+-> external content production
+-> Office-independent DOCX authoring
+-> renderer-specific finalization
+-> explicit publication
 ```
 
-The process runner owns executable resolution, argument passing, bounded execution, stdout/stderr capture, temporary files, cleanup, and result diagnostics.
+## Authoring core
 
-The Mermaid adapter owns Mermaid-specific `-i`/`-o` invocation and PNG validation.
+Owns workspace/front-matter discovery, Markdown parsing, semantic objects, values, references, and producer-independent validation.
 
-The producer boundary does not receive Word/OOXML structures.
+It must not depend on Microsoft Word COM automation.
 
-## `word-authoring`
+## Word authoring
 
-Consumes the generated figure through the existing image/placement/caption/reference path.
+Owns prepared DOCX inspection/transformation through Open XML.
 
-No Mermaid-specific Word logic belongs here beyond the semantic figure being available with a valid PNG asset.
+It creates structurally complete DOCX artifacts without requiring an Office renderer.
 
-## Renderer
+## External content producers
 
-LibreOffice or any future renderer sees an ordinary embedded figure.
+Remain separate-process source adapters.
 
-The renderer neither executes Mermaid nor knows how the figure was produced.
+M0008 Mermaid output becomes an ordinary semantic figure before Word authoring.
 
-## Product versus test runtime
+## Renderer boundary
 
-Bun is not a product dependency.
+Renderers consume `YadgPreWords/*.docx` and produce finalized workspace artifacts.
 
-Product workspaces configure an executable and argument prefix.
+### LibreOffice
 
-Repository Tier-3 integration tests independently download the Bun version pinned in `eng/test-tools.json` and use Bun one-shot package execution of the pinned Mermaid CLI to establish a real external-producer target.
+Existing isolated UNO renderer.
 
-## Trust boundary
+Produces finalized DOCX and its existing PDF side output.
 
-Workspace producer configuration is executable-code configuration.
+### Microsoft Word
 
-YADG provides no sandbox. Process separation limits coupling, not authority of the configured executable.
+M0009 adds a Windows Microsoft Word automation specialization.
+
+Word-specific COM types/code are isolated from authoring-core and Open XML authoring.
+
+The concrete binding approach (PIA/interop metadata versus late-bound COM) is an implementation detail so long as the supported real-Word contract is satisfied.
+
+The full Word-enabled product is allowed to become Windows-build-specific.
+
+## Publication boundary
+
+Publishing is downstream of rendering and has no Word/LibreOffice dependency.
+
+```text
+YadgWords/*.docx
+       |
+       | yadg publish
+       v
+explicit filesystem destination/*.docx
+```
+
+The publisher copies bytes; it does not open or modify Word documents.
+
+This separation allows publication to run in automation/CI even though Word rendering itself is validated only in an interactive Windows user session.
 
 ## Dependency direction
 
-Core semantic types remain independent of process runners and OOXML.
+Semantic/core and Open XML authoring must not gain renderer-specific COM dependencies.
 
-External process integration belongs in an authoring-side producer component that may be orchestrated by CLI/build/check.
+Renderer-specific runtime code depends inward on the common renderer contract.
 
-Word authoring consumes validated generated assets; it does not initiate package installation.
+Publishing depends only on workspace/finalized-artifact conventions and filesystem operations.
+
+## Platform specialization
+
+Windows + installed Microsoft Word is a concrete specialization for the `word` renderer.
+
+No project requirement says the full solution must remain Linux-buildable after M0009.
+
+Where portable components can remain portable without distorting the architecture, they should.
+
+## Trust and safety
+
+The Word renderer processes trusted YADG-authored DOCX and owns its automation instance.
+
+The publisher does not execute content and defines no remote credential protocol.

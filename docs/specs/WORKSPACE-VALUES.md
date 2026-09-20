@@ -1,51 +1,55 @@
-# Workspace Values Specification
+# Workspace Front Matter and Values Specification
 
 ## Status
 
-Authoritative for root `YADG.md` workspace front matter and scalar values. M0008 extends the same front-matter schema with external producer configuration defined separately in `docs/specs/CONTENT-PRODUCERS.md`.
+Authoritative for root `YADG.md` front matter and workspace scalar values.
+
+Other root mappings are specialized by:
+
+- `producers` -> `docs/specs/CONTENT-PRODUCERS.md`
+- `publish` -> `docs/specs/PUBLISHING.md`
 
 ## `YADG.md`
 
-`YADG.md` remains the workspace marker. It may contain optional YAML front matter at the start followed by human-facing workspace notes that are not document source.
+`YADG.md` remains the workspace marker. It may contain optional YAML front matter followed by human-facing notes that are not document source.
 
-A file without front matter remains valid and defines empty values and no producers.
+A file without front matter remains valid and defines empty values, no producers, and no publication default.
 
 ## Front-matter syntax
 
-Front matter starts at the first effective line with exactly `---` and ends at the next line exactly `---`. Optional UTF-8 BOM is permitted before the opening delimiter.
+Front matter starts at the first effective line with exactly `---` and ends at the next line exactly `---`.
 
-An unclosed front matter region is an error.
+An optional UTF-8 BOM is permitted before the opening delimiter.
+
+An unclosed region is an error.
 
 ## Schema version
 
-The front-matter schema remains:
+Schema remains:
 
 ```yaml
 yadg:
   version: 1
 ```
 
-M0008 does not increment that schema version.
+M0009 does not increment it.
 
-Allowed root keys are now:
+Allowed root keys after M0009:
 
 ```text
 yadg
 values
 producers
+publish
 ```
 
 `yadg` is required whenever front matter is present.
 
-`values` is governed by this specification.
-
-`producers` is governed by `docs/specs/CONTENT-PRODUCERS.md`.
-
 Unknown root keys, duplicate mapping keys, aliases, anchors, merge keys, and custom YAML tags remain errors.
 
-## Workspace values
+## Values
 
-`values` optionally maps value IDs to YAML string scalars.
+`values` optionally maps case-sensitive IDs to single-line YAML string scalars.
 
 Value IDs:
 
@@ -53,37 +57,38 @@ Value IDs:
 [A-Za-z][A-Za-z0-9_-]*
 ```
 
-They are case-sensitive and occupy a namespace separate from semantic object IDs.
+Values remain in a namespace separate from semantic object IDs.
 
-Values are single-line strings only. Numeric, boolean, null, sequence, mapping, and multiline values are invalid. Empty string is valid.
+Numeric, boolean, null, sequence, mapping, and multiline values are invalid. Empty string is valid.
 
-`{{value:<id>}}` resolves values only. `[@id]` resolves semantic objects only.
+`{{value:<id>}}` resolves workspace values; `[@id]` resolves semantic objects.
 
-Missing referenced values are errors. Unused values are allowed.
+Missing referenced values fail; unused values are allowed.
 
-## Literal inline substitution
+## Literal substitution
 
 Value replacement remains literal/non-recursive.
 
-Supported Word locations remain ordinary paragraphs in:
-
-- main document body;
-- main-body table cells;
-- headers;
-- footers.
+Supported Word locations remain ordinary paragraphs in the main body, main-body table cells, headers, and footers.
 
 Replacement inherits run properties from the run containing the first logical tag character.
 
-Unsupported text-box/note/comment/property/field-instruction locations remain out of scope.
+## Publication mapping
+
+`publish` is optional and governed by `docs/specs/PUBLISHING.md`.
+
+Its `path` is a publication default, not a redefinition of workspace output directories.
+
+`check`, `build`, and `render` remain valid without it.
 
 ## Security
 
-Values remain source-controlled data, not secret-store/environment/CLI inputs.
+Values are source-controlled data, not secrets.
 
-Producer configuration under `producers` is executable tooling configuration and has a separate trust boundary defined in `docs/specs/CONTENT-PRODUCERS.md`.
+Producer configuration remains trusted executable configuration.
+
+Publication configuration is filesystem destination configuration and defines no credential or remote protocol.
 
 ## Compatibility
 
-Existing M0006 front matter containing only `yadg` and `values` remains valid.
-
-M0008 merely adds optional `producers`; it does not change value semantics.
+Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid.

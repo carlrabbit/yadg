@@ -4,105 +4,207 @@
 
 Repository-wide engineering and validation policy for YADG.
 
-## Stack/boundaries
+## Product boundary
 
-YADG is C#/.NET with System.CommandLine and Open XML SDK.
+YADG is C#/.NET.
 
-Office-independent authoring remains free of Microsoft Office/LibreOffice dependencies.
+Open XML authoring remains separate from real document renderers.
 
-M0008 adds external producer processes but no in-process JS/runtime dependency.
+M0009 introduces a Windows/desktop-Microsoft-Word specialization and explicit publishing.
 
-## External producer validation
+## Platform policy after M0009
 
-Portable Tier 0-2 tests may use deterministic local fake producer executables/process fixtures where useful for process/error-path coverage.
+The authoritative full-product build and validation locus is Windows.
 
-They must not claim real Mermaid compatibility.
+A complete Linux build is no longer a release/readiness requirement.
 
-Real M0008 compatibility is Tier 3 and requires network access for test-tool acquisition unless already satisfied by a verified local test cache.
+Authoring components should remain free of Word COM dependencies, but the CLI/full solution may become Windows-targeted if required by the selected interop mechanism.
 
-## Test-tool version manifest
+Do not add complexity solely to preserve Linux compilation if that conflicts with a robust Word renderer.
 
-Authoritative M0008 external-test versions are stored in:
+## Microsoft Word development/build capability
 
-```text
-eng/test-tools.json
-```
+The authoritative Word-capable development/build machine has:
 
-The manifest uses exact versions.
+- Windows;
+- repository-supported .NET SDK;
+- desktop Microsoft Word installed;
+- the Office/COM registration/interoperability metadata required by the chosen implementation mechanism;
+- an interactive user profile with Office activation/first-run complete.
 
-At M0008 planning time it pins:
+The exact interop binding mechanism is implementation-owned.
 
-- Bun `1.4.2`;
-- `@mermaid-js/mermaid-cli` `11.17.0`.
+Do not treat a third-party/unverified NuGet interop package as authoritative merely to preserve portability.
 
-The Bun pin represents the current latest stable release at planning time.
+## Word automation execution policy
 
-Tests must not dynamically resolve a moving `latest` selector at execution time.
+Authoritative real Word execution occurs in an interactive logged-on Windows user session.
 
-Version upgrades are explicit edits to the JSON manifest.
+Do not claim support for automation from a Windows service, SYSTEM Task Scheduler job, ASP/ASP.NET host, DCOM server, or other non-interactive/server-side context.
 
-## Tier-3 Bun acquisition
+Word tests/runs must avoid concurrent YADG-owned Word automation instances.
 
-M0008 Tier-3 test infrastructure must:
+Tests must clean up owned documents/application instances and verify, where practical, that no owned Word process remains.
 
-1. read `eng/test-tools.json`;
-2. download the official Bun release matching the configured exact version for the current supported test platform into a test-owned temporary/cache location;
-3. avoid requiring or modifying a machine-global Bun installation;
-4. verify the downloaded executable reports the configured Bun version;
-5. use that executable for the real Mermaid integration test.
+## Canonical engineering interface
 
-The exact official release URL construction/platform archive extraction mechanics are implementation-owned, but provenance must identify the resulting Bun version and platform.
-
-Tests should reuse an already verified local downloaded archive/executable within one test run/cache rather than redownloading unnecessarily.
-
-## Mermaid one-shot execution
-
-The real Tier-3 test must invoke the configured Mermaid package/version through Bun one-time package execution rather than `npm install`, a repo `node_modules`, or a global Mermaid install.
-
-The required logical invocation is equivalent to:
-
-```text
-<downloaded-bun> x --bun --package @mermaid-js/mermaid-cli@<version> mmdc -i <input> -o <output>
-```
-
-The package name/version come from `eng/test-tools.json`.
-
-The test must not require system `node`, `npm`, `npx`, or a preinstalled `mmdc`.
-
-A failure of the pinned Bun/Mermaid combination to render the required scenario blocks M0008 completion; do not silently substitute npm/Node in the authoritative test.
-
-## Network distinction
-
-Canonical repository validation:
+The canonical repository validation command remains:
 
 ```powershell
 ./eng/validate.ps1
 ```
 
-must remain suitable for ordinary development without mandatory external downloads.
+After M0009 its authoritative locus is Windows.
 
-The real Bun/Mermaid Tier-3 target is invoked explicitly and is a separate network-capable validation target.
+Implementation may keep non-Windows subsets working, but they are not M0009 completion evidence for the Word-enabled product.
 
-If the locus cannot access the required official Bun release/npm registry/Chromium dependencies, Tier 0-2 may pass but M0008 Tier-3 success must not be claimed.
+## Validation tiers
 
-## DOCX integration
+### Tier 0 — edit sanity
 
-Real M0008 Tier-3 validation continues through a real filesystem workspace and real DOCX package after Mermaid output is produced.
+Windows build/static/config checks for changed areas.
 
-Validate semantic placement/embedded PNG/caption/reference structures structurally; byte equality is not required.
+### Tier 1 — focused
 
-## Process diagnostics
+Renderer orchestration/failure handling and publish path/copy semantics.
 
-Capture bounded external producer exit status and stderr/stdout where practical.
+Mocks/fakes may cover paths that do not claim real Word behavior.
 
-Do not expose credentials in diagnostics.
+### Tier 2 — repository
 
-## Fixtures/hygiene
+```powershell
+./eng/validate.ps1
+```
 
-Mermaid test source and DOCX templates must be synthetic and redistribution-safe.
+Runs on the authoritative Windows build locus.
 
-No confidential bank diagrams/content.
+Real Word invocation may remain separate in Tier 3, but the Word-enabled product must compile.
 
-## Existing renderer
+### Tier 3 — integration
 
-M0005 real LibreOffice validation policy remains unchanged. M0008 does not require LibreOffice to validate Mermaid authoring itself.
+M0009 has two real targets:
+
+1. real Microsoft Word on an interactive Windows user session;
+2. real filesystem publication against finalized DOCX inputs.
+
+Mocks/fakes/OOXML-only inspection are not equivalent evidence for Word automation.
+
+### Tier 4 — consumer/release
+
+Deferred to the V1 release-readiness milestone.
+
+### Tier 5 — human review
+
+M0009 owns blocking artifact-quality review `HR-M0009-01`.
+
+## Word Tier-3 evidence
+
+A real Word integration run records at least:
+
+- OS/platform;
+- observable Word version;
+- repository revision;
+- authored DOCX identity/hash where practical;
+- finalized DOCX identity/hash;
+- command/result.
+
+The fixture exercises YADG-owned structures whose correctness depends on finalization: sequence numbering, REF fields, numbered section references, and template-owned indexes where feasible.
+
+Structural post-save inspection complements but does not replace opening/refreshing/saving through real Word.
+
+## Publishing validation
+
+Publishing tests use real temporary filesystem destinations.
+
+Cover:
+
+- configured default path;
+- CLI override precedence;
+- workspace-relative resolution;
+- external absolute destination;
+- reserved-directory rejection;
+- all top-level `YadgWords/*.docx`;
+- no PDF/intermediate/template copying;
+- replacement of same-name destination;
+- preservation of unrelated files;
+- no implicit render/build;
+- failure without effective destination;
+- failure without finalized DOCX;
+- temp/incomplete-output hygiene.
+
+## M0009 human review
+
+Canonical review ID:
+
+```text
+HR-M0009-01
+```
+
+Review class:
+
+```text
+artifact-quality
+```
+
+Owning milestone:
+
+```text
+M0009
+```
+
+Implementation extends existing milestone-scoped review tooling so:
+
+```powershell
+./eng/review-check.ps1 --milestone M0009
+```
+
+fails until an acceptable human record exists.
+
+No implementation agent may fabricate approval.
+
+The review record identifies at least:
+
+- milestone/review ID;
+- decision/status;
+- human reviewer;
+- repository revision;
+- Microsoft Word version;
+- reviewed finalized DOCX hash/evidence identity.
+
+Waiver is forbidden.
+
+## Human review subject
+
+The reviewer opens a representative M0009 finalized DOCX in Microsoft Word and checks that:
+
+- it opens without repair prompt;
+- template presentation is materially intact;
+- figures are visible and plausibly positioned;
+- generated/prepared tables are intact;
+- captions/numbering are current;
+- semantic references display current values;
+- included TOC/list structures display current entries;
+- no unresolved YADG control text is visible;
+- no obvious pagination/layout corruption was introduced.
+
+This is a milestone completion gate, not perpetual re-review.
+
+## Fixtures and hygiene
+
+Use synthetic, redistribution-safe templates/content only.
+
+Never commit confidential bank templates/content.
+
+## Existing LibreOffice validation
+
+M0005 LibreOffice behavior remains supported and historically validated.
+
+M0009 does not require re-running its visual review unless implementation changes that renderer.
+
+## Documentation changes
+
+Implementation updates direct public usage docs when M0009 behavior would otherwise be missing or contradictory.
+
+Broad V1 documentation audit remains M0010 work.
+
+GitHub workflow automation is not M0009 scope.
