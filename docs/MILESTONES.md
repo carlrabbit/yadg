@@ -9,6 +9,7 @@
 | M0005 | LibreOffice renderer and finalization | complete | Add real LibreOffice field/index finalization, finalized DOCX/PDF artifacts, runtime isolation, renderer validation, and blocking artifact-quality review. |
 | M0006 | Workspace values | complete | Add source-controlled scalar workspace values in `YADG.md` and inline template `{{value:<id>}}` substitution while preserving template-owned formatting. |
 | M0007 | Prepared table row population | complete | Populate template-owned Word table body rows from semantic Markdown tables while preserving template presentation. |
-| M0008 | External content producers and Mermaid diagrams | ready | Add a constrained external-process content-producer boundary and inline Mermaid fenced blocks producing PNG-backed semantic figures. |
+| M0008 | External content producers and Mermaid diagrams | complete | Add a constrained external-process content-producer boundary and inline Mermaid fenced blocks producing PNG-backed semantic figures. |
+| M0009 | Microsoft Word renderer and publishing | ready | Add real Microsoft Word finalization on Windows and explicit publication of finalized DOCX to a configurable/CLI-selected delivery path. |
 
 Milestone implementation starts from the milestone document and its explicitly listed authority.

@@ -1,14 +1,23 @@
-param([Parameter(Mandatory=$true)][string]$Milestone)
+param([Parameter(Mandatory=$true, Position=0)][string]$Milestone, [Parameter(ValueFromRemainingArguments=$true)][string[]]$RemainingArguments)
 $ErrorActionPreference = 'Stop'
-if ($Milestone -ne 'M0005') { throw "Unsupported milestone review context '$Milestone'." }
+if ($Milestone -eq '--milestone' -and $RemainingArguments.Count -gt 0) { $Milestone = $RemainingArguments[0] }
 $root = Split-Path -Parent $PSScriptRoot
-$pending = Join-Path $root '.review/pending/HR-M0005-01.md'
-$record = Join-Path $root '.review/records/HR-M0005-01.md'
+$reviewId = if ($Milestone -eq 'M0005') { 'HR-M0005-01' } elseif ($Milestone -eq 'M0009') { 'HR-M0009-01' } else { throw "Unsupported milestone review context '$Milestone'." }
+$pending = Join-Path $root ".review/pending/$reviewId.md"
+$record = Join-Path $root ".review/records/$reviewId.md"
 if (-not (Test-Path $pending)) { throw "Missing canonical review request: $pending" }
-if (-not (Test-Path $record)) { Write-Error 'HR-M0005-01 is still pending human review.'; exit 2 }
+if (-not (Test-Path $record)) { Write-Error "$reviewId is still pending human review."; exit 2 }
 $text = Get-Content $record -Raw
-foreach ($required in @('milestone: M0005','reviewId: HR-M0005-01','decision: approved','status: approved','reviewer:','repositoryRevision:','libreOfficeVersion:','evidence:')) {
-    if ($text -notmatch [regex]::Escape($required)) { Write-Error "Review record is missing '$required'."; exit 2 }
+$required = if ($Milestone -eq 'M0005') { @('milestone: M0005','reviewId: HR-M0005-01','decision: approved','status: approved','reviewer:','repositoryRevision:','libreOfficeVersion:','evidence:') } else { @('milestone: M0009','reviewId: HR-M0009-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','evidence:') }
+foreach ($item in $required) {
+    if ($text -notmatch [regex]::Escape($item)) { Write-Error "Review record is missing '$item'."; exit 2 }
 }
-if ($text -match '(?m)^waiver:\s*true\s*$') { Write-Error 'Review waiver is forbidden for M0005.'; exit 2 }
-Write-Output 'HR-M0005-01: approved'
+if ($text -match '(?m)^waiver:\s*true\s*$') { Write-Error "Review waiver is forbidden for $Milestone."; exit 2 }
+if ($Milestone -eq 'M0009') {
+    $artifact = Join-Path $root 'artifacts/review/evidence/M0009/finalized.docx'
+    if (-not (Test-Path $artifact)) { Write-Error "M0009 review artifact is missing: $artifact"; exit 2 }
+    $match = [regex]::Match($text, '(?m)^evidence:\s*SHA256:([0-9A-Fa-f]+)\s*$')
+    $actual = (Get-FileHash $artifact -Algorithm SHA256).Hash
+    if (-not $match.Success -or $match.Groups[1].Value.ToUpperInvariant() -ne $actual.ToUpperInvariant()) { Write-Error 'M0009 review evidence hash does not match the current finalized DOCX.'; exit 2 }
+}
+Write-Output "$reviewId`: approved"

@@ -58,7 +58,7 @@ public sealed class M0005IntegrationTests
     public void Render_rejects_unsupported_renderer_and_missing_inputs_before_outputs()
     {
         using var workspace = RenderWorkspace.Empty();
-        var unsupported = RunCli(workspace.Root, "render", "--renderer", "word"); Assert.NotEqual(0, unsupported.ExitCode); Assert.Contains("YADG-RENDER-020", unsupported.Output);
+        var word = RunCli(workspace.Root, "render", "--renderer", "word"); Assert.NotEqual(0, word.ExitCode); Assert.Contains("YADG-WORD-003", word.Output);
         var missing = RunCli(workspace.Root, "render"); Assert.NotEqual(0, missing.ExitCode); Assert.Contains("YADG-RENDER-003", missing.Output);
     }
 

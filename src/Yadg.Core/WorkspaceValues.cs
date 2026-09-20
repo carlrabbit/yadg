@@ -7,6 +7,7 @@ namespace Yadg.Core;
 public sealed record WorkspaceValues(IReadOnlyDictionary<string, string> Values)
 {
     public IReadOnlyDictionary<string, MermaidProducerConfiguration> Producers { get; init; } = new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal);
+    public string? PublishPath { get; init; }
     public static WorkspaceValues Empty { get; } = new(new Dictionary<string, string>(StringComparer.Ordinal));
 }
 
@@ -43,9 +44,12 @@ public static class WorkspaceValuesParser
         var yadgKeys = new HashSet<string>(StringComparer.Ordinal);
         var valueKeys = new HashSet<string>(StringComparer.Ordinal);
         var producerKeys = new HashSet<string>(StringComparer.Ordinal);
+        var publishKeys = new HashSet<string>(StringComparer.Ordinal);
         var mermaidKeys = new HashSet<string>(StringComparer.Ordinal);
         var producerArguments = new List<string>();
         string? producerExecutable = null;
+        string? publishPath = null;
+        var publishSeen = false;
         var section = "";
         var versionSeen = false;
         for (var i = 1; i < close; i++)
@@ -77,8 +81,9 @@ public static class WorkspaceValuesParser
             if (indent == 0)
             {
                 if (!rootKeys.Add(key)) Error(diagnostics, "YADG-VALUES-006", $"Duplicate front matter key '{key}'.", location, i);
-                if (key is not "yadg" and not "values" and not "producers") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
+                if (key is not "yadg" and not "values" and not "producers" and not "publish") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
                 if (rawValue.Length != 0) Error(diagnostics, "YADG-VALUES-005", $"Mapping key '{key}' must not have an inline value.", location, i);
+                if (key == "publish") publishSeen = true;
                 section = key; continue;
             }
             if (section == "yadg" && indent == 2)
@@ -107,6 +112,14 @@ public static class WorkspaceValuesParser
                 if (rawValue.Length != 0) Error(diagnostics, "YADG-PRODUCER-002", "Producer kind must be a mapping.", location, i);
                 section = "producers.mermaid"; continue;
             }
+            if (section == "publish" && indent == 2)
+            {
+                if (!publishKeys.Add(key)) { Error(diagnostics, "YADG-VALUES-006", $"Duplicate publish key '{key}'.", location, i); continue; }
+                if (key != "path") { Error(diagnostics, "YADG-VALUES-007", $"Unknown publish key '{key}'.", location, i); continue; }
+                if (!TryStringScalar(rawValue, out var path) || string.IsNullOrWhiteSpace(path)) Error(diagnostics, "YADG-PUBLISH-001", "publish.path must be a non-empty string.", location, i);
+                else publishPath = path;
+                continue;
+            }
             if (section == "producers.mermaid" && indent == 4)
             {
                 if (!mermaidKeys.Add(key)) { Error(diagnostics, "YADG-VALUES-006", $"Duplicate producer key 'mermaid.{key}'.", location, i); continue; }
@@ -128,7 +141,8 @@ public static class WorkspaceValuesParser
         }
         if (!rootKeys.Contains("yadg") || !versionSeen) diagnostics.Add(new("YADG-VALUES-008", "Workspace front matter must declare yadg.version: 1.", true, location));
         if (producerKeys.Contains("mermaid") && producerExecutable is null) diagnostics.Add(new("YADG-PRODUCER-003", "Mermaid producer configuration requires executable.", true, location));
-        return new(values) { Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
+        if (publishSeen && publishPath is null) diagnostics.Add(new("YADG-PUBLISH-001", "publish.path must be a non-empty string.", true, location));
+        return new(values) { PublishPath = publishPath, Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
     }
 
     private static bool TryScalar(string raw, out string value)

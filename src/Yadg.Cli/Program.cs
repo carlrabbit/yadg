@@ -2,6 +2,8 @@ using System.CommandLine;
 using Yadg.Core;
 using Yadg.Word;
 using Yadg.Renderer;
+using Yadg.WordRenderer;
+using WordRendererEngine = Yadg.WordRenderer.WordRenderer;
 
 namespace Yadg.Cli;
 
@@ -14,6 +16,7 @@ public static class Program
         root.AddCommand(CreateCheckCommand(() => handlerExitCode = 2));
         root.AddCommand(CreateBuildCommand(() => handlerExitCode = 2));
         root.AddCommand(CreateRenderCommand(() => handlerExitCode = 2));
+        root.AddCommand(CreatePublishCommand(() => handlerExitCode = 2));
         var commandExitCode = root.Invoke(args);
         return handlerExitCode == 0 ? commandExitCode : handlerExitCode;
     }
@@ -65,19 +68,46 @@ public static class Program
 
     private static Command CreateRenderCommand(Action fail)
     {
-        var command = new Command("render", "Finalize authored DOCX files through LibreOffice and export PDFs.");
+        var command = new Command("render", "Finalize authored DOCX files through the selected renderer.");
         var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
-        var renderer = new Option<string>("--renderer", () => "libreoffice", "Renderer ID; M0005 supports libreoffice.");
+        var renderer = new Option<string>("--renderer", () => "libreoffice", "Renderer ID: libreoffice (default) or word.");
         var rendererPath = new Option<FileInfo?>("--renderer-path", "Explicit LibreOffice soffice executable path.");
         command.AddOption(workspace); command.AddOption(renderer); command.AddOption(rendererPath);
         command.SetHandler((DirectoryInfo? path, string rendererId, FileInfo? executable) =>
         {
-            if (!string.Equals(rendererId, "libreoffice", StringComparison.OrdinalIgnoreCase)) { Console.Error.WriteLine("YADG-RENDER-020: Unsupported renderer ID. M0005 supports only 'libreoffice'."); fail(); return; }
-            var result = new LibreOfficeRenderer().Render(path?.FullName ?? Directory.GetCurrentDirectory(), executable?.FullName);
+            RenderResult result;
+            if (string.Equals(rendererId, "word", StringComparison.OrdinalIgnoreCase))
+            {
+                if (executable is not null) { Console.Error.WriteLine("YADG-RENDER-021: --renderer-path is valid only for LibreOffice."); fail(); return; }
+                result = new WordRendererEngine().Render(path?.FullName ?? Directory.GetCurrentDirectory());
+            }
+            else if (string.Equals(rendererId, "libreoffice", StringComparison.OrdinalIgnoreCase)) result = new LibreOfficeRenderer().Render(path?.FullName ?? Directory.GetCurrentDirectory(), executable?.FullName);
+            else { Console.Error.WriteLine($"YADG-RENDER-020: Unsupported renderer ID '{rendererId}'. Supported renderers are 'libreoffice' and 'word'."); fail(); return; }
             foreach (var diagnostic in result.Diagnostics) Console.Error.WriteLine(diagnostic);
             if (!result.Success) { fail(); return; }
-            Console.WriteLine($"render: finalized PreWords through LibreOffice ({result.RuntimeVersion}) using {result.Executable}; isolated session {result.ProfileIdentity}");
+            Console.WriteLine($"render: finalized PreWords through {rendererId} ({result.RuntimeVersion ?? "runtime detected"})");
         }, workspace, renderer, rendererPath);
+        return command;
+    }
+
+    private static Command CreatePublishCommand(Action fail)
+    {
+        var command = new Command("publish", "Copy finalized DOCX files to an explicit delivery destination.");
+        var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
+        var publishPath = new Option<DirectoryInfo?>("--publish-path", "Delivery directory; overrides YADG.md publish.path.");
+        command.AddOption(workspace); command.AddOption(publishPath);
+        command.SetHandler((DirectoryInfo? path, DirectoryInfo? destination) =>
+        {
+            var loaded = WorkspaceLoader.Load(path?.FullName);
+            try
+            {
+                var result = Publisher.Publish(loaded, destination?.FullName);
+                PrintDiagnostics(result.Diagnostics);
+                if (!result.Success) { fail(); return; }
+                Console.WriteLine($"publish: copied {result.PublishedCount} finalized DOCX file(s) to {result.Destination}");
+            }
+            finally { loaded.CleanupTemporaryProducerFiles(); }
+        }, workspace, publishPath);
         return command;
     }
 

@@ -1,53 +1,57 @@
 # Terminology
 
-## External content producer
-
-A separate executable process that converts explicitly declared source content into a YADG-supported product without receiving or mutating Word/OOXML structures.
-
-## Producer kind
-
-A YADG-defined source/product contract implemented through an external command. M0008 defines `mermaid`.
-
-## Producer configuration
-
-Workspace front-matter configuration specifying the executable and argument prefix used for a producer kind.
-
-## Producer product
-
-Validated output returned to YADG semantics. M0008's Mermaid product is a PNG-backed semantic figure.
-
-## Generated figure
-
-A semantic YADG figure whose image asset is produced during `check`/`build` rather than read from a source image file.
-
-## Mermaid block
-
-A Markdown fenced block whose info string is `mermaid {#id ...}` and whose body is Mermaid source.
-
-## Producer invocation
-
-One bounded external process execution using isolated temporary input/output files.
-
-## Test-tool manifest
-
-`eng/test-tools.json`, containing exact versions of external tools/packages used by authoritative integration tests.
-
-## One-shot package execution
-
-Running an npm package executable without adding it as a repository dependency/global install. M0008's authoritative integration target uses Bun `x`/`bunx` semantics.
-
-## Semantic figure
-
-A stable-ID figure participating in YADG natural/direct placement, captions, numbering, and references regardless of whether its image comes from a file or producer.
-
-## Workspace value
-
-Source-controlled scalar value from `YADG.md`, distinct from producer configuration and semantic object IDs.
-
 ## Authoring
 
-Office-independent transformation of workspace metadata, Markdown semantics, producer products, and prepared DOCX templates into authored DOCX.
+Office-independent transformation of workspace/Markdown semantics and prepared templates into `YadgPreWords/*.docx`.
 
 ## Renderer / finalizer
 
-Separate engine phase evaluating field/index/layout state after authoring.
+Concrete document application/runtime that consumes authored DOCX and establishes current field/index/layout-dependent document state.
+
+## LibreOffice renderer
+
+Existing renderer using isolated LibreOffice automation. Produces finalized DOCX and the existing PDF side output.
+
+## Microsoft Word renderer
+
+M0009 renderer using the desktop Microsoft Word COM automation model on Windows. Produces finalized DOCX.
+
+## Finalized document
+
+Top-level DOCX under `YadgWords/` that has successfully passed through a configured renderer.
+
+## Publication
+
+Explicit copy of finalized workspace DOCX to a caller/configured delivery filesystem destination.
+
+Publication does not rebuild, rerender, or alter document contents.
+
+## Publication destination
+
+Effective filesystem path chosen by `--publish-path` or, when absent, `YADG.md publish.path`.
+
+## Workspace publication default
+
+Optional `YADG.md publish.path` used when `publish` receives no CLI destination.
+
+It is not a fixed product output directory.
+
+## Delivery artifact
+
+In M0009, a finalized DOCX copied to the publication destination.
+
+PDF is not an M0009 delivery artifact.
+
+## Office Interop / Word automation
+
+Managed interaction with Microsoft Word's COM-based object model.
+
+M0009 does not prescribe early-bound PIA versus late-bound COM so long as real Word behavior and build/runtime constraints are satisfied.
+
+## Interactive Word locus
+
+Logged-on Windows user session with a normal user profile and activated desktop Word, used for supported M0009 automation/validation.
+
+## Human artifact-quality review
+
+Milestone-scoped human inspection of a real finalized document when automated structural checks cannot decide presentation fidelity.
