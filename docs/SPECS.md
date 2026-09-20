@@ -2,16 +2,17 @@
 
 ## Purpose
 
-YADG is a template-first document authoring tool: Markdown and `YADG.md` own maintainable content/data while prepared DOCX templates own structure and presentation.
+YADG is a template-first document authoring tool. Markdown and `YADG.md` own maintainable content/data; prepared DOCX templates own structure/presentation; external content producers may transform explicitly declared source representations into YADG-supported content products.
 
 ## Authority model
 
-1. Markdown owns semantic document objects and table data.
-2. `YADG.md` owns workspace scalar values/notes.
-3. DOCX templates own presentation, Word-native structures, and prepared-table layout unless explicitly delegated.
-4. Generated DOCX/PDF are derived artifacts.
-5. Office-independent authoring owns semantic resolution and OOXML transformation.
-6. Rendering owns layout-dependent evaluation.
+1. Markdown owns semantic document objects and ordinary content.
+2. `YADG.md` owns workspace values, notes, and external-producer configuration.
+3. DOCX templates own presentation and Word-native structures unless explicitly delegated.
+4. External producers supply generated content products but do not own YADG semantics or Word authoring.
+5. Generated DOCX/PDF and temporary producer artifacts are derived.
+6. Office-independent authoring owns semantic resolution and OOXML transformation.
+7. Rendering owns layout-dependent evaluation.
 
 ## CLI/artifacts
 
@@ -23,47 +24,77 @@ yadg render [--workspace <path>] [--renderer libreoffice] [--renderer-path <path
 
 Templates: `YadgTemplates/*.docx`; authored: `YadgPreWords/*.docx`; finalized: `YadgWords/*.docx`; PDFs: `YadgPdfs/*.pdf`.
 
+M0008 does not add a new public CLI command.
+
+## Markdown
+
+Existing headings/paragraphs/lists/tables/figures/references remain.
+
+M0008 adds inline Mermaid source through fenced blocks:
+
+````markdown
+```mermaid {#system-flow caption="System flow"}
+flowchart LR
+    A --> B
+```
+````
+
+The block becomes an ordinary semantic figure backed by an externally generated PNG.
+
+Other code fences remain unsupported in M0008.
+
 ## Template vocabulary
 
-Existing tags remain:
+Existing template tags/control syntax remain unchanged.
+
+A generated Mermaid figure is placed/referenced through the existing figure semantics and `{{figure:<id>}}`.
+
+## External content producers
+
+M0008 introduces a constrained external process producer boundary, governed by:
 
 ```text
-{{content:<id>}}
-{{section:<id>}}
-{{table:<id>}}
-{{figure:<id>}}
-{{value:<id>}}
+docs/specs/CONTENT-PRODUCERS.md
 ```
 
-M0007 adds prepared-table control syntax:
+The first producer kind is `mermaid`.
+
+Product runtime configuration is command-based and package-manager neutral. Bun/npm/global Mermaid/wrappers are interchangeable if they satisfy the same input/output contract.
+
+Producers cannot mutate DOCX or register arbitrary YADG behavior.
+
+## Workspace front matter
+
+Workspace front matter schema version remains 1.
+
+Root keys may include:
 
 ```text
-{{table-rows:<table-id>}}
-{{cell}}
+yadg
+values
+producers
 ```
 
-These controls are valid only under `docs/specs/PREPARED-TABLES.md`.
+Value semantics remain in `docs/specs/WORKSPACE-VALUES.md`; producer semantics are in `docs/specs/CONTENT-PRODUCERS.md`.
 
-## Tables
+## Check/build
 
-One Markdown pipe table remains one semantic table. It may be rendered as a generated Word table or populate a prepared template-owned Word table.
+`check` remains output-free but executes required configured producers to validate actual source renderability.
 
-Prepared mode preserves template table/header/layout/style structures and clones only the designated prototype row. Markdown header defines semantic column order/count; Word header rows provide visible presentation.
+`build` performs equivalent validation before modifying normal outputs and embeds producer output through existing semantic authoring.
 
-Caption/reference semantics remain attached to the same semantic table.
+No stale producer-output fallback is allowed.
 
-## Values, references, rendering
+## Rendering
 
-Workspace values follow `docs/specs/WORKSPACE-VALUES.md`; semantic references/captions follow `docs/specs/WORD-REFERENCES.md`; renderer finalization follows `docs/specs/RENDERING.md`.
+Producer execution is an authoring concern.
 
-Prepared row population is complete during `build`; the renderer does not populate rows.
+The renderer receives ordinary authored DOCX containing the generated figure asset and requires no Mermaid-specific logic.
 
-## Validation
+## Diagnostics
 
-`check` validates all workspace/template semantics without outputs. `build` performs equivalent validation before modifying normal outputs.
-
-M0007 additionally validates prepared-table marker/prototype structure, positional column mapping, forbidden prototype content, placement uniqueness, and caption/reference interaction.
+External process startup/timeout/exit/output failures are actionable product diagnostics and should include source location and useful captured process detail.
 
 ## Non-goals
 
-YADG is neither a general Word layout engine nor a generic Markdown-to-DOCX converter and does not treat generated artifacts as source authority.
+YADG is not a general plugin host, generic Word layout engine, or generic Markdown-to-DOCX converter.

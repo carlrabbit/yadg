@@ -2,6 +2,33 @@
 
 YADG is a template-first document authoring tool. It validates and authors a single Office-independent workspace from Markdown sources and prepared DOCX templates.
 
+## Mermaid diagrams
+
+Workspaces may configure a trusted external Mermaid producer in `YADG.md`. The command is package-manager neutral; YADG appends its own input/output paths:
+
+```yaml
+producers:
+  mermaid:
+    executable: bun
+    arguments:
+      - x
+      - --bun
+      - --package
+      - "@mermaid-js/mermaid-cli@11.17.0"
+      - mmdc
+```
+
+Inline Mermaid blocks become ordinary figures and require a stable ID:
+
+````markdown
+```mermaid {#system-flow caption="System flow"}
+flowchart LR
+    A --> B
+```
+````
+
+YADG runs the configured executable directly during `check` and `build`; it does not install Bun, npm, or Mermaid. Producer configuration is trusted executable configuration.
+
 ## Workspace values
 
 `YADG.md` may begin with schema-versioned YAML front matter. Its body remains human-facing workspace notes and is not document source. M0006 supports case-sensitive, single-line string values:

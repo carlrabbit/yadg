@@ -26,10 +26,14 @@ public static class Program
         command.SetHandler((DirectoryInfo? path) =>
         {
             var loaded = WorkspaceLoader.Load(path?.FullName);
-            var diagnostics = ValidateTemplates(loaded);
-            PrintDiagnostics(diagnostics);
-            if (diagnostics.Any(d => d.IsError)) { fail(); return; }
-            Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {loaded.Document.References.Count} reference(s))");
+            try
+            {
+                var diagnostics = ValidateTemplates(loaded);
+                PrintDiagnostics(diagnostics);
+                if (diagnostics.Any(d => d.IsError)) { fail(); return; }
+                Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {loaded.Document.References.Count} reference(s))");
+            }
+            finally { loaded.CleanupTemporaryProducerFiles(); }
         }, workspace);
         return command;
     }
@@ -42,18 +46,19 @@ public static class Program
         command.SetHandler((DirectoryInfo? path) =>
         {
             var loaded = WorkspaceLoader.Load(path?.FullName);
-            var diagnostics = ValidateTemplates(loaded);
-            PrintDiagnostics(diagnostics);
-            if (diagnostics.Any(d => d.IsError)) { fail(); return; }
-            var output = Path.Combine(loaded.Root, "YadgPreWords");
-            Directory.CreateDirectory(output);
             try
             {
+                var diagnostics = ValidateTemplates(loaded);
+                PrintDiagnostics(diagnostics);
+                if (diagnostics.Any(d => d.IsError)) { fail(); return; }
+                var output = Path.Combine(loaded.Root, "YadgPreWords");
+                Directory.CreateDirectory(output);
                 foreach (var template in loaded.Templates)
                     WordAuthoring.Author(template, Path.Combine(output, Path.GetFileName(template)), loaded.Document, loaded.Values.Values);
                 Console.WriteLine($"build: wrote {loaded.Templates.Count} template output(s) to {output}");
             }
-            catch (Exception ex) { Console.Error.WriteLine(new Diagnostic("YADG-BUILD-001", $"Unable to author workspace output: {ex.Message}", true, output)); fail(); }
+            catch (Exception ex) { Console.Error.WriteLine(new Diagnostic("YADG-BUILD-001", $"Unable to author workspace output: {ex.Message}", true, loaded.Root)); fail(); }
+            finally { loaded.CleanupTemporaryProducerFiles(); }
         }, workspace);
         return command;
     }
