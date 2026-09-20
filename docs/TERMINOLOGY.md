@@ -1,37 +1,53 @@
 # Terminology
 
-## Semantic table
-Stable-ID Markdown table object containing semantic header schema, body rows, optional caption, and supported inline cell content.
+## External content producer
 
-## Generated table
-Word table whose table structure is created by YADG from a semantic table.
+A separate executable process that converts explicitly declared source content into a YADG-supported product without receiving or mutating Word/OOXML structures.
 
-## Prepared table
-Existing Word table whose structure/presentation is template-owned and whose repeated body rows may be populated by YADG.
+## Producer kind
 
-## Prepared-table binding
-Per-template physical placement binding from a semantic table to a prepared Word table through `{{table-rows:<id>}}`.
+A YADG-defined source/product contract implemented through an external command. M0008 defines `mermaid`.
 
-## Marker row
-Temporary template row whose logical content is `{{table-rows:<id>}}`; it identifies the following row as the prototype and is removed from output.
+## Producer configuration
 
-## Prototype row
-Word row immediately following the marker. It is cloned once per semantic body row and then removed.
+Workspace front-matter configuration specifying the executable and argument prefix used for a producer kind.
 
-## Cell placeholder
-Logical `{{cell}}` text in each prototype cell indicating where the corresponding semantic source cell is authored.
+## Producer product
 
-## Column mapping
-M0007 positional mapping between semantic Markdown columns and prototype-row Word cells.
+Validated output returned to YADG semantics. M0008's Mermaid product is a PNG-backed semantic figure.
 
-## Template-owned header
-Prepared-table row(s) displaying headings. M0007 does not populate them from Markdown header text.
+## Generated figure
 
-## Placement override
-Template-owned physical location suppressing natural-anchor rendering. Prepared-table bindings are table placement overrides.
+A semantic YADG figure whose image asset is produced during `check`/`build` rather than read from a source image file.
+
+## Mermaid block
+
+A Markdown fenced block whose info string is `mermaid {#id ...}` and whose body is Mermaid source.
+
+## Producer invocation
+
+One bounded external process execution using isolated temporary input/output files.
+
+## Test-tool manifest
+
+`eng/test-tools.json`, containing exact versions of external tools/packages used by authoritative integration tests.
+
+## One-shot package execution
+
+Running an npm package executable without adding it as a repository dependency/global install. M0008's authoritative integration target uses Bun `x`/`bunx` semantics.
+
+## Semantic figure
+
+A stable-ID figure participating in YADG natural/direct placement, captions, numbering, and references regardless of whether its image comes from a file or producer.
+
+## Workspace value
+
+Source-controlled scalar value from `YADG.md`, distinct from producer configuration and semantic object IDs.
 
 ## Authoring
-Office-independent transformation of workspace values, Markdown semantics, and prepared DOCX templates into authored DOCX.
+
+Office-independent transformation of workspace metadata, Markdown semantics, producer products, and prepared DOCX templates into authored DOCX.
 
 ## Renderer / finalizer
+
 Separate engine phase evaluating field/index/layout state after authoring.

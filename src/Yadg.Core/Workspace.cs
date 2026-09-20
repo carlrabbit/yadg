@@ -2,7 +2,14 @@ namespace Yadg.Core;
 
 public sealed record YadgWorkspace(string Root, IReadOnlyList<string> Sources, IReadOnlyList<string> Templates, YadgDocument Document, WorkspaceValues Values, IReadOnlyList<Diagnostic> Diagnostics)
 {
+    public List<string> TemporaryProducerDirectories { get; } = new();
     public bool IsValid => Diagnostics.All(d => !d.IsError);
+    public void CleanupTemporaryProducerFiles()
+    {
+        foreach (var directory in TemporaryProducerDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
+            try { if (Directory.Exists(directory)) Directory.Delete(directory, true); } catch { }
+        TemporaryProducerDirectories.Clear();
+    }
 }
 
 public static class WorkspaceLoader
@@ -40,7 +47,8 @@ public static class WorkspaceLoader
         var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path)));
         var document = MarkdownDocumentParser.Merge(parsed, diagnostics);
         document = AssetValidation.AttachAndValidate(document, root, diagnostics);
-        return new(root, sources, templates, document, values, diagnostics);
+        var workspace = new YadgWorkspace(root, sources, templates, document, values, diagnostics);
+        return workspace with { Document = MermaidProducer.RenderFigures(workspace.Document, root, values, diagnostics, workspace.TemporaryProducerDirectories) };
     }
 
     private static YadgWorkspace Invalid(string root, List<Diagnostic> diagnostics, Diagnostic diagnostic)

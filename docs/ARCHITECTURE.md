@@ -2,46 +2,71 @@
 
 ## Objective
 
-YADG separates workspace/content semantics, Word package transformation, template-owned presentation/prototypes, and rendering.
+YADG separates workspace/content semantics, external source transformation, Word package transformation, template-owned presentation, and document rendering.
 
 ## `authoring-core`
 
-Owns workspace discovery/values, Markdown parsing, OOXML-free semantic sections/tables/figures, stable IDs/references, and Office-independent validation.
+Owns workspace discovery/front matter, Markdown parsing, OOXML-free semantic objects, stable IDs/references, and producer-independent semantic validation.
 
-A semantic table contains header schema, body rows, optional caption, and stable identity independent of Word.
+M0008 Mermaid blocks enter the semantic model as generated figures without leaking process/OOXML types into core.
+
+## `content-producer` boundary
+
+An external producer is a separate process invoked through a constrained adapter.
+
+M0008 provides:
+
+```text
+Markdown Mermaid block
+        |
+        v
+Mermaid producer adapter
+        |
+        +--> configured executable + argument prefix
+        |
+        +--> temporary .mmd input
+        +<-- temporary .png output
+        |
+        v
+semantic/generated figure asset
+```
+
+The process runner owns executable resolution, argument passing, bounded execution, stdout/stderr capture, temporary files, cleanup, and result diagnostics.
+
+The Mermaid adapter owns Mermaid-specific `-i`/`-o` invocation and PNG validation.
+
+The producer boundary does not receive Word/OOXML structures.
 
 ## `word-authoring`
 
-Owns template tags/front matter/prototypes, value substitution, generated tables/figures, prepared-table analysis, per-template placement planning, row cloning/population, styles, captions, bookmarks, and fields.
+Consumes the generated figure through the existing image/placement/caption/reference path.
 
-OOXML row/cell types do not leak into core semantic models.
-
-## Prepared-table adapter
-
-```text
-semantic table -> generated Word table
-```
-
-or:
-
-```text
-semantic table
-+ existing Word table
-+ marker row
-+ prototype row
--> populated existing Word table
-```
-
-Prepared binding participates in the same per-template physical placement plan as direct `{{table:id}}`.
+No Mermaid-specific Word logic belongs here beyond the semantic figure being available with a valid PNG asset.
 
 ## Renderer
 
-The renderer owns field/index/layout finalization only. Prepared-row population is not deferred to LibreOffice or Word.
+LibreOffice or any future renderer sees an ordinary embedded figure.
 
-## Preservation
+The renderer neither executes Mermaid nor knows how the figure was produced.
 
-Prepared-table authoring clones template row/cell/paragraph/run presentation structures and replaces only control placeholders with semantic source-cell content. Table widths, borders, header presentation, style, and unrelated rows remain template authority.
+## Product versus test runtime
 
-## Runtime
+Bun is not a product dependency.
 
-M0007 introduces no new external runtime, filesystem, credential, or network boundary.
+Product workspaces configure an executable and argument prefix.
+
+Repository Tier-3 integration tests independently download the Bun version pinned in `eng/test-tools.json` and use Bun one-shot package execution of the pinned Mermaid CLI to establish a real external-producer target.
+
+## Trust boundary
+
+Workspace producer configuration is executable-code configuration.
+
+YADG provides no sandbox. Process separation limits coupling, not authority of the configured executable.
+
+## Dependency direction
+
+Core semantic types remain independent of process runners and OOXML.
+
+External process integration belongs in an authoring-side producer component that may be orchestrated by CLI/build/check.
+
+Word authoring consumes validated generated assets; it does not initiate package installation.

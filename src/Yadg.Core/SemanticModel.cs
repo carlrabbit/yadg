@@ -11,7 +11,7 @@ public sealed record YadgParagraph(IReadOnlyList<YadgInline> Inlines) : YadgBloc
 public sealed record YadgList(bool Ordered, IReadOnlyList<YadgListItem> Items) : YadgBlock;
 public sealed record YadgListItem(IReadOnlyList<YadgInline> Inlines);
 public sealed record YadgTable(string Id, IReadOnlyList<IReadOnlyList<YadgInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<YadgInline>>> Rows, string? Caption = null) : YadgBlock;
-public sealed record YadgFigure(string Id, string AltText, string AssetPath, string SourcePath, ImageAsset? Asset = null) : YadgBlock;
+public sealed record YadgFigure(string Id, string AltText, string AssetPath, string SourcePath, ImageAsset? Asset = null, string? GeneratedSource = null) : YadgBlock;
 
 public sealed record ImageAsset(string FullPath, string Format, int WidthPixels, int HeightPixels);
 

@@ -6,8 +6,11 @@ namespace Yadg.Core;
 
 public sealed record WorkspaceValues(IReadOnlyDictionary<string, string> Values)
 {
+    public IReadOnlyDictionary<string, MermaidProducerConfiguration> Producers { get; init; } = new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal);
     public static WorkspaceValues Empty { get; } = new(new Dictionary<string, string>(StringComparer.Ordinal));
 }
+
+public sealed record MermaidProducerConfiguration(string Executable, IReadOnlyList<string> Arguments);
 
 public static class WorkspaceValuesParser
 {
@@ -39,6 +42,10 @@ public static class WorkspaceValuesParser
         var rootKeys = new HashSet<string>(StringComparer.Ordinal);
         var yadgKeys = new HashSet<string>(StringComparer.Ordinal);
         var valueKeys = new HashSet<string>(StringComparer.Ordinal);
+        var producerKeys = new HashSet<string>(StringComparer.Ordinal);
+        var mermaidKeys = new HashSet<string>(StringComparer.Ordinal);
+        var producerArguments = new List<string>();
+        string? producerExecutable = null;
         var section = "";
         var versionSeen = false;
         for (var i = 1; i < close; i++)
@@ -49,6 +56,15 @@ public static class WorkspaceValuesParser
             var indent = raw.Length - raw.TrimStart(' ').Length;
             var line = raw.Trim();
             if (line.StartsWith("#", StringComparison.Ordinal)) continue;
+            if (section == "producers.mermaid.arguments" && indent == 6)
+            {
+                if (!line.StartsWith("-", StringComparison.Ordinal)) { Error(diagnostics, "YADG-PRODUCER-004", "Mermaid arguments must be a YAML sequence of strings.", location, i); continue; }
+                var item = line[1..].Trim();
+                if (!TryStringScalar(item, out var argument)) Error(diagnostics, "YADG-PRODUCER-004", "Mermaid arguments must contain only string scalars.", location, i);
+                else if (argument is "-i" or "--input" or "-o" or "--output") Error(diagnostics, "YADG-PRODUCER-006", "Mermaid input/output flags are reserved by YADG.", location, i);
+                else producerArguments.Add(argument);
+                continue;
+            }
             var colon = line.IndexOf(':');
             if (colon <= 0)
             {
@@ -61,7 +77,7 @@ public static class WorkspaceValuesParser
             if (indent == 0)
             {
                 if (!rootKeys.Add(key)) Error(diagnostics, "YADG-VALUES-006", $"Duplicate front matter key '{key}'.", location, i);
-                if (key is not "yadg" and not "values") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
+                if (key is not "yadg" and not "values" and not "producers") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
                 if (rawValue.Length != 0) Error(diagnostics, "YADG-VALUES-005", $"Mapping key '{key}' must not have an inline value.", location, i);
                 section = key; continue;
             }
@@ -84,10 +100,35 @@ public static class WorkspaceValuesParser
                 { Error(diagnostics, "YADG-VALUES-011", $"Workspace value '{key}' must be a single-line YAML string scalar.", location, i); continue; }
                 values[key] = value; continue;
             }
+            if (section == "producers" && indent == 2)
+            {
+                if (key != "mermaid") { Error(diagnostics, "YADG-PRODUCER-001", $"Unsupported producer kind '{key}'.", location, i); continue; }
+                if (!producerKeys.Add(key)) Error(diagnostics, "YADG-VALUES-006", "Duplicate producer configuration 'mermaid'.", location, i);
+                if (rawValue.Length != 0) Error(diagnostics, "YADG-PRODUCER-002", "Producer kind must be a mapping.", location, i);
+                section = "producers.mermaid"; continue;
+            }
+            if (section == "producers.mermaid" && indent == 4)
+            {
+                if (!mermaidKeys.Add(key)) { Error(diagnostics, "YADG-VALUES-006", $"Duplicate producer key 'mermaid.{key}'.", location, i); continue; }
+                if (key == "executable")
+                {
+                    if (!TryStringScalar(rawValue, out var executable) || string.IsNullOrWhiteSpace(executable)) Error(diagnostics, "YADG-PRODUCER-003", "Mermaid executable must be a non-empty string.", location, i);
+                    else producerExecutable = executable;
+                    continue;
+                }
+                if (key == "arguments")
+                {
+                    if (rawValue == "[]") { section = "producers.mermaid"; continue; }
+                    if (rawValue.Length != 0) Error(diagnostics, "YADG-PRODUCER-004", "Mermaid arguments must be a YAML sequence of strings.", location, i);
+                    section = "producers.mermaid.arguments"; continue;
+                }
+                Error(diagnostics, "YADG-PRODUCER-005", $"Unknown Mermaid producer key '{key}'.", location, i); continue;
+            }
             Error(diagnostics, "YADG-VALUES-007", $"Unsupported or incorrectly indented front matter key '{key}'.", location, i);
         }
         if (!rootKeys.Contains("yadg") || !versionSeen) diagnostics.Add(new("YADG-VALUES-008", "Workspace front matter must declare yadg.version: 1.", true, location));
-        return new(values);
+        if (producerKeys.Contains("mermaid") && producerExecutable is null) diagnostics.Add(new("YADG-PRODUCER-003", "Mermaid producer configuration requires executable.", true, location));
+        return new(values) { Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
     }
 
     private static bool TryScalar(string raw, out string value)
@@ -100,6 +141,16 @@ public static class WorkspaceValuesParser
         if (raw.StartsWith('\'') && raw.EndsWith('\'') && raw.Length >= 2) { value = raw[1..^1].Replace("''", "'"); return true; }
         if (raw is "null" or "Null" or "NULL" or "true" or "True" or "TRUE" or "false" or "False" or "FALSE" || Number.IsMatch(raw) || DateLike.IsMatch(raw)) return false;
         if (raw.StartsWith("- ", StringComparison.Ordinal) || raw.Contains(" #", StringComparison.Ordinal)) return false;
+        value = raw; return true;
+    }
+
+    private static bool TryStringScalar(string raw, out string value)
+    {
+        value = string.Empty;
+        if (raw.Length == 0 || raw is "null" or "Null" or "NULL" or "true" or "false") return false;
+        if (raw.StartsWith('"') && raw.EndsWith('"') && raw.Length >= 2) { try { value = Regex.Unescape(raw[1..^1]); return true; } catch { return false; } }
+        if (raw.StartsWith('\'') && raw.EndsWith('\'') && raw.Length >= 2) { value = raw[1..^1].Replace("''", "'"); return true; }
+        if (raw.StartsWith("[", StringComparison.Ordinal) || raw.StartsWith("{", StringComparison.Ordinal) || raw.Contains(" #", StringComparison.Ordinal)) return false;
         value = raw; return true;
     }
 

@@ -8,6 +8,7 @@
 | M0004 | References and Word document structures | complete | Add template-local front matter/prototypes, numbered captions, bookmarks/SEQ/REF fields, and semantic numeric references. |
 | M0005 | LibreOffice renderer and finalization | complete | Add real LibreOffice field/index finalization, finalized DOCX/PDF artifacts, runtime isolation, renderer validation, and blocking artifact-quality review. |
 | M0006 | Workspace values | complete | Add source-controlled scalar workspace values in `YADG.md` and inline template `{{value:<id>}}` substitution while preserving template-owned formatting. |
-| M0007 | Prepared table row population | ready | Populate template-owned Word table body rows from semantic Markdown tables using visible marker/prototype-row controls while preserving template presentation. |
+| M0007 | Prepared table row population | complete | Populate template-owned Word table body rows from semantic Markdown tables while preserving template presentation. |
+| M0008 | External content producers and Mermaid diagrams | ready | Add a constrained external-process content-producer boundary and inline Mermaid fenced blocks producing PNG-backed semantic figures. |
 
 Milestone implementation starts from the milestone document and its explicitly listed authority.

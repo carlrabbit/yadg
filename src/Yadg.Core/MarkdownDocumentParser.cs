@@ -11,6 +11,8 @@ public static class MarkdownDocumentParser
     private static readonly Regex StableId = new(@"^(?<text>.*?)\s*\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\s*$", RegexOptions.Compiled);
     private static readonly Regex TableId = new("^\\s*\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\\\"(?<caption>[^\\\"]*)\\\")?\\}\\s*$", RegexOptions.Compiled);
     private static readonly Regex FigureLine = new("^\\s*!\\[(?<alt>.*?)\\]\\((?<path>[^\\s\\)]+)(?:\\s+\"(?<title>[^\"]*)\")?\\)\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)\\}\\s*$", RegexOptions.Compiled);
+    private static readonly Regex MermaidInfo = new("^mermaid\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
+    private static readonly Regex MermaidOpening = new("^\\s*`{3,}\\s*(?<info>mermaid.*)$", RegexOptions.Compiled);
     private sealed record RawTable(string? Id, string? Caption, string[] Header, string[][] Rows);
 
     public static ParseResult Parse(string markdown, string location = "<input>")
@@ -23,12 +25,18 @@ public static class MarkdownDocumentParser
             .Where(m => m.Success).Select(m => (Text: Regex.Replace(m.Groups["text"].Value.Trim(), @"\s*\{#[A-Za-z][A-Za-z0-9_-]*\}$", ""), Id: m.Groups["id"].Success ? m.Groups["id"].Value : null)).ToArray();
         var figureMetadata = lines.Select(line => FigureLine.Match(line)).Where(m => m.Success)
             .Select(m => (Id: m.Groups["id"].Value, Alt: m.Groups["alt"].Value, Path: m.Groups["path"].Value, HasTitle: m.Groups["title"].Success)).ToArray();
+        var mermaidMetadata = lines.Select(line => MermaidOpening.Match(line)).Where(m => m.Success).Select(m =>
+        {
+            var match = MermaidInfo.Match(m.Groups["info"].Value.Trim());
+            if (!match.Success) { diagnostics.Add(new("YADG-MERMAID-001", "Mermaid fence requires exactly a stable ID and optional caption attribute.", true, location)); return (Id: (string?)null, Caption: (string?)null); }
+            return (Id: (string?)match.Groups["id"].Value, Caption: match.Groups["caption"].Success ? match.Groups["caption"].Value : null);
+        }).ToArray();
         var rawTables = ParseRawTables(lines);
         var blocks = new List<YadgBlock>();
-        var headingOrdinal = 0; var tableOrdinal = 0; var figureOrdinal = 0;
+        var headingOrdinal = 0; var tableOrdinal = 0; var figureOrdinal = 0; var mermaidOrdinal = 0;
         foreach (var block in ast)
         {
-            var converted = ConvertBlock(block, diagnostics, location, headingMetadata, ref headingOrdinal, rawTables, ref tableOrdinal, figureMetadata, ref figureOrdinal);
+            var converted = ConvertBlock(block, diagnostics, location, headingMetadata, ref headingOrdinal, rawTables, ref tableOrdinal, figureMetadata, ref figureOrdinal, mermaidMetadata, ref mermaidOrdinal);
             if (converted is not null) blocks.Add(converted);
         }
         if (figureMetadata.Any(f => f.HasTitle)) diagnostics.Add(new("YADG-FIGURE-001", "Markdown image titles are unsupported for M0003 figures.", true, location));
@@ -78,7 +86,7 @@ public static class MarkdownDocumentParser
         if (!target.TryAdd(id, value)) diagnostics.Add(new("YADG-REF-002", $"Duplicate stable ID '{id}'.", true, location));
     }
 
-    private static YadgBlock? ConvertBlock(Block block, List<Diagnostic> diagnostics, string location, IReadOnlyList<(string Text, string? Id)> headings, ref int headingOrdinal, IReadOnlyList<RawTable> rawTables, ref int tableOrdinal, IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures, ref int figureOrdinal)
+    private static YadgBlock? ConvertBlock(Block block, List<Diagnostic> diagnostics, string location, IReadOnlyList<(string Text, string? Id)> headings, ref int headingOrdinal, IReadOnlyList<RawTable> rawTables, ref int tableOrdinal, IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures, ref int figureOrdinal, IReadOnlyList<(string? Id, string? Caption)> mermaidMetadata, ref int mermaidOrdinal)
     {
         if (block is LinkReferenceDefinitionGroup) return null;
         if (block is HeadingBlock heading)
@@ -105,6 +113,22 @@ public static class MarkdownDocumentParser
                 items.Add(new YadgListItem(ConvertInlines(paragraphs[0].Inline, diagnostics, location)));
             }
             return new YadgList(list.IsOrdered, items);
+        }
+        if (block is FencedCodeBlock fenced)
+        {
+            if (!string.Equals(fenced.Info, "mermaid", StringComparison.Ordinal) || mermaidOrdinal >= mermaidMetadata.Count || mermaidMetadata[mermaidOrdinal].Id is null)
+            {
+                diagnostics.Add(new("YADG-MD-UNSUPPORTED", "Only Mermaid fenced blocks with a stable ID are supported.", true, location));
+                return null;
+            }
+            var metadata = mermaidMetadata[mermaidOrdinal++];
+            var source = fenced.Lines.ToString().Trim();
+            if (source.Length == 0)
+            {
+                diagnostics.Add(new("YADG-MERMAID-003", "Mermaid source must not be empty.", true, location));
+                return null;
+            }
+            return new YadgFigure(metadata.Id!, metadata.Caption ?? string.Empty, "<generated-mermaid.png>", location, null, source);
         }
         if (block is ParagraphBlock paragraph)
         {

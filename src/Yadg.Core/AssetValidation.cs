@@ -7,6 +7,7 @@ public static class AssetValidation
         var figures = new Dictionary<string, YadgFigure>(StringComparer.Ordinal);
         foreach (var figure in document.Figures.Values)
         {
+            if (figure.GeneratedSource is not null) { figures[figure.Id] = figure; continue; }
             var result = ReadAsset(figure, workspaceRoot);
             if (result.Asset is null) { diagnostics.Add(result.Diagnostic!); figures[figure.Id] = figure; }
             else figures[figure.Id] = figure with { Asset = result.Asset };
