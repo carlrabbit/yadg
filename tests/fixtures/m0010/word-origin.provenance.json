@@ -1,0 +1,11 @@
+{
+  "path": "tests/fixtures/m0010/word-origin.docx",
+  "application": "Microsoft Word",
+  "version": "16.0.20326.20144",
+  "platform": "Microsoft Windows NT 10.0.26200.0",
+  "method": "Created as a new document through Word COM document model and saved by Word as DOCX",
+  "date": "2026-09-21T06:38:15.7280396+02:00",
+  "sha256": "B1350E47584A6102A5B2BB5B3F3F5B4F056740B0101B16441EFF3214A1F1C78A",
+  "synthetic": true,
+  "nonConfidential": true
+}

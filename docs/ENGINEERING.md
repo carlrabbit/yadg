@@ -10,7 +10,9 @@ YADG is C#/.NET.
 
 Open XML authoring remains separate from real document renderers.
 
-M0009 introduces a Windows/desktop-Microsoft-Word specialization and explicit publishing.
+M0009 introduced a Windows/desktop-Microsoft-Word specialization and explicit publishing.
+
+M0010 strengthens the pre-V1 compatibility boundary with realistic Office-produced templates, relative heading composition, and document-wide visible-text value substitution.
 
 ## Platform policy after M0009
 
@@ -18,7 +20,7 @@ The authoritative full-product build and validation locus is Windows.
 
 A complete Linux build is no longer a release/readiness requirement.
 
-Authoring components should remain free of Word COM dependencies, but the CLI/full solution may become Windows-targeted if required by the selected interop mechanism.
+Authoring components should remain free of Word COM dependencies, but the CLI/full solution may be Windows-targeted because of the selected Word interop mechanism.
 
 Do not add complexity solely to preserve Linux compilation if that conflicts with a robust Word renderer.
 
@@ -28,13 +30,11 @@ The authoritative Word-capable development/build machine has:
 
 - Windows;
 - repository-supported .NET SDK;
-- desktop Microsoft Word installed;
-- the Office/COM registration/interoperability metadata required by the chosen implementation mechanism;
+- Visual Studio/MSBuild tooling required by the M0009 `COMReference`/`ResolveComReference` build path;
+- desktop Microsoft Word installed and COM-registered;
 - an interactive user profile with Office activation/first-run complete.
 
-The exact interop binding mechanism is implementation-owned.
-
-Do not treat a third-party/unverified NuGet interop package as authoritative merely to preserve portability.
+M0010 must not replace the proven M0009 build-time generated Word interop approach merely to simplify testing.
 
 ## Word automation execution policy
 
@@ -46,6 +46,12 @@ Word tests/runs must avoid concurrent YADG-owned Word automation instances.
 
 Tests must clean up owned documents/application instances and verify, where practical, that no owned Word process remains.
 
+## LibreOffice capability
+
+M0010 authoritative compatibility validation also requires a real LibreOffice Writer runtime capable of opening/finalizing the committed realistic fixtures through the existing LibreOffice renderer.
+
+The existing isolated-profile/UNO runtime policy remains in force.
+
 ## Canonical engineering interface
 
 The canonical repository validation command remains:
@@ -54,91 +60,137 @@ The canonical repository validation command remains:
 ./eng/validate.ps1
 ```
 
-After M0009 its authoritative locus is Windows.
+Its authoritative locus is Windows and it must continue to build the Word-enabled product through the M0009-compatible MSBuild path.
 
-Implementation may keep non-Windows subsets working, but they are not M0009 completion evidence for the Word-enabled product.
+Tier-3 realistic Office compatibility is separate from ordinary Tier-2 repository validation.
+
+## Test strategy
+
+YADG remains integration-first where real document/runtime behavior materially determines correctness.
+
+Synthetic OpenXML fixtures remain appropriate for focused edge cases such as overflow, malformed story tags, precise run-splitting, and diagnostics.
+
+Synthetic OpenXML-only fixtures are no longer sufficient evidence for broad template compatibility.
+
+M0010 requires committed application-produced DOCX fixtures with recorded provenance.
+
+## Application-produced fixture provenance
+
+For each realistic fixture, commit repository-local provenance containing:
+
+- origin application (`Microsoft Word` or `LibreOffice Writer`);
+- exact application version;
+- operating system/platform;
+- creation/save method;
+- SHA-256 of the committed DOCX;
+- creation/update date;
+- statement that the fixture is synthetic and redistribution-safe.
+
+The fixture must originate as a new document in the stated application and its required content/structure must be created through that application's UI/document model before DOCX save.
+
+Do not satisfy this requirement by synthesizing a DOCX with OpenXML SDK and merely round-tripping it through the application.
+
+Tests verify the committed fixture hash against provenance and operate on copied fixture bytes rather than regenerating the fixture.
 
 ## Validation tiers
 
 ### Tier 0 — edit sanity
 
-Windows build/static/config checks for changed areas.
+Use the repository's Windows/MSBuild-compatible build path and focused static/package checks.
 
 ### Tier 1 — focused
 
-Renderer orchestration/failure handling and publish path/copy semantics.
+Cover deterministic authoring semantics without needing the external Office runtimes for every case:
 
-Mocks/fakes may cover paths that do not claim real Word behavior.
+- template outline-context resolution;
+- `section` and `content` heading rebasing;
+- selected roots whose source level is not 1;
+- preservation of heading-level gaps;
+- effective heading levels 1..9;
+- failure before output mutation when effective level exceeds 9;
+- front-matter heading bindings 1..9;
+- effective-level style/numbering/reference validation;
+- multi-paragraph body composition;
+- value story discovery and split-run replacement;
+- nested text-box scope isolation;
+- footnote/endnote/comment/header/footer value diagnostics;
+- field-instruction and metadata exclusions.
 
 ### Tier 2 — repository
+
+Run:
 
 ```powershell
 ./eng/validate.ps1
 ```
 
-Runs on the authoritative Windows build locus.
+Tier 2 must include focused M0010 tests and fixture-provenance/hash verification, but it need not launch Word/LibreOffice for the full compatibility matrix.
 
-Real Word invocation may remain separate in Tier 3, but the Word-enabled product must compile.
+### Tier 3 — realistic Office compatibility
 
-### Tier 3 — integration
+M0010 adds a dedicated Windows PowerShell integration target:
 
-M0009 has two real targets:
+```powershell
+./eng/test-m0010-tier3.ps1
+```
 
-1. real Microsoft Word on an interactive Windows user session;
-2. real filesystem publication against finalized DOCX inputs.
+The target requires:
 
-Mocks/fakes/OOXML-only inspection are not equivalent evidence for Word automation.
+```text
+Windows interactive user session
+Microsoft Word installed/activated/COM-registered
+LibreOffice Writer installed
+M0009 Word build prerequisites
+```
 
-### Tier 4 — consumer/release
+It uses the committed Word-origin and LibreOffice-origin fixture templates and does not synthesize substitute templates.
 
-Deferred to the V1 release-readiness milestone.
+It must run:
 
-### Tier 5 — human review
+```text
+Word-origin        -> YADG build -> Word render
+Word-origin        -> YADG build -> LibreOffice render
+LibreOffice-origin -> YADG build -> Word render
+LibreOffice-origin -> YADG build -> LibreOffice render
+```
 
-M0009 owns blocking artifact-quality review `HR-M0009-01`.
+For each path record:
 
-## Word Tier-3 evidence
-
-A real Word integration run records at least:
-
-- OS/platform;
-- observable Word version;
+- fixture identity/hash/origin;
 - repository revision;
-- authored DOCX identity/hash where practical;
+- OS/platform;
+- renderer/runtime version;
+- authored DOCX identity/hash;
 - finalized DOCX identity/hash;
 - command/result.
 
-The fixture exercises YADG-owned structures whose correctness depends on finalization: sequence numbering, REF fields, numbered section references, and template-owned indexes where feasible.
+Automated inspection must verify at least:
 
-Structural post-save inspection complements but does not replace opening/refreshing/saving through real Word.
+- no unresolved expected value tags in supported stories;
+- expected values present in body/header/footer/footnote/endnote/comment/text-box stories;
+- correct rebased heading levels/styles for `section` and `content` scenarios;
+- ordinary paragraphs preserve their template-owned paragraph style/properties;
+- semantic references/numbering still target effective rendered headings correctly;
+- existing fields/index structures remain present and renderer-updated where applicable;
+- template-owned headers/footers/notes/comments/text boxes remain structurally present;
+- existing static template content and representative layout structures remain present;
+- finalized DOCX opens successfully in the real renderer path without repair/fatal conversion error.
 
-## Publishing validation
+No mock, generated-simple-template, or single-renderer substitute is authoritative Tier-3 evidence.
 
-Publishing tests use real temporary filesystem destinations.
+### Tier 4 — consumer/release
 
-Cover:
+Deferred to M0011 V1 release-readiness.
 
-- configured default path;
-- CLI override precedence;
-- workspace-relative resolution;
-- external absolute destination;
-- reserved-directory rejection;
-- all top-level `YadgWords/*.docx`;
-- no PDF/intermediate/template copying;
-- replacement of same-name destination;
-- preservation of unrelated files;
-- no implicit render/build;
-- failure without effective destination;
-- failure without finalized DOCX;
-- temp/incomplete-output hygiene.
+### Tier 5 — human review
 
-## M0009 human review
-
-Canonical review ID:
+M0010 owns blocking artifact-quality review:
 
 ```text
-HR-M0009-01
+HR-M0010-01
 ```
+
+## M0010 human review
 
 Review class:
 
@@ -146,65 +198,57 @@ Review class:
 artifact-quality
 ```
 
-Owning milestone:
+Review subject consists of two representative finalized artifacts from the Tier-3 matrix:
 
-```text
-M0009
-```
+1. Word-origin fixture finalized by Microsoft Word;
+2. LibreOffice-origin fixture finalized by LibreOffice.
 
-Implementation extends existing milestone-scoped review tooling so:
+The review evidence also identifies the other two successful cross-render matrix results.
+
+The reviewer checks the representative artifacts in their corresponding application and confirms:
+
+- document opens without repair/conversion warning requiring intervention;
+- page/layout/section structure remains materially intact;
+- template-owned static content remains correctly positioned;
+- headers and footers remain intact, including value substitution and page fields;
+- footnote/endnote/comment values are visibly substituted;
+- text-box/shape value is visibly substituted without destroying shape/layout;
+- `section` and `content` insertion below template outline level 4 produces the expected visible heading hierarchy;
+- inserted ordinary paragraphs use the intended body presentation and remain separate paragraphs;
+- tables/figures/captions/references/TOC/list structures used by the fixture remain plausible/current;
+- no unresolved YADG controls expected to be consumed are visible;
+- no obvious pagination/layout corruption attributable to YADG is present.
+
+The implementation extends existing milestone review tooling so:
 
 ```powershell
-./eng/review-check.ps1 --milestone M0009
+./eng/review-check.ps1 --milestone M0010
 ```
 
-fails until an acceptable human record exists.
+fails until the human approval record exists.
 
 No implementation agent may fabricate approval.
 
-The review record identifies at least:
-
-- milestone/review ID;
-- decision/status;
-- human reviewer;
-- repository revision;
-- Microsoft Word version;
-- reviewed finalized DOCX hash/evidence identity.
-
-Waiver is forbidden.
-
-## Human review subject
-
-The reviewer opens a representative M0009 finalized DOCX in Microsoft Word and checks that:
-
-- it opens without repair prompt;
-- template presentation is materially intact;
-- figures are visible and plausibly positioned;
-- generated/prepared tables are intact;
-- captions/numbering are current;
-- semantic references display current values;
-- included TOC/list structures display current entries;
-- no unresolved YADG control text is visible;
-- no obvious pagination/layout corruption was introduced.
-
-This is a milestone completion gate, not perpetual re-review.
+Waiver is forbidden before V1 release-readiness.
 
 ## Fixtures and hygiene
 
-Use synthetic, redistribution-safe templates/content only.
+All realistic and focused fixtures are synthetic and redistribution-safe.
 
-Never commit confidential bank templates/content.
+Never commit confidential/bank templates or document content.
 
-## Existing LibreOffice validation
+Tracked changes must be accepted in the realistic fixture templates before they become fixture authority.
 
-M0005 LibreOffice behavior remains supported and historically validated.
+## Existing M0009 validation
 
-M0009 does not require re-running its visual review unless implementation changes that renderer.
+M0009 Word renderer/publish behavior remains in force.
+
+M0010 may strengthen authoring logic consumed by both renderers, but must not weaken the M0009 Word integration/build boundary or publishing behavior.
 
 ## Documentation changes
 
-Implementation updates direct public usage docs when M0009 behavior would otherwise be missing or contradictory.
+Implementation updates direct README/user-facing documentation when M0010 behavior would otherwise be missing or contradictory.
 
-Broad V1 documentation audit remains M0010 work.
+The broad V1 documentation audit, NuGet packaging/publishing scripts, installation validation, version/release audit, and related release-readiness work move to M0011.
 
-GitHub workflow automation is not M0009 scope.
+GitHub workflow automation remains postponed and is not M0010 scope.

@@ -88,7 +88,7 @@ public sealed class M0004IntegrationTests
         styles.Append(Enumerable.Range(1, 6).Select(i => new Style { Type = StyleValues.Paragraph, StyleId = $"Heading{i}" })); styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "AltHeading", StyleParagraphProperties = new StyleParagraphProperties(new NumberingProperties(new NumberingId { Val = 11 })) }); stylesPart.Styles = styles; stylesPart.Styles.Save();
         var numberingPart = main.AddNewPart<NumberingDefinitionsPart>(); numberingPart.Numbering = new Numbering(new AbstractNum { AbstractNumberId = 11 }, new NumberingInstance { NumberID = 11, AbstractNumId = new AbstractNumId { Val = 11 } }); numberingPart.Numbering.Save();
         var body = new Body();
-        body.Append(P("{{yadg:frontmatter}}"), P("version: 1"), P("styles:"), P("  headings:"), P("    2: AltHeading"), P("  caption: Caption"), P("prototypes:"), P("  figureCaption: fig-prototype"), P("  tableCaption: table-prototype"), P("{{/yadg:frontmatter}}"));
+        body.Append(P("{{yadg:frontmatter}}"), P("version: 1"), P("styles:"), P("  headings:"), P("    1: AltHeading"), P("  caption: Caption"), P("prototypes:"), P("  figureCaption: fig-prototype"), P("  tableCaption: table-prototype"), P("{{/yadg:frontmatter}}"));
         body.Append(P("{{yadg:prototype:fig-prototype}}"));
         body.Append(new Paragraph(
             new Run(new Text("Figure ")), new Run(new FieldChar { FieldCharType = FieldCharValues.Begin }),
