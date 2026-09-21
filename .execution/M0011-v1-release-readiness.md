@@ -2,63 +2,53 @@
 
 ## Status
 
-Implementation and automated release validation complete; human HR-M0011-01 approval is still required. The milestone is not declared complete while the review gate is pending.
+Corrected implementation and automated release validation complete; narrow HR-M0011-01 human approval remains pending. The superseded PR11 generated-interop package/hash/evidence is obsolete and is not release evidence.
 
 ## Work packages
 
-1. **WP-01 — Authority/baseline**: apply the supplied overlay, read the milestone and Required Authority, inspect the existing M0009/M0010 build and review boundaries, and maintain this ledger.
-2. **WP-02 — Package/version surface**: establish central `1.0.0` MSBuild versioning, one packable CLI .NET tool, package metadata/README, public version output, and explicit non-packability for other projects while preserving generated COM interop.
-3. **WP-03 — Release scripts**: add full Visual Studio MSBuild pack tooling, package inspection, explicit-source local-safe NuGet push tooling, and installed consumer Tier-4 validation.
-4. **WP-04 — Public V1 documentation/evidence**: audit README, add CHANGELOG, create machine-readable release evidence, and map acceptance criteria to implementation/validation evidence.
-5. **WP-05 — Required validation**: run Tier 2, M0010 Tier 3, pack, Tier 4, and local publish-script validation; stop if the authoritative runtime/packaging boundary is unavailable.
-6. **WP-06 — Human review/closure**: prepare exact-hash HR-M0011-01 evidence; do not fabricate approval; after actual approval, run review-check, fresh reread, reconcile, and complete the audit.
+1. **WP-01 — Corrected authority/baseline:** applied the late-bound-COM overlay on the existing PR11 branch, reread corrected authority, and retained this ledger.
+2. **WP-02 — Late-bound Word renderer:** removed Office COM references and typed interop; implemented `Word.Application` ProgID activation with dynamic/reflection late binding while preserving STA, timeout, staging, refresh, save, diagnostics, and cleanup behavior.
+3. **WP-03 — SDK package/CLI:** moved the CLI/Word renderer to ordinary SDK-compatible `net10.0` tool packaging, removed the prior package normalization workaround, upgraded stable `System.CommandLine` 2.0.0, and validated root/command help.
+4. **WP-04 — Documentation/review:** corrected README onboarding/Mermaid/runtime/build guidance, removed DMS wording, changed CHANGELOG to `[Unreleased]`, aligned direct engineering/spec documentation, and narrowed M0011 review tooling to human decision/identity.
+5. **WP-05 — Fresh release validation:** ran Tier 2, M0010 Tier 3, ordinary SDK pack, M0011 Tier 4, and local-only publish validation on the corrected revision.
+6. **WP-06 — Evidence/closure:** regenerated corrected release evidence; human approval is not fabricated and `review-check` must pass only after actual approval.
 
 ## Acceptance/evidence map
 
-| Area | Implementation | Validation/evidence |
+| Criterion | Implementation | Validation/evidence |
 |---|---|---|
-| Version/package | `Directory.Build.props`; `src/Yadg.Cli/Yadg.Cli.csproj`; `Program.ProductVersion`; `Directory.Build.targets` | `validate.ps1`; pack metadata inspection; installed `--version` = `1.0.0`; non-CLI projects inherit `IsPackable=false` |
-| Full-MSBuild COMReference pack | `eng/pack.ps1`; `Yadg.WordRenderer.csproj` retains both `COMReference` items; CLI duplicate wrapper generation removed | `pack.ps1` passed via Visual Studio 18.10.1 MSBuild; package contains `Interop.Microsoft.Office.Core.dll` and `Interop.Microsoft.Office.Interop.Word.dll` |
-| Publish tooling | `eng/publish-nuget.ps1` requires `-Source`, validates `Yadg 1.0.0`, no embedded credential/default feed/skip-duplicate | local filesystem source push passed; no external push performed |
-| Installed consumer Tier 4 | `eng/test-m0011-tier4.ps1` isolated tool/cache/workspace and package inspection | installed command passed version/help/check/build/Word render/LibreOffice render/publish; release evidence JSON |
-| Public README/CHANGELOG | audited root `README.md`; new root `CHANGELOG.md` | documentation contract reviewed; package README entry and metadata inspected |
-| Release evidence/exact hash | `artifacts/release/evidence/M0011/release-evidence.json` | package SHA256 `9610F6025806A9CA69E4837878961743CF249CAAA6BD70B3CD6015CDA9A8452A`; exact package path `artifacts/package/Yadg.1.0.0.nupkg` |
-| Human HR-M0011-01 gate | pending human action | review-check after approval |
+| Late-bound Word binding | `src/Yadg.WordRenderer/WordRenderer.cs` uses `Type.GetTypeFromProgID("Word.Application")`, `Activator.CreateInstance`, dynamic calls, and existing lifecycle/diagnostic flow | Fresh M0010 four-path matrix and installed Tier 4 Word render passed; package has no Office interop entries |
+| No COMReference/generated wrappers | `Yadg.WordRenderer.csproj` and CLI project contain no `COMReference`; no Office packages or generated DLLs | `validate.ps1` ordinary SDK build; package inspection rejects Office/Interop DLLs and found none |
+| SDK restore/build/pack | `eng/pack.ps1` uses `dotnet restore`, `dotnet build`, and `dotnet pack`; `Directory.Build.targets` removed | `./eng/pack.ps1` passed and produced exactly `Yadg.1.0.0.nupkg` |
+| Package identity/hygiene | central `1.0.0`, package metadata, README/LICENSE inclusion, one CLI package | Tier 4 package inspection and isolated install passed; no tests/fixtures/review/secrets/bin/obj/Office wrappers |
+| CLI stable/help | `System.CommandLine` 2.0.0; stable `Add`, `SetAction`, `Parse().Invoke()` API; descriptions/defaults preserved | root, check, build, render, publish help and `--version` were executed successfully; Tier 4 records root/command help passed |
+| README/changelog | README minimal workspace/onboarding/Mermaid example, runtime/build distinction, no DMS; CHANGELOG `[Unreleased]`; direct docs aligned | documentation audit in release evidence |
+| Publish tooling | explicit-source `eng/publish-nuget.ps1` retained and package ID/version checked | current package pushed only to temporary local filesystem source; no external publication |
+| Fresh compatibility | existing authoring/render/publish semantics retained | `validate.ps1` 46/46; M0010 Tier 3 all four Word/LibreOffice paths; Tier 4 installed Word/LibreOffice/publish passed |
+| Corrected release evidence | `artifacts/release/evidence/M0011/release-evidence.json` regenerated by Tier 4 | revision `0cd7444a7db2d14117c2fb4888a43dc773ef0e49`; package SHA `AA34CED0372A8B32142A3D52B9A56412EB454C654785E7FB14D38E8479294D09` |
+| Narrow human review | corrected pending HR-M0011-01; `review.ps1` derives machine fields from current evidence/package | `review-check` remains blocked until actual human decision; no hash/runtime/test transcription required from reviewer |
 
 ## Validation log
 
 | Command/evidence | Result |
 |---|---|
-| Overlay + authority read | complete; external guide/planning conversation not used |
 | `./eng/validate.ps1` | passed; 46/46 tests |
-| `./eng/test-m0010-tier3.ps1` | passed; all four Word/LibreOffice origin/renderer paths |
-| `./eng/pack.ps1` | passed; exactly `artifacts/package/Yadg.1.0.0.nupkg`; `-OutputPath` override also passed |
-| `./eng/test-m0011-tier4.ps1` | passed; package inspection and installed-tool lifecycle including both renderers/publish |
-| local `publish-nuget.ps1` validation | passed against temporary repository-local filesystem destination; destination was removed; no external feed used |
-| `./eng/review-check.ps1 --milestone M0011` | correctly fails while `.review/records/HR-M0011-01.md` is absent; must pass only after actual human approval |
+| `./eng/test-m0010-tier3.ps1` | passed; all four origin/renderer paths, including late-bound Word |
+| `./eng/pack.ps1` | passed via ordinary .NET SDK; exactly `artifacts/package/Yadg.1.0.0.nupkg` |
+| `./eng/test-m0011-tier4.ps1` | passed; package has no Office wrappers; installed help/version/check/build/late-bound Word/LibreOffice/publish passed |
+| local `publish-nuget.ps1` validation | passed against temporary local filesystem destination; no external feed |
+| `./eng/review-check.ps1 --milestone M0011` | correctly remains pending until human HR-M0011-01 approval |
 
-## Criterion-level reconciliation
-
-- **Versioning:** central `VersionPrefix=1.0.0`, empty suffix, explicit informational version, package `Yadg.1.0.0.nupkg`, and installed `yadg --version` all agree; no competing release version was added.
-- **Package identity/surface:** CLI is the sole packable source project; package ID/tool command/author/description/repository/readme metadata are present; target implementation remains `net10.0-windows`/x64 and the normalized tool layout installs on .NET 10; generated Word/Core wrappers are present and installed execution uses isolated state.
-- **Package hygiene:** default pack output is exactly one expected package; package inspection found no tests, fixtures, review evidence, credentials, or source `bin`/`obj`; the authorized MIT expression and packaged `LICENSE` are present; exact SHA is in release evidence.
-- **Pack script:** uses full Visual Studio MSBuild, restores first, fails clearly without supported MSBuild, removes stale expected output before packing, supports `-OutputPath`, never falls back to `dotnet pack`, and normalizes only the tool directory layout required by the installer after the COMReference pack succeeds.
-- **NuGet publish script:** explicit `-Source` is mandatory; package path defaults only to the exact expected artifact; ID/version are checked; `NUGET_API_KEY` is environment-only; normal NuGet authentication remains available; no `--skip-duplicate`; local filesystem push passed and no external publication occurred.
-- **Tier 4:** isolated `dotnet tool install --tool-path` and direct installed executable passed `--version`, `--help`, realistic check/build, installed Word and LibreOffice rendering, and publish. Package wrappers resolved without repository `bin`/`obj`.
-- **Existing validation:** final release sequence passed Tier 2, all four M0010 Tier-3 paths, full-MSBuild pack, and M0011 Tier 4; M0009 Word COMReference/publish behavior and M0010 realistic composition/value behavior remain covered.
-- **README audit:** current README covers purpose/ownership, Windows/.NET 10 installation, workspace workflow, public commands/options, template vocabulary, relative headings, visible value stories, structured content/references, Mermaid trust, renderer prerequisites/differences, PDF status, publishing, security, limitations, and troubleshooting without relying on milestone history.
-- **CHANGELOG/CLI consistency:** root `CHANGELOG.md` has a dated `1.0.0` entry; README command syntax matches CLI help; version output is `1.0.0`; README makes no PDF-publication or unattended Word claim.
-- **Release evidence:** machine-readable evidence records revision `c95008f834d30abaa08cf6132ddb85f7cd6d03ea`, package hash, Windows/.NET/MSBuild/Word/LibreOffice provenance, M0010 evidence reference, consumer results, local publish result, documentation audit, no external publication, and authorized MIT license metadata.
-- **Human review:** pending request is `.review/pending/HR-M0011-01.md`; `eng/review-check.ps1` recognizes M0011 and will verify the approved record’s `SHA256:` value against the exact package. No approval or waiver was fabricated.
-
-## Release evidence
+## Corrected release evidence
 
 - Package: `artifacts/package/Yadg.1.0.0.nupkg`
-- SHA-256: `9610F6025806A9CA69E4837878961743CF249CAAA6BD70B3CD6015CDA9A8452A`
+- SHA-256: `AA34CED0372A8B32142A3D52B9A56412EB454C654785E7FB14D38E8479294D09`
 - Evidence: `artifacts/release/evidence/M0011/release-evidence.json`
-- M0010 matrix evidence: `artifacts/review/evidence/M0010/tier3-evidence.json`
-- No external NuGet push, GitHub Release, tag, workflow, or software-license decision was made.
+- M0010 evidence: `artifacts/review/evidence/M0010/tier3-evidence.json`
+- Word runtime: `16.0.20326.20144`; LibreOffice: `26.8.0.3`; .NET SDK: `10.0.401`
+- External publication, GitHub Release/tag/workflow: none
+- License: MIT expression and repository `LICENSE` packaged; third-party licensing remains separate
 
 ## Escalation boundary
 
-If full MSBuild/ResolveComReference cannot carry generated Office interop assemblies through pack/install, or required interactive Word/LibreOffice capability is unavailable, record the block and return to planning. Do not substitute another interop strategy or claim release readiness.
+The late-bound implementation satisfies the existing real Word contract in fresh Tier 3 and Tier 4 runs. No generated Office interop fallback, alternative COM wrapper, helper process, or semantic change was introduced. Return to planning if a future corrected validation run regresses that contract or ordinary tool packaging cannot install/run the corrected package.

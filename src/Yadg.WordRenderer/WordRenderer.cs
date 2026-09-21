@@ -1,10 +1,10 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Word = Microsoft.Office.Interop.Word;
+using System.Runtime.Versioning;
 using Yadg.Renderer;
 
 namespace Yadg.WordRenderer;
 
+[SupportedOSPlatform("windows")]
 public sealed class WordRenderer
 {
     private const int TimeoutMs = 120_000;
@@ -37,23 +37,32 @@ public sealed class WordRenderer
 
     private static RenderResult RenderOnSta(string root, IReadOnlyList<string> inputs, string stage, List<RendererDiagnostic> diagnostics)
     {
-        Word.Application? app = null;
+        object? app = null;
         try
         {
-            app = new Word.Application { Visible = false, DisplayAlerts = Word.WdAlertLevel.wdAlertsNone, ScreenUpdating = false };
-            var version = app.Version;
-            try { app.AutomationSecurity = (Microsoft.Office.Core.MsoAutomationSecurity)3; } catch { }
+            var wordType = Type.GetTypeFromProgID("Word.Application", throwOnError: true)
+                ?? throw new InvalidOperationException("Word.Application is not registered.");
+            dynamic word = Activator.CreateInstance(wordType)
+                ?? throw new InvalidOperationException("Word.Application could not be activated.");
+            app = word;
+            word.Visible = false;
+            word.DisplayAlerts = 0;
+            word.ScreenUpdating = false;
+            var version = (string)word.Version;
+            try { word.AutomationSecurity = 3; } catch { }
             foreach (var input in inputs)
             {
                 var stagedInput = Path.Combine(stage, "input-" + Path.GetFileName(input));
                 var stagedOutput = Path.Combine(stage, Path.GetFileName(input));
                 File.Copy(input, stagedInput, true);
-                Word.Document? document = null;
+                object? document = null;
                 try
                 {
-                    document = app.Documents.Open(FileName: stagedInput, ReadOnly: false, AddToRecentFiles: false, Visible: false, OpenAndRepair: false);
+                    dynamic documents = word.Documents;
+                    dynamic opened = documents.Open(FileName: stagedInput, ReadOnly: false, AddToRecentFiles: false, Visible: false, OpenAndRepair: false);
+                    document = opened;
                     UpdateDocument(document);
-                    document.SaveAs2(FileName: stagedOutput, FileFormat: Word.WdSaveFormat.wdFormatXMLDocument, AddToRecentFiles: false);
+                    ((dynamic)document).SaveAs2(FileName: stagedOutput, FileFormat: 16, AddToRecentFiles: false);
                 }
                 catch (Exception ex)
                 {
@@ -62,7 +71,7 @@ public sealed class WordRenderer
                 }
                 finally
                 {
-                    if (document is not null) try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                    if (document is not null) try { ((dynamic)document).Close(0); } catch { }
                     Release(document);
                 }
                 if (!File.Exists(stagedOutput) || new FileInfo(stagedOutput).Length == 0)
@@ -86,23 +95,24 @@ public sealed class WordRenderer
         }
         finally
         {
-            if (app is not null) try { app.Quit(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            if (app is not null) try { ((dynamic)app).Quit(0); } catch { }
             Release(app);
         }
     }
 
-    private static void UpdateDocument(Word.Document document)
+    private static void UpdateDocument(object document)
     {
-        document.Repaginate();
-        foreach (Word.Field field in document.Fields) field.Update();
-        foreach (Word.TableOfContents toc in document.TablesOfContents) toc.Update();
-        foreach (Word.TableOfFigures tof in document.TablesOfFigures) tof.Update();
-        foreach (Word.Section section in document.Sections)
+        dynamic doc = document;
+        doc.Repaginate();
+        foreach (dynamic field in doc.Fields) field.Update();
+        foreach (dynamic toc in doc.TablesOfContents) toc.Update();
+        foreach (dynamic tof in doc.TablesOfFigures) tof.Update();
+        foreach (dynamic section in doc.Sections)
         {
-            foreach (Word.HeaderFooter header in section.Headers) foreach (Word.Field field in header.Range.Fields) field.Update();
-            foreach (Word.HeaderFooter footer in section.Footers) foreach (Word.Field field in footer.Range.Fields) field.Update();
+            foreach (dynamic header in section.Headers) foreach (dynamic field in header.Range.Fields) field.Update();
+            foreach (dynamic footer in section.Footers) foreach (dynamic field in footer.Range.Fields) field.Update();
         }
-        document.Repaginate();
+        doc.Repaginate();
     }
 
     private static void Release(object? value)

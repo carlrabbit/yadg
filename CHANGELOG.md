@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 — 2026-09-21
+## [Unreleased]
 
 Initial V1 release candidate for Windows x64 and .NET 10:
 

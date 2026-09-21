@@ -34,8 +34,11 @@ if ($Milestone -eq 'M0011') {
     $evidence = Get-Content $evidencePath -Raw | ConvertFrom-Json
     $actual = (Get-FileHash $package -Algorithm SHA256).Hash.ToUpperInvariant()
     if ([string]$evidence.packageSha256 -ne $actual) { Write-Error 'M0011 release evidence package hash does not match the current package.'; exit 2 }
-    $match = [regex]::Match($text, '(?m)^evidence:\s*SHA256:([0-9A-Fa-f]+)\s*$')
-    if (-not $match.Success -or $match.Groups[1].Value.ToUpperInvariant() -ne $actual) { Write-Error 'M0011 approval hash does not match the current package.'; exit 2 }
+    $match = [regex]::Match($text, '(?m)^packageSha256:\s*([0-9A-Fa-f]+)\s*$')
+    if (-not $match.Success -or $match.Groups[1].Value.ToUpperInvariant() -ne $actual) { Write-Error 'M0011 approval package hash does not match the current package.'; exit 2 }
+    $revisionMatch = [regex]::Match($text, '(?m)^repositoryRevision:\s*(\S+)\s*$')
+    if (-not $revisionMatch.Success -or $revisionMatch.Groups[1].Value -ne [string]$evidence.repositoryRevision) { Write-Error 'M0011 approval revision does not match release evidence.'; exit 2 }
+    if ($text -notmatch '(?m)^automatedEvidence:\s*artifacts/release/evidence/M0011/release-evidence\.json\s*$') { Write-Error 'M0011 approval is not bound to automated release evidence.'; exit 2 }
     if ([string]$evidence.releaseVersion -ne '1.0.0' -or [string]$evidence.packageId -ne 'Yadg') { Write-Error 'M0011 release evidence identifies the wrong package.'; exit 2 }
 }
 Write-Output "$reviewId`: approved"

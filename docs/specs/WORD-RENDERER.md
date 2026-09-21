@@ -43,7 +43,7 @@ YADG does not claim support for Word automation from Windows services, SYSTEM ta
 
 The YADG Word renderer processes documents serially.
 
-## Build and interop locus
+## Build and binding locus
 
 M0009 no longer requires the complete YADG solution to remain Linux-buildable.
 
@@ -51,15 +51,9 @@ The authoritative build/validation locus for the Word-enabled product is Windows
 
 Word automation must remain isolated from authoring-core and Open XML authoring.
 
-The exact managed COM binding is implementation-owned. Acceptable approaches include:
+The corrected M0011 V1 binding is built-in late-bound COM using the version-independent `Word.Application` ProgID and `Activator.CreateInstance`. The renderer has no Office `COMReference`, generated interop assembly, Office interop package, handwritten interface, or source-generated wrapper dependency.
 
-- Office PIA/interop metadata referenced/generated on the Windows development/build machine;
-- late-bound/dynamic COM automation;
-- another Windows COM binding mechanism satisfying the same behavior.
-
-M0009 does not establish an unverified `Microsoft.Office.Interop.*` NuGet package as project authority.
-
-If the implementation needs Office/PIA availability merely to compile the Word-specific component, that is acceptable.
+Microsoft Word is a runtime prerequisite, not a build/package prerequisite.
 
 Preserving non-Windows full-solution compilation is welcome but is not an acceptance criterion.
 

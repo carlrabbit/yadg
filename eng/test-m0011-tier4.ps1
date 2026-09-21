@@ -34,9 +34,11 @@ try {
     if ([string]$metadata.license.type -ne 'expression' -or [string]$metadata.license.InnerText -ne 'MIT') { throw 'Package MIT license metadata is missing or incorrect.' }
     if ($entries -notcontains 'README.md') { throw 'Repository README is not packaged.' }
     if ($entries -notcontains 'LICENSE') { throw 'Repository LICENSE file is not packaged.' }
-    foreach ($required in @('yadg.dll','Yadg.Core.dll','Yadg.Word.dll','Yadg.Renderer.dll','Yadg.WordRenderer.dll','Interop.Microsoft.Office.Interop.Word.dll','Interop.Microsoft.Office.Core.dll')) {
+    foreach ($required in @('yadg.dll','Yadg.Core.dll','Yadg.Word.dll','Yadg.Renderer.dll','Yadg.WordRenderer.dll')) {
         if (-not ($entries | Where-Object { $_ -like "tools/*/$required" })) { throw "Required package assembly is missing: $required" }
     }
+    $office = $entries | Where-Object { $_ -match '(?i)(^|/)(Interop\.Microsoft\.Office|Microsoft\.Office|office.*interop|interop.*office).*\.dll$' }
+    if ($office) { throw "Package must not contain Office interop assemblies: $($office -join ', ')" }
     $bad = $entries | Where-Object { $_ -match '(^|/)(test|tests|fixtures|review|\.git|obj|bin)(/|$)' -or $_ -match '(?i)(api[_-]?key|password|secret|credential)' }
     if ($bad) { throw "Package hygiene failure: $($bad -join ', ')" }
 }
@@ -56,8 +58,18 @@ try {
     if (-not (Test-Path -LiteralPath $yadg)) { throw 'Installed yadg command was not created.' }
     $versionOutput = (& $yadg --version 2>&1 | Out-String).Trim()
     if ($versionOutput -ne '1.0.0') { throw "Installed yadg --version returned '$versionOutput'." }
-    $helpOutput = (& $yadg --help 2>&1 | Out-String)
-    foreach ($command in @('check','build','render','publish')) { if ($helpOutput -notmatch "\b$command\b") { throw "Installed help does not expose '$command'." } }
+    $helpCases = @(
+        @{ args = @('--help'); required = @('check', 'build', 'render', 'publish') },
+        @{ args = @('check', '--help'); required = @('--workspace') },
+        @{ args = @('build', '--help'); required = @('--workspace') },
+        @{ args = @('render', '--help'); required = @('--workspace', '--renderer', '--renderer-path') },
+        @{ args = @('publish', '--help'); required = @('--workspace', '--publish-path') }
+    )
+    foreach ($helpCase in $helpCases) {
+        $helpOutput = (& $yadg @($helpCase.args) 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0) { throw "Installed help failed for '$($helpCase.args -join ' ')'." }
+        foreach ($requiredText in $helpCase.required) { if ($helpOutput -notmatch [regex]::Escape($requiredText)) { throw "Installed help '$($helpCase.args -join ' ')' is missing '$requiredText'." } }
+    }
 
     Copy-Item -LiteralPath (Join-Path $repo 'tests/fixtures/m0010/word-origin.docx') -Destination (Join-Path $workspace 'YadgTemplates/template.docx')
     Set-Content -LiteralPath (Join-Path $workspace 'YADG.md') -Value @('---','yadg:','  version: 1','values:','  document-version: ''M0011''','  story-value: ''Packaged consumer value''','---')
@@ -78,15 +90,6 @@ try {
 
     New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
     $revision = (& git -C $repo rev-parse HEAD).Trim()
-    $msbuildCandidates = @(
-        'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\amd64\MSBuild.exe',
-        'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe',
-        'C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe',
-        'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe',
-        'C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe',
-        'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe'
-    ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    $msbuildIdentity = if ($msbuildCandidates) { "$msbuildCandidates ($((Get-Item $msbuildCandidates).VersionInfo.ProductVersion))" } else { 'unavailable' }
     $m0010EvidencePath = Join-Path $repo 'artifacts/review/evidence/M0010/tier3-evidence.json'
     $evidence = [ordered]@{
         repositoryRevision = $revision
@@ -96,10 +99,10 @@ try {
         packageInspection = 'passed'; packageEntries = $entries
         windowsVersion = (Get-CimInstance Win32_OperatingSystem).Caption
         dotnetSdk = ((dotnet --version).Trim())
-        msbuild = $msbuildIdentity
+        packTooling = 'ordinary dotnet restore/build/pack; no ResolveComReference or tlbimp'
         wordVersion = $word.VersionInfo.FileVersion
         libreOfficeVersion = $lo.VersionInfo.FileVersion
-        installedTool = [ordered]@{ install = 'passed'; version = $versionOutput; help = 'passed'; check = 'passed'; build = 'passed'; wordRender = 'passed'; libreOfficeRender = 'passed'; publish = 'passed'; repositoryBinObjDependency = 'not used' }
+        installedTool = [ordered]@{ install = 'passed'; version = $versionOutput; rootHelp = 'passed'; commandHelp = 'passed'; check = 'passed'; build = 'passed'; wordRender = 'passed'; lateBoundWordApplication = 'passed'; libreOfficeRender = 'passed'; publish = 'passed'; repositoryBinObjDependency = 'not used' }
         publishScriptLocalTarget = 'validated separately by eng/publish-nuget.ps1 against a temporary filesystem source'
         m0010Tier3 = if (Test-Path -LiteralPath $m0010EvidencePath) { $m0010EvidencePath } else { 'missing' }
         documentationAudit = 'README.md and CHANGELOG.md reviewed against docs/engineering/RELEASE.md'

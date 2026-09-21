@@ -2,138 +2,108 @@
 
 ## Status
 
-Authoritative for YADG V1 package construction, consumer validation, and NuGet publication tooling introduced by M0011.
+Authoritative for YADG V1 release engineering after the M0011 late-bound-COM correction.
 
-This document defines release engineering. It does not change YADG document-authoring semantics.
+This supersedes the earlier M0011 requirement to preserve MSBuild `COMReference` / `ResolveComReference` / `tlbimp` Office interop generation.
 
 ## V1 release target
 
-The M0011 release candidate version is:
-
 ```text
-1.0.0
+YADG 1.0.0
 ```
 
-The release candidate is considered ready only after the M0011 validation and human-review gates pass.
+M0011 produces a validated release candidate. It does not publish externally, create a GitHub Release/tag, or add GitHub workflows.
 
-M0011 does not push `1.0.0` to an external NuGet feed.
-
-## Supported distribution surface
-
-YADG V1 has one supported distributable package:
+## Supported distribution
 
 ```text
-NuGet package ID: Yadg
-Package type:      .NET tool
-Tool command:      yadg
-Target:            net10.0-windows
-Architecture:      x64
-Version:           1.0.0
+Package ID:   Yadg
+Package type: .NET tool
+Command:      yadg
+Target:       net10.0-windows
+Architecture: x64
+Version:      1.0.0
 ```
 
-The package is framework-dependent.
-
-The supported consumer platform for V1 is Windows x64 with a compatible .NET 10 SDK/runtime environment.
-
-The package does not promise Linux or macOS execution.
-
-## Public API surface
-
-The supported V1 product interface is:
-
-```text
-yadg command-line interface
-workspace/file contracts documented by project specs
-prepared DOCX template vocabulary
-```
-
-The C# projects/assemblies under `src/` are implementation details.
-
-M0011 does not publish `Yadg.Core`, `Yadg.Word`, `Yadg.Renderer`, or `Yadg.WordRenderer` as separately supported NuGet libraries.
-
-Every non-CLI project must be explicitly non-packable so an ordinary solution/repository pack cannot accidentally create public library packages.
+The package is framework-dependent. Only the CLI project is packable; source libraries are implementation details.
 
 ## Version authority
 
-Repository version authority for M0011 is a single central MSBuild property:
+Use one central MSBuild version:
 
 ```text
 VersionPrefix = 1.0.0
 VersionSuffix = empty
 ```
 
-The central property belongs in `Directory.Build.props` unless the live repository has an equivalent central MSBuild authority at implementation time.
+Package version, `yadg --version`, documentation, and release evidence must agree.
 
-The effective package version, assembly informational version presented by the CLI, release evidence, and documentation must agree on:
+## Microsoft Word automation
 
-```text
-1.0.0
-```
+### Required binding
 
-M0011 adds a public:
+V1 uses built-in .NET/Windows late-bound COM only.
 
-```text
-yadg --version
-```
-
-surface that prints the effective product/package semantic version.
-
-It must not print a stale separately hard-coded value.
-
-## Package metadata
-
-The CLI project is configured as the single .NET tool package with at least:
+Activate Word through:
 
 ```text
-PackageId           Yadg
-PackAsTool          true
-ToolCommandName     yadg
-Authors             carlrabbit
-Description         Template-first document authoring from Markdown and prepared DOCX templates.
-RepositoryType      git
-RepositoryUrl       https://github.com/carlrabbit/yadg
-PackageProjectUrl   https://github.com/carlrabbit/yadg
-PackageReadmeFile   README.md
+Type.GetTypeFromProgID("Word.Application")
+-> Activator.CreateInstance
+-> late-bound Word object model
 ```
 
-The packed README is the repository `README.md`.
+Use `dynamic` or equivalent reflection-based late binding.
 
-Package tags and other ordinary metadata are implementation mechanics provided they do not make unsupported product claims.
+Do not use:
 
-### License metadata
+- Office `COMReference`;
+- `ResolveComReference`;
+- `tlbimp`;
+- `Microsoft.Office.Interop.Word` or `Microsoft.Office.Core` NuGet packages;
+- generated `Interop.Microsoft.Office.Interop.Word.dll`;
+- generated `Interop.Microsoft.Office.Core.dll`;
+- handwritten/source-generated Office COM interfaces.
 
-The repository entering M0011 has no project license file or license expression.
+### Behavioral preservation
 
-M0011 must not invent or select a software license.
+Only the binding changes. Preserve the existing Word renderer contract:
 
-Therefore the release candidate must not claim a `PackageLicenseExpression` or `PackageLicenseFile` unless an explicit project-owner licensing decision has become repository authority before packaging implementation reaches that point.
+- desktop Word installed and COM-registered;
+- interactive logged-on user session;
+- STA execution;
+- owned Word instance;
+- non-visible automation/alert suppression;
+- macro suppression where practical;
+- bounded timeout behavior;
+- field/index/pagination finalization;
+- finalized DOCX output;
+- clean close/quit best-effort;
+- actionable diagnostics;
+- no unattended/service/server support claim.
 
-The absence of a license claim must be surfaced in the release evidence and human release review.
+Do not introduce a helper process or redesign finalization semantics merely for this correction unless late binding cannot satisfy existing real-Word tests.
 
-Actual external publication remains out of scope for M0011.
+### Package/licensing consequence
 
-## Word interop packaging
+The YADG package must contain no Microsoft Office binary or generated Office interop wrapper.
 
-M0011 preserves the M0009 build decision:
+Microsoft Word is an external, separately licensed runtime prerequisite.
 
-```text
-Windows + installed Word
--> full Visual Studio MSBuild
--> COMReference / ResolveComReference / tlbimp
--> generated managed interop assemblies
+YADG remains MIT licensed. Third-party dependencies remain subject to their own licenses.
+
+## Build and pack
+
+The full-Visual-Studio-MSBuild interop-generation requirement is removed.
+
+Authoritative release construction is ordinary .NET SDK tooling:
+
+```powershell
+dotnet restore Yadg.slnx
+dotnet build Yadg.slnx --configuration Release
+dotnet pack src/Yadg.Cli/Yadg.Cli.csproj --configuration Release --no-build --output <path>
 ```
 
-The packaged tool must contain every generated Word/Office interop wrapper assembly required to execute the installed tool.
-
-The installed tool must not depend on the build machine's generated `obj`/`bin` locations.
-
-Do not replace the generated-interoperability approach with an Office interop NuGet package, `dynamic`, handwritten COM interfaces, source generation, or another COM binding strategy as part of release packaging.
-
-If `PackAsTool`/MSBuild packaging cannot carry the required generated interop assemblies into the installed tool, M0011 is blocked and must return to planning.
-
-## Pack script
-
-M0011 defines:
+Canonical wrapper:
 
 ```powershell
 ./eng/pack.ps1
@@ -146,250 +116,185 @@ Default output:
 artifacts/package
 ```
 
-The script:
+`eng/pack.ps1` must validate version, remove stale expected RC output, restore/build normally, pack only the CLI project, and produce exactly one `Yadg.1.0.0.nupkg`.
 
-1. validates/uses the central release version;
-2. restores required NuGet dependencies;
-3. locates a supported full Visual Studio MSBuild capable of the M0009 `ResolveComReference` build;
-4. fails clearly if that build capability is unavailable;
-5. packs the CLI project as the `Yadg` .NET tool in Release configuration;
-6. writes the package only to the requested/default package output directory;
-7. verifies exactly one expected `Yadg.1.0.0.nupkg` release-candidate package is produced.
+Do not retain custom package ZIP rewriting/TFM normalization unless an actual .NET tool packaging defect remains after interop removal and is documented in the execution ledger.
 
-Do not use `dotnet pack` as an authoritative fallback when full MSBuild/COM-reference tooling is unavailable.
+## Package metadata
 
-M0011 does not require or emit a symbols package.
+Required metadata remains:
 
-The pack script must be usable non-interactively from a future CI/CD environment on an appropriately provisioned Windows build agent.
+```text
+PackageId               Yadg
+PackAsTool              true
+ToolCommandName         yadg
+Authors                 carlrabbit
+RepositoryType          git
+RepositoryUrl           https://github.com/carlrabbit/yadg
+PackageProjectUrl       https://github.com/carlrabbit/yadg
+PackageReadmeFile       README.md
+PackageLicenseExpression MIT
+```
 
-## Package-content verification
+README/license wording must not imply Microsoft Word or third-party components are relicensed under MIT.
 
-Release validation inspects the `.nupkg` rather than treating successful packing as sufficient evidence.
+## Package-content validation
 
-At minimum verify:
+Inspect the `.nupkg`. Verify expected YADG/runtime dependencies and reject tests, fixtures, review evidence, secrets, unrelated build output, and Office interop binaries.
 
-- NuGet package ID `Yadg`;
-- package version `1.0.0`;
-- package type is a .NET tool;
-- command is `yadg`;
-- target framework is the expected Windows .NET 10 tool target;
-- repository/readme/author/description metadata is present and correct;
-- repository README is packaged;
-- CLI and all required YADG implementation assemblies are present;
-- generated Word and Office Core interop wrapper assemblies required by the installed CLI are present;
-- no test binaries, test fixtures, review evidence, repository secrets, source-tree `obj`/`bin` paths, or unrelated package artifacts are included;
-- no unsupported package license claim is present unless project licensing authority exists.
+Specifically forbidden:
 
-## NuGet publish script
+```text
+Interop.Microsoft.Office.Interop.Word.dll
+Interop.Microsoft.Office.Core.dll
+Microsoft.Office.Interop.Word.dll
+Microsoft.Office.Core.dll
+```
 
-M0011 defines:
+No equivalent generated Office wrapper may be substituted under another name.
+
+## NuGet push tooling
+
+Retain:
 
 ```powershell
 ./eng/publish-nuget.ps1 -Source <source>
-./eng/publish-nuget.ps1 -Source <source> -PackagePath <path-to-nupkg>
+./eng/publish-nuget.ps1 -Source <source> -PackagePath <path>
 ```
 
-`-Source` is mandatory.
+`-Source` is mandatory. There is no implicit NuGet.org source. No credential is committed. `NUGET_API_KEY` may come from the environment. Do not use `--skip-duplicate`.
 
-There is no implicit/default NuGet.org source.
+M0011 validates this only against a local/non-external destination.
 
-When `-PackagePath` is omitted, the script resolves the exact M0011 package from the default package output directory and fails on absence or ambiguity.
+## Tier 4 consumer validation
 
-Before pushing, the script verifies that the package is exactly the expected package ID/version:
-
-```text
-Yadg 1.0.0
-```
-
-Credentials are never stored in the repository or command source.
-
-For feeds requiring an API key, the script may use:
-
-```text
-NUGET_API_KEY
-```
-
-from the environment.
-
-If that variable is absent, the script may rely on normal NuGet source authentication/configuration and must not invent a credential.
-
-The script must not use `--skip-duplicate` for a stable release. An already-existing package/version is a publication condition that must be surfaced.
-
-### M0011 publish-script validation
-
-M0011 validates the publish script only against a temporary/local filesystem NuGet destination or equivalent non-external test target.
-
-It must not push to NuGet.org or any real external/private production feed.
-
-## Consumer validation
-
-M0011 defines an authoritative Tier-4 release/consumer command:
+Canonical command:
 
 ```powershell
 ./eng/test-m0011-tier4.ps1
 ```
 
-It runs on the same class of interactive Windows release workstation used for real Word validation and additionally requires LibreOffice for the representative packaged-tool renderer smoke.
+Install the local `Yadg 1.0.0` package into an isolated tool directory and invoke the installed command.
 
-The Tier-4 test:
+Validate:
 
-1. runs/consumes the M0011 pack output;
-2. creates isolated `DOTNET_CLI_HOME`, NuGet package/cache, tool-install, workspace, and delivery directories;
-3. installs `Yadg` version `1.0.0` from the local package output using `dotnet tool install --tool-path ...`;
-4. invokes the installed `yadg`, not `dotnet run` or repository build outputs;
-5. verifies `yadg --version` reports `1.0.0`;
-6. verifies `yadg --help` exposes the supported top-level commands;
-7. runs representative `check` and `build` behavior on a realistic M0010-derived workspace;
-8. finalizes representative authored DOCX through the installed package with the Microsoft Word renderer;
-9. finalizes a representative authored DOCX through the installed package with the LibreOffice renderer;
-10. runs `publish` through the installed package and verifies the delivered finalized DOCX;
-11. proves the installed tool resolves the packaged YADG and generated Office interop assemblies without using repository `bin`/`obj`;
-12. uninstalls/removes the isolated tool state best-effort;
-13. writes release evidence.
+1. package metadata/content and absence of Office interop assemblies;
+2. isolated `dotnet tool install`;
+3. installed `yadg --version`;
+4. root and command-specific help;
+5. representative `check`;
+6. representative `build`;
+7. real Microsoft Word render through late-bound `Word.Application`;
+8. real LibreOffice render;
+9. `publish`;
+10. no dependency on repository `bin`/`obj`;
+11. release evidence.
 
-Tier 4 is package/consumer evidence. It does not replace the complete M0010 four-path compatibility matrix.
+The installed package must successfully render through real Word while containing no Office interop wrapper.
 
-## Lower-tier release prerequisites
+## CLI help release surface
 
-On the M0011 release-candidate revision, authoritative release evidence includes successful:
+Validate actual help, not merely command-name presence:
 
-```powershell
-./eng/validate.ps1
-./eng/test-m0010-tier3.ps1
-./eng/test-m0011-tier4.ps1
+```text
+yadg --help
+yadg check --help
+yadg build --help
+yadg render --help
+yadg publish --help
 ```
 
-`eng/test-m0010-tier3.ps1` re-proves the realistic four-path Word/LibreOffice matrix on the actual release-candidate revision.
+Help must accurately communicate command purpose, workspace default, renderer IDs/default, LibreOffice-only renderer path, publish-path precedence, and supported version flag behavior.
 
-The M0011 Tier-4 test proves the installed package wiring and consumer path.
+README syntax must agree with actual help.
+
+## System.CommandLine
+
+Evaluate upgrading the existing prerelease `System.CommandLine` dependency to the current stable 2.x version available at implementation time.
+
+Upgrade unless focused tests demonstrate a material incompatibility with YADG's CLI contract. If incompatible, record evidence and escalate rather than silently retaining the prerelease package.
+
+## README contract
+
+README is V1 user documentation. It must include:
+
+- product/template ownership model;
+- supported platform and runtime prerequisites;
+- installation;
+- a minimal complete workspace example;
+- minimal Markdown example;
+- minimal visible prepared-DOCX template example;
+- end-to-end `check -> build -> render -> publish`;
+- all public commands/options;
+- values/producer/publish configuration;
+- a concrete Mermaid producer configuration example;
+- template vocabulary;
+- relative heading composition;
+- supported value stories;
+- references/captions;
+- Word/LibreOffice differences;
+- PDF status;
+- publish semantics;
+- trust/limitations/troubleshooting.
+
+Normal users must not be told they need Visual Studio MSBuild, `ResolveComReference`, or `tlbimp`.
+
+Do not mention DMS.
+
+## CHANGELOG contract
+
+Until actual external release/tag publication, use:
+
+```text
+## [Unreleased]
+```
+
+for the pending V1 entry.
+
+A later explicitly authorized release action may convert it to:
+
+```text
+## 1.0.0 — <actual release date>
+```
+
+The changelog summarizes user-visible capabilities and limitations, not milestone implementation history.
 
 ## Release evidence
 
-Implementation creates repository-local M0011 release evidence under a location such as:
+Earlier PR11 evidence/package hashes are invalid after this correction.
 
-```text
-artifacts/release/evidence/M0011/
-```
+Fresh evidence must record:
 
-Exact filenames are implementation-owned.
+- corrected repository revision;
+- package path/hash;
+- package inspection;
+- explicit absence of Office interop assemblies;
+- .NET/Windows provenance;
+- Word/LibreOffice versions;
+- late-bound Word smoke;
+- M0010 Tier-3 evidence on the corrected revision;
+- installed help/version/check/build/render/publish;
+- local publish-script validation;
+- README/changelog audit;
+- external publication = none.
 
-Evidence must include, in machine-readable or plainly auditable form:
+## Human release review
 
-- repository revision;
-- release version;
-- package ID/version/path;
-- package SHA-256;
-- package metadata/content inspection result;
-- Windows version;
-- .NET SDK version;
-- full MSBuild identity/version used to pack;
-- observable Word version;
-- observable LibreOffice version;
-- M0010 Tier-3 result/evidence reference;
-- isolated tool-install result;
-- installed `yadg --version` output;
-- installed `yadg --help` smoke result;
-- installed-tool check/build/Word-render/LibreOffice-render/publish results;
-- publish-script local-target test result;
-- documentation audit result;
-- explicit confirmation that no external NuGet publication occurred;
-- explicit license-metadata state.
+Retain one narrow blocking release review only for subjective judgment that automation cannot decide.
 
-The `.nupkg` itself is a generated release candidate and is not required to be committed to source control.
+The human reviews:
 
-The evidence must identify the exact package hash reviewed by the human gate.
+1. whether the V1 README is understandable and materially accurate;
+2. whether the pending V1 changelog/release description is acceptable;
+3. whether the exact validated RC is acceptable to mark release-ready for a later publication action.
 
-## Public documentation contract
-
-M0011 performs the V1 public documentation audit rather than deferring it.
-
-### README
-
-`README.md` becomes V1 user documentation and must be understandable without milestone history.
-
-It covers, at minimum:
-
-- what YADG is and the template-first ownership model;
-- supported V1 platform;
-- installation as the `Yadg` .NET tool;
-- local-package installation example for development/release validation;
-- intended feed installation form after publication;
-- prerequisites and which capabilities require Word, LibreOffice, or an external Mermaid producer;
-- workspace layout;
-- minimal end-to-end `check -> build -> render -> publish` workflow;
-- all public commands/options;
-- `YADG.md` values/producer/publish configuration;
-- `section`, `content`, direct figure/table, prepared table, and value template vocabulary;
-- relative heading composition;
-- supported visible value stories;
-- figures/tables/captions/references;
-- Word and LibreOffice renderer differences;
-- PDF's actual status;
-- publication semantics;
-- security/trust boundaries for external producers and Office automation;
-- important V1 limitations;
-- troubleshooting guidance for missing Word/interop build tooling, Word runtime, LibreOffice, and producer failures.
-
-The normal user-facing README must not require readers to understand milestone IDs such as M0003/M0006/M0010 to understand current behavior.
-
-Historical milestone references may remain only where genuinely historical.
-
-### CHANGELOG
-
-M0011 adds a repository-root:
-
-```text
-CHANGELOG.md
-```
-
-with a `1.0.0` release entry summarizing the supported product at a user-relevant level.
-
-It is not a copy of milestone history.
-
-### CLI help/version
-
-`yadg --help`, command-specific help, README command syntax, and current product behavior must agree.
-
-`yadg --version` is a release surface and must agree with the package version.
-
-### Samples, website, library API
-
-M0011 does not create a separate sample application, website, or public C# API documentation set.
-
-The realistic test fixtures remain compatibility fixtures, not public samples.
-
-The README/workspace examples are the V1 onboarding surface.
-
-## Diagnostic surface
-
-Existing diagnostic codes remain user-visible troubleshooting identifiers.
-
-M0011 documentation may reference important codes where useful, but exact diagnostic message prose is not a separately versioned public API.
-
-M0011 does not redesign the diagnostic system.
-
-## Release review
-
-The release candidate is subject to blocking human review `HR-M0011-01`.
-
-The review is performed against the exact package hash and release-candidate repository revision represented by the release evidence.
-
-A changed package or changed release-candidate revision before approval requires refreshed evidence and another decision in the same active review.
-
-After M0011 completes, the review is historical evidence and does not approve future releases.
+Package hash, repository revision, runtime versions, and automated results are derived automatically by review tooling. The human does not transcribe them.
 
 ## External publication
 
-M0011 ends with a validated, reviewed `1.0.0` release candidate and working NuGet publication tooling.
+Still excluded:
 
-It does not:
-
-- push to NuGet.org;
-- push to another production/private feed;
-- create a GitHub Release;
-- create a Git tag;
-- create GitHub Actions or another CI/CD workflow;
-- reserve/transfer a NuGet package prefix/ownership;
-- choose a project software license.
-
-Those actions require an explicit later release/publication decision.
+- no external NuGet push;
+- no GitHub Release;
+- no release tag;
+- no GitHub workflow.
