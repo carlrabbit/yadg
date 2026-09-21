@@ -1,0 +1,11 @@
+{
+  "path": "tests/fixtures/m0010/libreoffice-origin.docx",
+  "application": "LibreOffice Writer",
+  "version": "26.8.0.3",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "method": "Created as a new document through LibreOffice Writer UNO document model and saved by Writer as DOCX",
+  "date": "2026-09-21T06:50:38+0200",
+  "sha256": "3FFD7665DA2CEDA91AC2426A825CE56FFDD864245F0B5C8C81B227B86ACD179D",
+  "synthetic": true,
+  "nonConfidential": true
+}

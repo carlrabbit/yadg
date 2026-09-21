@@ -1,0 +1,28 @@
+{
+  "fixtures": [
+    {
+      "path": "tests/fixtures/m0010/word-origin.docx",
+      "application": "Microsoft Word",
+      "version": "16.0.20326.20144",
+      "platform": "Microsoft Windows NT 10.0.26200.0",
+      "method": "Created as a new document through Word COM document model and saved by Word as DOCX",
+      "date": "2026-09-21T06:38:15.7280396+02:00",
+      "sha256": "B1350E47584A6102A5B2BB5B3F3F5B4F056740B0101B16441EFF3214A1F1C78A",
+      "synthetic": true,
+      "nonConfidential": true,
+      "id": "word-origin"
+    },
+    {
+      "path": "tests/fixtures/m0010/libreoffice-origin.docx",
+      "application": "LibreOffice Writer",
+      "version": "26.8.0.3",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "method": "Created as a new document through LibreOffice Writer UNO document model and saved by Writer as DOCX",
+      "date": "2026-09-21T06:50:38+02:00",
+      "sha256": "3FFD7665DA2CEDA91AC2426A825CE56FFDD864245F0B5C8C81B227B86ACD179D",
+      "synthetic": true,
+      "nonConfidential": true,
+      "id": "libreoffice-origin"
+    }
+  ]
+}

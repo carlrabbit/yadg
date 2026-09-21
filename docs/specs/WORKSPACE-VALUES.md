@@ -9,6 +9,10 @@ Other root mappings are specialized by:
 - `producers` -> `docs/specs/CONTENT-PRODUCERS.md`
 - `publish` -> `docs/specs/PUBLISHING.md`
 
+Document-wide visible-text replacement behavior is specialized by:
+
+- `docs/specs/DOCUMENT-COMPOSITION.md`
+
 ## `YADG.md`
 
 `YADG.md` remains the workspace marker. It may contain optional YAML front matter followed by human-facing notes that are not document source.
@@ -32,9 +36,9 @@ yadg:
   version: 1
 ```
 
-M0009 does not increment it.
+M0010 does not increment it.
 
-Allowed root keys after M0009:
+Allowed root keys remain:
 
 ```text
 yadg
@@ -67,11 +71,23 @@ Missing referenced values fail; unused values are allowed.
 
 ## Literal substitution
 
-Value replacement remains literal/non-recursive.
+Value replacement is literal and non-recursive.
 
-Supported Word locations remain ordinary paragraphs in the main body, main-body table cells, headers, and footers.
+Replacement inherits formatting from the run/text position containing the first logical tag character.
 
-Replacement inherits run properties from the run containing the first logical tag character.
+After M0010, value substitution is a visible-template-text mechanism across the supported Word stories defined by `docs/specs/DOCUMENT-COMPOSITION.md`, including:
+
+- main body and table cells;
+- headers;
+- footers;
+- footnotes;
+- endnotes;
+- comments;
+- supported text-box/shape text.
+
+A value tag may be split across runs within one supported paragraph/text-container scope.
+
+Field instruction code, package metadata/properties, relationship targets, arbitrary XML attributes, and other non-visible metadata are not value-substitution targets.
 
 ## Publication mapping
 
@@ -92,3 +108,5 @@ Publication configuration is filesystem destination configuration and defines no
 ## Compatibility
 
 Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid.
+
+M0010 changes where existing `{{value:<id>}}` tags are supported; it does not add new workspace value syntax.

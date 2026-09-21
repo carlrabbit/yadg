@@ -7,4 +7,16 @@
     <ProjectReference Include="..\Yadg.WordRenderer\Yadg.WordRenderer.csproj" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
   </ItemGroup>
+  <ItemGroup>
+    <COMReference Include="Microsoft.Office.Interop.Word">
+      <Guid>00020905-0000-0000-C000-000000000046</Guid>
+      <VersionMajor>8</VersionMajor><VersionMinor>7</VersionMinor><Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool><Isolated>false</Isolated><EmbedInteropTypes>false</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="Microsoft.Office.Core">
+      <Guid>2DF8D04C-5BFA-101B-BDE5-00AA0044DE52</Guid>
+      <VersionMajor>2</VersionMajor><VersionMinor>8</VersionMinor><Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool><Isolated>false</Isolated><EmbedInteropTypes>false</EmbedInteropTypes>
+    </COMReference>
+  </ItemGroup>
 </Project>

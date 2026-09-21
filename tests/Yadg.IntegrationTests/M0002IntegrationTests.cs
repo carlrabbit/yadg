@@ -174,7 +174,7 @@ public sealed class M0002IntegrationTests
             stylesPart.Styles.Save();
         }
         main.Document = new Document(new Body(
-            new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }), new Run(new Text("Template heading"))),
+            new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }, new OutlineLevel { Val = 0 }), new Run(new Text("Template heading"))),
             new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "BodyText" }), new Run(new Text("{{")), new Run(new Text(tag[2..^2])), new Run(new Text("}}"))),
             new Paragraph(new Run(new Text("Template-owned paragraph")))));
         main.Document.Save();

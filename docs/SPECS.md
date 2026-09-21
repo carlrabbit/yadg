@@ -18,8 +18,6 @@ YADG authors, finalizes, and explicitly publishes finalized Word documents.
 
 ## CLI
 
-After M0009:
-
 ```text
 yadg check [--workspace <path>]
 yadg build [--workspace <path>]
@@ -46,6 +44,23 @@ Existing Markdown sections/content, figures, tables, prepared tables, references
 
 `check`/`build` remain semantically independent of rendering.
 
+M0010 establishes realistic document composition:
+
+- Markdown headings are rebased relative to the template outline context at each `section`/`content` insertion anchor;
+- effective Word heading levels 1 through 9 are template-style roles;
+- ordinary Markdown paragraphs retain template-owned paragraph formatting from the placement anchor;
+- workspace values substitute visible template text across supported Word stories, including notes, comments, and text boxes.
+
+Detailed behavior is in `docs/specs/DOCUMENT-COMPOSITION.md`.
+
+## Template vocabulary
+
+Block placement/control vocabulary remains main-document-body oriented.
+
+M0010 does not add block-placement tags to footnotes, endnotes, comments, headers, footers, or text boxes.
+
+Template front-matter heading bindings support effective levels 1 through 9.
+
 ## Rendering
 
 Supported renderers:
@@ -61,7 +76,7 @@ Both renderers produce finalized `YadgWords/*.docx`.
 
 LibreOffice retains its existing PDF side output.
 
-The Microsoft Word renderer is the V1 fidelity target and is specified in `docs/specs/WORD-RENDERER.md`.
+Microsoft Word remains the V1 fidelity target.
 
 ## Publishing
 
@@ -78,9 +93,15 @@ YADG.md publish.path
 
 Relative paths resolve against workspace root.
 
-Publishing never invokes build/render and does not publish PDFs in M0009.
+Publishing never invokes build/render and does not publish PDFs.
 
-Detailed behavior is in `docs/specs/PUBLISHING.md`.
+## Compatibility proof
+
+Before V1 release-readiness, M0010 requires committed realistic DOCX fixtures originating independently from Microsoft Word and LibreOffice Writer.
+
+Both fixtures must pass YADG authoring and both supported renderer paths.
+
+These application-produced fixtures complement, rather than replace, focused synthetic OpenXML tests.
 
 ## Platform
 
@@ -88,16 +109,16 @@ Office-independent authoring components remain isolated from Microsoft Word auto
 
 The complete Word-enabled product's authoritative build/integration locus is Windows.
 
-M0009 does not promise preservation of a Linux full-solution build.
+The M0010 full compatibility target additionally requires real Microsoft Word and LibreOffice.
 
 ## Diagnostics
 
 Diagnostics remain first-class.
 
-Word renderer diagnostics include actionable automation-stage/COM context.
-
-Publish diagnostics identify source/destination failures without modifying document content.
+Invalid heading rebasing, unsupported effective heading depth, malformed/missing values in supported stories, and realistic-template incompatibilities fail before successful authoring is claimed.
 
 ## Non-goals
 
 YADG is not a DMS client, generic Word layout engine, general plugin host, or generic Markdown-to-DOCX converter.
+
+M0010 does not introduce Markdown syntax for Word footnotes, endnotes, comments, text boxes, headers, or footers.

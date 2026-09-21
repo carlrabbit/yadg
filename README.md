@@ -45,7 +45,11 @@ values:
 Workspace notes go here.
 ```
 
-Prepared DOCX templates use values inline with `{{value:document-version}}`. Values can be mixed with ordinary text in body paragraphs, table cells, headers, and footers. They are literal substitutions; values are not interpolated into Markdown.
+Prepared DOCX templates use values inline with `{{value:document-version}}`. Values can be mixed with ordinary visible text in the main body/table cells, all header and footer variants, footnotes, endnotes, comments, and Word text boxes/shapes. YADG handles the document structures across those stories; template authors do not need to know which OOXML part stores the text. They are literal substitutions; values are not interpolated into Markdown.
+
+## Realistic template composition
+
+Markdown headings are rebased relative to the template heading at each `section` or `content` placement. For example, a template-owned effective `Heading4` followed by `{{section:architecture}}` makes the Markdown `# Architecture` an effective `Heading5`; descendants preserve their relative level gaps. Ordinary inserted paragraphs remain separate and inherit the placement paragraph's body presentation. Footnotes, endnotes, comments, headers, footers, and text boxes remain template-owned structures: M0010 adds no Markdown syntax for creating them.
 
 ## Canonical engineering interface
 
