@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.Reflection;
+using System.Runtime.Versioning;
 using Yadg.Core;
 using Yadg.Word;
 using Yadg.Renderer;
@@ -7,27 +9,39 @@ using WordRendererEngine = Yadg.WordRenderer.WordRenderer;
 
 namespace Yadg.Cli;
 
+[SupportedOSPlatform("windows")]
 public static class Program
 {
     public static int Main(string[] args)
     {
+        if (args.Length == 1 && (args[0] == "--version" || args[0] == "-v"))
+        {
+            Console.WriteLine(ProductVersion());
+            return 0;
+        }
         var handlerExitCode = 0;
         var root = new RootCommand("YADG — template-first document authoring");
-        root.AddCommand(CreateCheckCommand(() => handlerExitCode = 2));
-        root.AddCommand(CreateBuildCommand(() => handlerExitCode = 2));
-        root.AddCommand(CreateRenderCommand(() => handlerExitCode = 2));
-        root.AddCommand(CreatePublishCommand(() => handlerExitCode = 2));
-        var commandExitCode = root.Invoke(args);
+        root.Add(CreateCheckCommand(() => handlerExitCode = 2));
+        root.Add(CreateBuildCommand(() => handlerExitCode = 2));
+        root.Add(CreateRenderCommand(() => handlerExitCode = 2));
+        root.Add(CreatePublishCommand(() => handlerExitCode = 2));
+        var commandExitCode = root.Parse(args).Invoke();
         return handlerExitCode == 0 ? commandExitCode : handlerExitCode;
     }
+
+    private static string ProductVersion() =>
+        typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(Program).Assembly.GetName().Version?.ToString()
+        ?? "unknown";
 
     private static Command CreateCheckCommand(Action fail)
     {
         var command = new Command("check", "Validate one YADG workspace without producing outputs.");
-        var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
-        command.AddOption(workspace);
-        command.SetHandler((DirectoryInfo? path) =>
+        var workspace = new Option<DirectoryInfo?>("--workspace") { Description = "Workspace root; defaults to the current directory." };
+        command.Add(workspace);
+        command.SetAction(parseResult =>
         {
+            var path = parseResult.GetValue(workspace);
             var loaded = WorkspaceLoader.Load(path?.FullName);
             try
             {
@@ -37,17 +51,18 @@ public static class Program
                 Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {loaded.Document.References.Count} reference(s))");
             }
             finally { loaded.CleanupTemporaryProducerFiles(); }
-        }, workspace);
+        });
         return command;
     }
 
     private static Command CreateBuildCommand(Action fail)
     {
         var command = new Command("build", "Build all workspace templates without Microsoft Word.");
-        var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
-        command.AddOption(workspace);
-        command.SetHandler((DirectoryInfo? path) =>
+        var workspace = new Option<DirectoryInfo?>("--workspace") { Description = "Workspace root; defaults to the current directory." };
+        command.Add(workspace);
+        command.SetAction(parseResult =>
         {
+            var path = parseResult.GetValue(workspace);
             var loaded = WorkspaceLoader.Load(path?.FullName);
             try
             {
@@ -62,19 +77,22 @@ public static class Program
             }
             catch (Exception ex) { Console.Error.WriteLine(new Diagnostic("YADG-BUILD-001", $"Unable to author workspace output: {ex.Message}", true, loaded.Root)); fail(); }
             finally { loaded.CleanupTemporaryProducerFiles(); }
-        }, workspace);
+        });
         return command;
     }
 
     private static Command CreateRenderCommand(Action fail)
     {
         var command = new Command("render", "Finalize authored DOCX files through the selected renderer.");
-        var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
-        var renderer = new Option<string>("--renderer", () => "libreoffice", "Renderer ID: libreoffice (default) or word.");
-        var rendererPath = new Option<FileInfo?>("--renderer-path", "Explicit LibreOffice soffice executable path.");
-        command.AddOption(workspace); command.AddOption(renderer); command.AddOption(rendererPath);
-        command.SetHandler((DirectoryInfo? path, string rendererId, FileInfo? executable) =>
+        var workspace = new Option<DirectoryInfo?>("--workspace") { Description = "Workspace root; defaults to the current directory." };
+        var renderer = new Option<string>("--renderer") { Description = "Renderer ID: libreoffice (default) or word.", DefaultValueFactory = _ => "libreoffice" };
+        var rendererPath = new Option<FileInfo?>("--renderer-path") { Description = "Explicit LibreOffice soffice executable path." };
+        command.Add(workspace); command.Add(renderer); command.Add(rendererPath);
+        command.SetAction(parseResult =>
         {
+            var path = parseResult.GetValue(workspace);
+            var rendererId = parseResult.GetValue(renderer)!;
+            var executable = parseResult.GetValue(rendererPath);
             RenderResult result;
             if (string.Equals(rendererId, "word", StringComparison.OrdinalIgnoreCase))
             {
@@ -86,18 +104,20 @@ public static class Program
             foreach (var diagnostic in result.Diagnostics) Console.Error.WriteLine(diagnostic);
             if (!result.Success) { fail(); return; }
             Console.WriteLine($"render: finalized PreWords through {rendererId} ({result.RuntimeVersion ?? "runtime detected"})");
-        }, workspace, renderer, rendererPath);
+        });
         return command;
     }
 
     private static Command CreatePublishCommand(Action fail)
     {
         var command = new Command("publish", "Copy finalized DOCX files to an explicit delivery destination.");
-        var workspace = new Option<DirectoryInfo?>("--workspace", "Workspace root; defaults to the current directory.");
-        var publishPath = new Option<DirectoryInfo?>("--publish-path", "Delivery directory; overrides YADG.md publish.path.");
-        command.AddOption(workspace); command.AddOption(publishPath);
-        command.SetHandler((DirectoryInfo? path, DirectoryInfo? destination) =>
+        var workspace = new Option<DirectoryInfo?>("--workspace") { Description = "Workspace root; defaults to the current directory." };
+        var publishPath = new Option<DirectoryInfo?>("--publish-path") { Description = "Delivery directory; overrides YADG.md publish.path." };
+        command.Add(workspace); command.Add(publishPath);
+        command.SetAction(parseResult =>
         {
+            var path = parseResult.GetValue(workspace);
+            var destination = parseResult.GetValue(publishPath);
             var loaded = WorkspaceLoader.Load(path?.FullName);
             try
             {
@@ -107,7 +127,7 @@ public static class Program
                 Console.WriteLine($"publish: copied {result.PublishedCount} finalized DOCX file(s) to {result.Destination}");
             }
             finally { loaded.CleanupTemporaryProducerFiles(); }
-        }, workspace, publishPath);
+        });
         return command;
     }
 

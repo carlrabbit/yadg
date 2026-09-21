@@ -14,6 +14,8 @@ M0009 introduced a Windows/desktop-Microsoft-Word specialization and explicit pu
 
 M0010 strengthens the pre-V1 compatibility boundary with realistic Office-produced templates, relative heading composition, and document-wide visible-text value substitution.
 
+M0011's corrected release authority selects built-in late-bound Word COM for the V1 tool. This supersedes the earlier generated-interop packaging requirement for the release candidate.
+
 ## Platform policy after M0009
 
 The authoritative full-product build and validation locus is Windows.
@@ -26,15 +28,14 @@ Do not add complexity solely to preserve Linux compilation if that conflicts wit
 
 ## Microsoft Word development/build capability
 
-The authoritative Word-capable development/build machine has:
+The authoritative Word-capable validation machine has:
 
 - Windows;
 - repository-supported .NET SDK;
-- Visual Studio/MSBuild tooling required by the M0009 `COMReference`/`ResolveComReference` build path;
 - desktop Microsoft Word installed and COM-registered;
 - an interactive user profile with Office activation/first-run complete.
 
-M0010 must not replace the proven M0009 build-time generated Word interop approach merely to simplify testing.
+The corrected M0011 Word renderer uses version-independent `Word.Application` late binding and does not require Office type-library generation tooling to build or package YADG.
 
 ## Word automation execution policy
 
@@ -60,7 +61,7 @@ The canonical repository validation command remains:
 ./eng/validate.ps1
 ```
 
-Its authoritative locus is Windows and it must continue to build the Word-enabled product through the M0009-compatible MSBuild path.
+Its authoritative locus is Windows and it must build the Word-enabled product through the ordinary .NET SDK path; real Word remains required for Word-renderer execution.
 
 Tier-3 realistic Office compatibility is separate from ordinary Tier-2 repository validation.
 
