@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation in progress. The milestone is `ai-executed-human-reviewed`; no human approval is recorded by the implementation agent.
+Implementation complete. The milestone is `ai-executed-human-reviewed`; HR-M0010-01 has an explicit human approval record.
 
 ## Bounded work packages
 
@@ -33,7 +33,7 @@ Implementation in progress. The milestone is `ai-executed-human-reviewed`; no hu
 
 6. **WP-06 — Review preparation and completion audit**
    - Prepare HR-M0010-01 evidence and representative artifacts.
-   - Do not fabricate approval; `review-check.ps1 --milestone M0010` must pass only after an actual human record.
+   - Human approval was recorded through `eng/review.ps1`; `review-check.ps1 --milestone M0010` passes.
    - Freshly reread authority, reconcile this ledger with repository evidence, and audit all acceptance criteria.
 
 ## Acceptance/evidence map
@@ -54,7 +54,7 @@ Implementation in progress. The milestone is `ai-executed-human-reviewed`; no hu
 ## Execution notes
 
 - The supplied overlay is the authority for M0010; no external guide repository or planning conversation is used as implementation authority.
-- Human review remains pending until a human reviewer records an acceptable decision through the repository review tooling.
+- Human review is approved through `.review/records/HR-M0010-01.md`.
 
 ## Validation log
 
@@ -62,11 +62,11 @@ Implementation in progress. The milestone is `ai-executed-human-reviewed`; no hu
 - `dotnet test tests/Yadg.IntegrationTests/Yadg.IntegrationTests.csproj --no-build --configuration Release`: 42 passed.
 - `./eng/validate.ps1`: passed; restore, Word-enabled build, and 42 tests passed.
 - `./eng/test-m0010-tier3.ps1`: passed. It verified committed fixture hashes, copied immutable fixture bytes, ran real check/build, inspected substituted values/rebased headings/static content, and completed all four origin/renderer paths. Evidence is under `artifacts/review/evidence/M0010/`.
-- `./eng/review-check.ps1 --milestone M0010`: correctly fails because `HR-M0010-01` has no human approval record.
+- `./eng/review-check.ps1 --milestone M0010`: passed after the user’s explicit approval was recorded through `eng/review.ps1`.
 
 ## Current completion state
 
-The portable authoring changes, application-produced fixtures, four-path runtime matrix, regression validation, direct documentation, and M0010 review-tool recognition are implemented. M0010 is not complete until the external human artifact-quality review is recorded and `review-check.ps1 --milestone M0010` passes.
+The portable authoring changes, application-produced fixtures, four-path runtime matrix, regression validation, direct documentation, review evidence, and human artifact-quality approval are complete.
 
 ## Criterion-level reconciliation
 
@@ -84,14 +84,14 @@ The following maps every acceptance-criterion bullet to repository evidence. `bl
 - **Four-path compatibility:** all origin/renderer combinations, readable authored/finalized DOCX, values/headings/structures, renderer finalization, and fields/indexes → `eng/test-m0010-tier3.ps1` four-path matrix/evidence JSON. Passed; evidence is committed under `artifacts/review/evidence/M0010/`.
 - **Regression boundaries:** M0002–M0009 suite, LibreOffice behavior, COMReference build boundary, publish behavior, and no PDF contract change → `./eng/validate.ps1` passed (42 tests); Visual Studio MSBuild passed; renderer/publisher paths preserved.
 - **Documentation/hygiene:** README example, story-agnostic value guidance, template-owned story boundary, synthetic/non-confidential fixtures, and ledger → `README.md`, this ledger, provenance records, and pending review request. Passed pending human visual review.
-- **Human review:** representative artifacts, complete Tier-3 evidence, M0010 review recognition, pending failure, no fabrication/waiver, and approval gate → `.review/pending/HR-M0010-01.md`, `eng/review.ps1`, and `eng/review-check.ps1`; pending check correctly fails and approval remains external.
+- **Human review:** representative artifacts, complete Tier-3 evidence, M0010 review recognition, pending failure, no fabrication/waiver, and approval gate → `.review/pending/HR-M0010-01.md`, `.review/records/HR-M0010-01.md`, `eng/review.ps1`, and `eng/review-check.ps1`; approved and check passes.
 
 ## Final completion audit
 
 - Fresh reread of the M0010 milestone and every Required Authority document completed after implementation and focused-test changes.
 - Milestone ↔ ledger ↔ repository evidence reconciliation completed: 46 repository tests pass; fixture provenance/hash verification passes; Tier 3 passes all four origin/renderer paths; representative artifacts and `tier3-evidence.json` exist under `artifacts/review/evidence/M0010/`.
 - `git diff --check` passes.
-- The only remaining completion condition is external human approval for HR-M0010-01. `./eng/review-check.ps1 --milestone M0010` was run after the audit and correctly fails while the review record is absent. No approval or waiver was fabricated.
+- HR-M0010-01 approval is recorded with Word 16.0.20326.20144, LibreOffice 26.8.0.3, repository revision 29a3251, and the Tier-3 evidence hash. `./eng/review-check.ps1 --milestone M0010` passes. No waiver was used.
 
 ## Fixture equivalence audit
 
