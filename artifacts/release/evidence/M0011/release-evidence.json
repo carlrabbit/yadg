@@ -1,10 +1,10 @@
 {
-  "repositoryRevision": "0cd7444a7db2d14117c2fb4888a43dc773ef0e49",
-  "workingTreeStatus": " M .review/pending/HR-M0011-01.md\n M CHANGELOG.md\n D Directory.Build.targets\n M README.md\n M artifacts/review/evidence/M0010/libreoffice-origin-libreoffice.docx\n M artifacts/review/evidence/M0010/libreoffice-origin-word.docx\n M artifacts/review/evidence/M0010/tier3-evidence.json\n M artifacts/review/evidence/M0010/word-origin-libreoffice.docx\n M artifacts/review/evidence/M0010/word-origin-word.docx\n M docs/ENGINEERING.md\n M docs/engineering/RELEASE.md\n M docs/milestones/M0011-v1-release-readiness.md\n M docs/specs/WORD-RENDERER.md\n M eng/pack.ps1\n M eng/review-check.ps1\n M eng/review.ps1\n M eng/test-m0011-tier4.ps1\n M src/Yadg.Cli/Program.cs\n M src/Yadg.Cli/Yadg.Cli.csproj\n M src/Yadg.WordRenderer/WordRenderer.cs\n M src/Yadg.WordRenderer/Yadg.WordRenderer.csproj\n?? artifacts/package/",
+  "repositoryRevision": "75675f4a29e9e25f5cc215c065e60b04d87d7ebb",
+  "workingTreeStatus": " D Directory.Build.targets\n M artifacts/review/evidence/M0010/libreoffice-origin-libreoffice.docx\n M artifacts/review/evidence/M0010/libreoffice-origin-word.docx\n M artifacts/review/evidence/M0010/tier3-evidence.json\n M artifacts/review/evidence/M0010/word-origin-libreoffice.docx\n M artifacts/review/evidence/M0010/word-origin-word.docx\n?? artifacts/package/",
   "releaseVersion": "1.0.0",
   "packageId": "Yadg",
   "packagePath": "C:\\src\\yadg\\artifacts\\package\\Yadg.1.0.0.nupkg",
-  "packageSha256": "AA34CED0372A8B32142A3D52B9A56412EB454C654785E7FB14D38E8479294D09",
+  "packageSha256": "AB7E9951BC6E909F2474394E8DD9AC8047E85464BE69C28D80DBA33E1E4C7194",
   "packageInspection": "passed",
   "packageEntries": [
     "_rels/.rels",
