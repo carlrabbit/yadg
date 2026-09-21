@@ -11,6 +11,7 @@
 | M0007 | Prepared table row population | complete | Populate template-owned Word table body rows from semantic Markdown tables while preserving template presentation. |
 | M0008 | External content producers and Mermaid diagrams | complete | Add a constrained external-process content-producer boundary and inline Mermaid fenced blocks producing PNG-backed semantic figures. |
 | M0009 | Microsoft Word renderer and publishing | complete | Add real Microsoft Word finalization on Windows and explicit publication of finalized DOCX to a configurable/CLI-selected delivery path. |
-| M0010 | Realistic document composition and template compatibility | ready | Prove application-produced Word/LibreOffice templates, add template-relative heading composition, and extend visible value substitution across Word stories before V1 release-readiness. |
+| M0010 | Realistic document composition and template compatibility | complete | Prove application-produced Word/LibreOffice templates, add template-relative heading composition, and extend visible value substitution across Word stories before V1 release-readiness. |
+| M0011 | V1.0 release readiness | ready | Produce and consumer-validate the YADG 1.0.0 .NET tool release candidate, audit public documentation, add NuGet pack/push tooling, and complete blocking release review without external publication. |
 
 Milestone implementation starts from the milestone document and its explicitly listed authority.

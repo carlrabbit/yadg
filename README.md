@@ -1,79 +1,97 @@
 # YADG
 
-YADG is a template-first document authoring tool. It validates and authors a single Office-independent workspace from Markdown sources and prepared DOCX templates.
+YADG is a Windows-first, template-first document authoring tool. Markdown owns maintainable content, `YADG.md` owns workspace values and producer settings, and prepared DOCX templates own presentation and Word-native structures. YADG authors an intermediate DOCX, optionally finalizes it through Word or LibreOffice, and explicitly publishes finalized DOCX files.
 
-## Mermaid diagrams
+## V1 installation and prerequisites
 
-Workspaces may configure a trusted external Mermaid producer in `YADG.md`. The command is package-manager neutral; YADG appends its own input/output paths:
+YADG V1 is one framework-dependent .NET tool: package `Yadg`, command `yadg`, version `1.0.0`, for Windows x64 and .NET 10. After publication:
 
-```yaml
-producers:
-  mermaid:
-    executable: bun
-    arguments:
-      - x
-      - --bun
-      - --package
-      - "@mermaid-js/mermaid-cli@11.17.0"
-      - mmdc
+```powershell
+dotnet tool install --global Yadg --version 1.0.0
+yadg --version
 ```
 
-Inline Mermaid blocks become ordinary figures and require a stable ID:
+For a local release candidate:
 
-````markdown
-```mermaid {#system-flow caption="System flow"}
-flowchart LR
-    A --> B
+```powershell
+dotnet tool install --tool-path ./.yadg-tool --add-source ./artifacts/package --version 1.0.0 Yadg
+./.yadg-tool/yadg.exe --help
 ```
-````
 
-YADG runs the configured executable directly during `check` and `build`; it does not install Bun, npm, or Mermaid. Producer configuration is trusted executable configuration.
+Authoring and `check`/`build` use .NET and Open XML. The Word renderer requires activated desktop Microsoft Word in an interactive logged-on Windows session; it is not supported from a service, web host, scheduled SYSTEM task, or other unattended/server context. The LibreOffice renderer requires LibreOffice Writer. Mermaid diagrams require a separately installed trusted producer; YADG does not install or bundle it.
 
-## Workspace values
+## First workflow
 
-`YADG.md` may begin with schema-versioned YAML front matter. Its body remains human-facing workspace notes and is not document source. M0006 supports case-sensitive, single-line string values:
+A workspace contains `YADG.md`, Markdown sources, and `YadgTemplates/*.docx`. YADG creates `YadgPreWords/*.docx`; renderers create `YadgWords/*.docx`. LibreOffice also retains its existing `YadgPdfs/*.pdf` side output, but PDF is not a YADG publication artifact.
+
+```powershell
+yadg check --workspace .
+yadg build --workspace .
+yadg render --workspace . --renderer libreoffice
+# or: yadg render --workspace . --renderer word
+yadg publish --workspace . --publish-path ./Published
+```
+
+`check` validates without normal outputs. `build` authors DOCX without opening Word. `render` never implicitly builds. `publish` never builds or renders: it copies every top-level finalized `YadgWords/*.docx` to the explicit destination, preserving basenames and unrelated destination files.
+
+## Commands and options
+
+Every command accepts `--workspace <path>` and otherwise uses the current directory.
+
+- `yadg --version` prints the packaged product version; `yadg --help` lists commands.
+- `yadg check` validates workspace configuration, Markdown, templates, values, producers, placements, and references.
+- `yadg build` authors prepared DOCX files.
+- `yadg render --renderer libreoffice|word` finalizes authored DOCX. LibreOffice is the default. `--renderer-path <path>` is LibreOffice-only.
+- `yadg publish --publish-path <path>` copies finalized DOCX. The CLI destination overrides `YADG.md publish.path`; without either, publishing fails.
+
+## Workspace and template vocabulary
+
+`YADG.md` can contain schema-v1 YAML front matter followed by human-facing notes:
 
 ```yaml
 ---
 yadg:
   version: 1
 values:
-  document-version: "2.3"
-  reporting-date: "2026-09-30"
-  owner: "Liquidity Risk"
+  document-version: "1.0"
+  owner: "Documentation"
+publish:
+  path: ./Published
 ---
-Workspace notes go here.
+Workspace notes are not document source.
 ```
 
-Prepared DOCX templates use values inline with `{{value:document-version}}`. Values can be mixed with ordinary visible text in the main body/table cells, all header and footer variants, footnotes, endnotes, comments, and Word text boxes/shapes. YADG handles the document structures across those stories; template authors do not need to know which OOXML part stores the text. They are literal substitutions; values are not interpolated into Markdown.
+Prepared templates use controls such as `{{content:id}}`, `{{section:id}}`, `{{table:id}}`, `{{figure:id}}`, and `{{table-rows:id}}`. Markdown supports headings with stable IDs, paragraphs, lists, tables, prepared table rows, figures, captions, numeric references such as `[@figure-id]`, and inline Mermaid figure blocks. Template front matter binds existing Word styles and prototypes; it does not define presentation.
 
-## Realistic template composition
+For `section` and `content`, heading levels are relative to the nearest preceding template heading at the placement. A `section` includes its selected root; `content` omits that root. Source level gaps are preserved, and effective Word heading levels 1–9 are supported. Ordinary inserted paragraphs remain separate paragraphs and use the placement paragraph's template-owned body presentation.
 
-Markdown headings are rebased relative to the template heading at each `section` or `content` placement. For example, a template-owned effective `Heading4` followed by `{{section:architecture}}` makes the Markdown `# Architecture` an effective `Heading5`; descendants preserve their relative level gaps. Ordinary inserted paragraphs remain separate and inherit the placement paragraph's body presentation. Footnotes, endnotes, comments, headers, footers, and text boxes remain template-owned structures: M0010 adds no Markdown syntax for creating them.
+Workspace values are literal, non-recursive substitutions such as `{{value:owner}}`. They work in ordinary visible text in the main body and tables, all header/footer variants, footnotes, endnotes, comments, and supported Word text boxes/shapes. A tag may span runs within one paragraph/container. Field instructions, metadata, relationship targets, bookmark names, custom XML, image alternative text, and arbitrary attributes are not value targets.
 
-## Canonical engineering interface
+## Content producers and trust
 
-From a PowerShell checkout:
+Mermaid is an external process boundary. Configure a trusted executable in `YADG.md`; YADG passes it an input file and expected PNG output, validates the PNG, and embeds it as an ordinary figure. YADG does not sandbox the process, install package managers, or guarantee network isolation. Treat producer configuration as executable project code and review it before running `check` or `build`.
 
-```powershell
-./eng/validate.ps1
-./eng/check.ps1 --workspace path/to/workspace
-dotnet run --project src/Yadg.Cli/Yadg.Cli.csproj -- build --workspace path/to/workspace
-dotnet run --project src/Yadg.Cli/Yadg.Cli.csproj -- render --workspace path/to/workspace --renderer libreoffice
-dotnet run --project src/Yadg.Cli/Yadg.Cli.csproj -- render --workspace path/to/workspace --renderer word
-dotnet run --project src/Yadg.Cli/Yadg.Cli.csproj -- publish --workspace path/to/workspace --publish-path path/to/delivery
-```
+## Renderers and references
 
-With no `--workspace`, commands use the current directory. A workspace contains `YADG.md`, Markdown sources, top-level `YadgTemplates/*.docx`, and generated `YadgPreWords/*.docx` outputs. Templates use `{{content:<stable-id>}}`, `{{section:<stable-id>}}`, `{{table:<stable-id>}}`, and `{{figure:<stable-id>}}`. M0003 supports flat lists, stable-ID pipe tables (`{#table-id}` on the following line), and block PNG/JPEG figures such as `![System context](images/context.png){#context}`. M0004 adds table captions (`{#table-id caption="Interfaces"}`), semantic numeric references such as `[@context]`, and optional visible template front matter with template-local caption prototypes. Front matter binds existing Word styles and prototype paragraphs; it does not define presentation. Numeric references require a uniquely rendered captioned target (or a uniquely rendered numbered Markdown heading). YADG authors `SEQ`, bookmarks, and `REF` field structures without evaluating them. The M0005 `render` command discovers LibreOffice from PATH or accepts `--renderer-path`, uses an isolated temporary UNO session, reads top-level `YadgPreWords/*.docx`, and writes `YadgWords/*.docx` plus matching `YadgPdfs/*.pdf` only after a successful render. Rendering never implicitly builds and never requires Microsoft Word or Office Interop. Headings use explicit identity, for example `## Architecture {#architecture}`. The authoring and validation paths do not require Microsoft Word.
+LibreOffice is the default compatibility renderer and produces finalized DOCX plus its existing PDF side output. Microsoft Word is the V1 fidelity target and produces finalized DOCX only. The two renderers may differ in pagination and layout; YADG does not claim byte or visual equivalence. Both can update renderer-owned fields, numbering, indexes, and layout-dependent state according to their application capabilities. Word automation owns and cleans up its interactive application instance.
 
-## Generated and prepared tables
+Figures, tables, captions, headings, and references are authored structurally. Numeric references require a uniquely rendered captioned target or numbered heading. Prepared tables let a DOCX template own header rows, widths, borders, and styles while Markdown supplies row data.
 
-The Word renderer is the Windows fidelity target and requires an interactive logged-on Windows user session with desktop Microsoft Word installed, activated, and COM-registered. It refreshes top-level `YadgPreWords/*.docx` and writes finalized DOCX only to `YadgWords`; it does not create PDFs. Optional `YADG.md` `publish.path` supplies the publication default, and `--publish-path` overrides it. `publish` copies all top-level `YadgWords/*.docx`, preserves basenames and unrelated destination files, and never builds or renders.
+## Publishing, security, and limitations
 
-By default, a Markdown pipe table is a generated Word table. To let a DOCX template own the table header, widths, borders, styles, and surrounding rows, put a marker row in an existing Word table and make the immediately following row its prototype:
+Publishing is a local filesystem copy of finalized top-level DOCX files. It does not publish PDFs, upload to a DMS, sign documents, or perform remote authentication. Values are workspace data rather than a secret store. External producers execute with the workspace's user permissions. Treat templates and producer configuration as trusted input.
 
-```text
-{{table-rows:interface-matrix}}
-```
+V1 is Windows x64/.NET 10 only. It is not a Linux/macOS distribution, self-contained executable, installer, library package, website, or unattended Word automation service. External Mermaid tooling, desktop Word, and LibreOffice are separate prerequisites. Macro-enabled templates and remote/server-side Word automation are outside the supported contract.
 
-Each prototype cell must contain one logical `{{cell}}` placeholder. YADG clones that row once for each Markdown body row, maps columns positionally, preserves literal prefix/suffix text and template formatting, and removes the marker/prototype controls. The Markdown header supplies schema only; template rows supply visible headings. Prepared placement suppresses the table's natural/generated emission and can be captioned/referenced using the existing table-caption rules. `{{table:<id>}}` and `{{table-rows:<id>}}` are mutually exclusive for a table in one template.
+## Troubleshooting
+
+- If `check` or `build` reports a missing template, malformed control, value, producer, heading, or reference, fix the workspace/template and rerun `check`.
+- If Mermaid fails, verify the configured executable, pinned arguments, PATH/relative path, and valid PNG output.
+- If Word rendering fails, run in an interactive logged-on session with activated desktop Word and ensure no modal prompt is blocking automation.
+- If LibreOffice rendering fails, install Writer and use `--renderer-path` to identify `soffice` when it is not on PATH.
+- If package creation fails, release builds require full Visual Studio MSBuild with `ResolveComReference`/`tlbimp`; `dotnet pack` is not a substitute for generated Office interop.
+- Publishing requires at least one top-level finalized DOCX and an explicit or configured destination; reserved YADG output directories are rejected.
+
+## License and release scope
+
+YADG is licensed under the MIT License. The package declares the SPDX license expression `MIT` and includes the repository `LICENSE` file. External NuGet publication, a GitHub Release/tag, and CI/CD automation are separate authorized release operations.

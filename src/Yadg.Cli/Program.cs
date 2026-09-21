@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Reflection;
 using Yadg.Core;
 using Yadg.Word;
 using Yadg.Renderer;
@@ -11,6 +12,11 @@ public static class Program
 {
     public static int Main(string[] args)
     {
+        if (args.Length == 1 && (args[0] == "--version" || args[0] == "-v"))
+        {
+            Console.WriteLine(ProductVersion());
+            return 0;
+        }
         var handlerExitCode = 0;
         var root = new RootCommand("YADG — template-first document authoring");
         root.AddCommand(CreateCheckCommand(() => handlerExitCode = 2));
@@ -20,6 +26,11 @@ public static class Program
         var commandExitCode = root.Invoke(args);
         return handlerExitCode == 0 ? commandExitCode : handlerExitCode;
     }
+
+    private static string ProductVersion() =>
+        typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(Program).Assembly.GetName().Version?.ToString()
+        ?? "unknown";
 
     private static Command CreateCheckCommand(Action fail)
     {
