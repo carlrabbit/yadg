@@ -73,7 +73,7 @@ publish:
 Workspace notes are not document source.
 ```
 
-Prepared templates use controls such as `{{content:id}}`, `{{section:id}}`, `{{table:id}}`, `{{figure:id}}`, and `{{table-rows:id}}`. Markdown supports headings with stable IDs, paragraphs, lists, tables, prepared table rows, figures, captions, numeric references such as `[@figure-id]`, and inline Mermaid figure blocks. Template front matter binds existing Word styles and prototypes; it does not define presentation.
+Prepared templates use visible text placeholders such as `{{content:id}}`, `{{section:id}}`, `{{table:id}}`, `{{figure:id}}`, and `{{table-rows:id}}`; these are ordinary text in the Word document, not Word content controls. Markdown supports headings with stable IDs, paragraphs, lists, tables, prepared table rows, figures, captions, numeric references such as `[@figure-id]`, and inline Mermaid figure blocks. Template front matter binds existing Word styles and prototypes; it does not define presentation.
 
 For `section` and `content`, heading levels are relative to the nearest preceding template heading at the placement. A `section` includes its selected root; `content` omits that root. Source level gaps are preserved, and effective Word heading levels 1–9 are supported. Ordinary inserted paragraphs remain separate paragraphs and use the placement paragraph's template-owned body presentation.
 
