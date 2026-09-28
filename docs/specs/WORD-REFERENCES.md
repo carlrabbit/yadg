@@ -238,3 +238,7 @@ M0004 does not define:
 - prepared-table row population;
 - field evaluation/rendering;
 - PDF output.
+
+## M0012 resilience specialization
+
+The failures above describe strict validation. Explicit `check --yolo` / `build --yolo` preserves missing value tags visibly as `{{value:id}}`; unresolved numeric semantic references remain visible as `[@id]`-equivalent source identity rather than inventing a number. Duplicate/ambiguous object identities remain fatal. See `AUTHORING-RESILIENCE.md`.

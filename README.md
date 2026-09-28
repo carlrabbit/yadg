@@ -37,3 +37,5 @@ yadg publish --publish-path ./Published
 - [Troubleshooting](docs/user/TROUBLESHOOTING.md)
 
 YADG is licensed under MIT. Third-party software has its own licenses and terms. External publication, releases, and CI automation are separate operations.
+
+Exploratory authoring can use `yadg check --yolo`, `yadg build --yolo`, and `yadg render --yolo`. Strict mode is the production default. YOLO prints each degradation and never bypasses identity/path safety or treats PreWords as finalized. Run `yadg inspect template` to inspect role resolution and fallback previews.

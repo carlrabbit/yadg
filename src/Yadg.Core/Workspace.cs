@@ -14,7 +14,7 @@ public sealed record YadgWorkspace(string Root, IReadOnlyList<string> Sources, I
 
 public static class WorkspaceLoader
 {
-    public static YadgWorkspace Load(string? requestedRoot = null)
+    public static YadgWorkspace Load(string? requestedRoot = null, bool yolo = false)
     {
         var diagnostics = new List<Diagnostic>();
         var root = Path.GetFullPath(requestedRoot ?? Directory.GetCurrentDirectory());
@@ -36,17 +36,24 @@ public static class WorkspaceLoader
             diagnostics.Add(new("YADG-WS-002", "Nested YADG.md workspace markers are not supported.", true, nested));
 
         var sources = allFiles.Where(f => IsMarkdownSource(f, root)).OrderBy(f => f, StringComparer.Ordinal).ToArray();
+        if (yolo)
+            foreach (var source in sources)
+            {
+                var text = File.ReadAllText(source);
+                if (values.ThematicBreakPolicy == "error" && System.Text.RegularExpressions.Regex.IsMatch(text, @"(?m)^\s{0,3}([-*_])(?:\s*\1){2,}\s*$")) diagnostics.Add(new("YADG-YOLO-MD-001", "Markdown thematic break omitted; fallback: no thematic-break output.", false, source) { IsDegradation = true });
+                if (values.CodeInlinePolicy == "error" && System.Text.RegularExpressions.Regex.IsMatch(text, @"(?<!`)`[^`\r\n]+`(?!`)")) diagnostics.Add(new("YADG-YOLO-MD-002", "Inline code styling is unsupported by the configured Markdown policy; fallback: preserve code text as plain text.", false, source) { IsDegradation = true });
+            }
         if (sources.Length == 0) diagnostics.Add(new("YADG-WS-003", "Workspace contains no Markdown source files.", true, root));
         var templates = Directory.Exists(templateDir) && !IsReparse(templateDir)
             ? SafeTopLevelFiles(templateDir, diagnostics).Where(f => Path.GetExtension(f).Equals(".docx", StringComparison.OrdinalIgnoreCase)).OrderBy(f => f, StringComparer.Ordinal).ToArray()
             : Array.Empty<string>();
         if (templates.Length == 0) diagnostics.Add(new("YADG-WS-005", "Workspace contains no top-level DOCX templates in YadgTemplates.", true, templateDir));
 
-        var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path, values.ThematicBreakPolicy, values.CodeInlinePolicy)));
+        var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path, yolo && values.ThematicBreakPolicy == "error" ? "ignore" : values.ThematicBreakPolicy, yolo && values.CodeInlinePolicy == "error" ? "ignore" : values.CodeInlinePolicy)));
         var document = MarkdownDocumentParser.Merge(parsed, diagnostics);
-        document = AssetValidation.AttachAndValidate(document, root, diagnostics);
+        document = AssetValidation.AttachAndValidate(document, root, diagnostics, yolo);
         var workspace = new YadgWorkspace(root, sources, templates, document, values, diagnostics);
-        return workspace with { Document = MermaidProducer.RenderFigures(workspace.Document, root, values, diagnostics, workspace.TemporaryProducerDirectories) };
+        return workspace with { Document = MermaidProducer.RenderFigures(workspace.Document, root, values, diagnostics, workspace.TemporaryProducerDirectories, yolo) };
     }
 
     private static YadgWorkspace Invalid(string root, List<Diagnostic> diagnostics, Diagnostic diagnostic)

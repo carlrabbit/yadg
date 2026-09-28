@@ -314,3 +314,9 @@ M0012 does not:
 - add an interactive TUI/template editor;
 - synthesize a starter DOCX template;
 - change renderer or publishing semantics.
+
+## Explicit YOLO recovery (M0012 correction)
+
+`check`, `build`, and `render` accept invocation-local `--yolo`; strict behavior remains the default. A recovered error is printed as `degradation YADG-YOLO-*`, including the original problem and selected fallback. Successful YOLO commands report a degradation count. YOLO can substitute deterministic compatible presentation, versioned built-ins, visible placeholders, preserved unresolved tokens, or the other supported renderer. It never changes `YADG.md` or weakens malformed-config, duplicate-ID, path/reparse, corrupt-package, no-output, both-renderers-failed, or unsafe-publication boundaries. `publish` remains finalized-DOCX-only.
+
+`yadg inspect template [--workspace <path>] [--template <filename.docx>]` explains control/front-matter structures, placements and searchable locations, prototypes, strict role resolution, and YOLO fallback candidates. It does not run producers. See `TEMPLATE-PRESENTATION.md` and `AUTHORING-RESILIENCE.md`; they supersede narrower role/failure rules below where explicitly stated.

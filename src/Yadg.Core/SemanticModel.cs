@@ -2,6 +2,7 @@ namespace Yadg.Core;
 
 public sealed record Diagnostic(string Code, string Message, bool IsError = true, string? Location = null)
 {
+    public bool IsDegradation { get; init; }
     public override string ToString() => Location is null ? $"{(IsError ? "error" : "warning")} {Code}: {Message}" : $"{(IsError ? "error" : "warning")} {Code} {Location}: {Message}";
 }
 

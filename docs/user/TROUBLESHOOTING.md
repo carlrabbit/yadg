@@ -21,3 +21,11 @@ Run `yadg check --list` to see what YADG discovered alongside errors. The listin
 - **Publish failure:** render first, ensure at least one top-level finalized DOCX exists, and set `--publish-path` or `publish.path`.
 
 For the full workflow see [Getting started](GETTING-STARTED.md), and for supported Markdown/configuration see [Authoring](AUTHORING.md).
+
+## YOLO diagnostics
+
+`--yolo` is opt-in for `check`, `build`, and `render`; normal commands remain strict. A `degradation YADG-YOLO-*` line states both the issue and the selected fallback. Successful YOLO commands report a degradation count. Fix degradations before production/CI runs.
+
+YOLO cannot resolve duplicate/ambiguous semantic IDs, malformed `YADG.md`, workspace/path traversal or reparse violations, unsafe/corrupt DOCX packages, unsafe publication destinations, no-output cases, or a failed pair of renderers. `publish` never publishes `YadgPreWords`. These failures remain errors in YOLO mode.
+
+For a DOCX error, `yadg inspect template` and the diagnostic location show the story, nearest template heading path, searchable text excerpt, and supplemental paragraph ordinal where available.

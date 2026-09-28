@@ -38,3 +38,22 @@ Publishing copies finalized DOCX files; it does not build or render them.
 - [Authoring Markdown and workspace configuration](AUTHORING.md)
 - [Templates, styles, and lists](TEMPLATES.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
+
+## Exploratory best-effort authoring
+
+Strict commands answer whether the workspace is production-correct:
+
+```powershell
+yadg check
+yadg build
+```
+
+For an explicit best-effort artifact while fixing template/runtime issues, use invocation-local `--yolo`:
+
+```powershell
+yadg check --yolo
+yadg build --yolo
+yadg render --renderer word --yolo
+```
+
+YOLO reports each degradation and its fallback. It can choose a compatible template resource, a versioned built-in example, a visible placeholder, or the alternate renderer. Missing values/references remain visibly unresolved. YOLO never guesses duplicate IDs, bypasses path safety, claims an authored PreWord was finalized, or makes publishing fall back to PreWords. Production and CI should normally use strict commands. See [troubleshooting](TROUBLESHOOTING.md) and [template introspection](TEMPLATES.md).

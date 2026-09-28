@@ -40,3 +40,9 @@ Then use a fenced `mermaid` block with a stable ID. Producer configuration execu
 `yadg check` validates without generating normal outputs. It prints errors and warnings with workspace-relative paths and available Markdown/YAML line and column positions. `check --list` adds the discovered inventory; its output is for people and is not a machine-stable format. Reference counts include sections, tables, and figures.
 
 `yadg build` authors `YadgPreWords/*.docx`. `render` finalizes those files using Word or LibreOffice. `publish` copies finalized DOCX files to the selected destination. See [Templates](TEMPLATES.md) for front matter and presentation roles.
+
+## Best-effort mode
+
+`check`, `build`, and `render` accept `--yolo` for one invocation. Strict mode remains the production default. YOLO can omit a thematic break, keep inline code plain, preserve an unresolved `{{value:id}}` or `[@id]`, show a missing figure/Mermaid placeholder, use a related presentation resource or built-in list numbering, and continue with other templates after an unreadable one. Each recovery prints a `degradation` diagnostic and successful commands report the count. `publish` only publishes finalized `YadgWords/*.docx`.
+
+Malformed configuration, duplicate semantic IDs, unsafe paths/reparse points, corrupt package handling, and no useful output remain fatal. YOLO never silently swallows an exception.

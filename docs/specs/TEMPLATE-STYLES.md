@@ -266,3 +266,9 @@ M0012 does not:
 - support nested Markdown lists;
 - make fuzzy style matching a public behavior;
 - promise that every latent style visible in the Word gallery is directly bindable.
+
+## Presentation and resilience authority
+
+Styles are one mechanism under the common template-example model. `docs/specs/TEMPLATE-PRESENTATION.md` governs strict/YOLO role resolution and deterministic related-resource selection. `docs/specs/AUTHORING-RESILIENCE.md` governs explicit recoveries, visible degradation diagnostics, renderer substitution, and fatal boundaries. Prior strict style/list requirements in this document continue to define strict mode; they do not prohibit the specifically authorized YOLO built-in examples.
+
+Use `yadg inspect template` to see role resolution and safe fallback previews. `inspect styles` remains the concrete style inventory.

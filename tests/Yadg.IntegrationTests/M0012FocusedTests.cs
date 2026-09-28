@@ -145,6 +145,91 @@ public sealed class M0012FocusedTests
         Assert.Contains(document.MainDocumentPart.Document.Body.Descendants<FieldCode>(), code => code.Text?.Contains("REF", StringComparison.Ordinal) == true);
     }
 
+    [Fact]
+    public void Yolo_uses_real_builtin_list_numbering_and_inspect_template_previews_it()
+    {
+        using var fixture = Fixture.Create("{{content:introduction}}");
+        var model = Parse("# Introduction {#introduction}\n\n- first\n- second");
+        var strict = WordAuthoring.Analyze(fixture.Template, model);
+        Assert.Contains(strict.Diagnostics, d => d.IsError && d.Code == "YADG-WORD-LIST");
+        var bestEffort = WordAuthoring.Analyze(fixture.Template, model, yolo: true);
+        Assert.DoesNotContain(bestEffort.Diagnostics, d => d.IsError);
+        Assert.Contains(bestEffort.Diagnostics, d => d.IsDegradation && d.Code.StartsWith("YADG-YOLO-LIST", StringComparison.Ordinal));
+        var output = Path.Combine(fixture.Root, "best-effort.docx");
+        WordAuthoring.Author(fixture.Template, output, model, yolo: true);
+        using (var authored = WordprocessingDocument.Open(output, false))
+        {
+            var rows = authored.MainDocumentPart!.Document.Body!.Elements<Paragraph>().Where(p => Text(p) is "first" or "second").ToArray();
+            Assert.Equal(2, rows.Length);
+            Assert.All(rows, row => Assert.NotNull(row.ParagraphProperties?.NumberingProperties?.NumberingId?.Val?.Value));
+            var numbering = authored.MainDocumentPart.NumberingDefinitionsPart!.Numbering!;
+            Assert.Contains(numbering.Descendants<NumberingFormat>(), n => n.Val?.Value == NumberFormatValues.Bullet);
+        }
+        var report = WordAuthoring.InspectTemplate(fixture.Template);
+        Assert.Contains(report, line => line.Contains("role unordered", StringComparison.Ordinal) && line.Contains("builtin:unordered-list-v1", StringComparison.Ordinal));
+        Assert.Contains(report, line => line.Contains("near:", StringComparison.Ordinal) && line.Contains("content:introduction", StringComparison.Ordinal));
+
+        var templates = Path.Combine(fixture.Root, "YadgTemplates"); Directory.CreateDirectory(templates); File.Copy(fixture.Template, Path.Combine(templates, "report.docx"));
+        var original = Console.Out; using var stdout = new StringWriter();
+        try { Console.SetOut(stdout); Assert.Equal(0, Program.Main(new[] { "inspect", "template", "--template", "report.docx", "--workspace", fixture.Root })); }
+        finally { Console.SetOut(original); }
+        Assert.Contains("frontmatter:", stdout.ToString(), StringComparison.Ordinal);
+        Assert.Contains("yolo candidate: builtin:unordered-list-v1", stdout.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Fatal_semantic_and_workspace_errors_remain_errors_with_yolo()
+    {
+        var parsed = MarkdownDocumentParser.Parse("# First {#same}\n\n# Second {#same}", "content.md");
+        Assert.Contains(parsed.Diagnostics, d => d.Code == "YADG-REF-002" && d.IsError);
+        var valuesDiagnostics = new List<Diagnostic>();
+        WorkspaceValuesParser.Parse("---\nyadg:\n  version: 9\n---\n", "YADG.md", valuesDiagnostics);
+        Assert.Contains(valuesDiagnostics, d => d.IsError);
+
+        using var fixture = Fixture.Create("{{content:introduction}}");
+        var templates = Path.Combine(fixture.Root, "YadgTemplates"); Directory.CreateDirectory(templates); File.Copy(fixture.Template, Path.Combine(templates, "report.docx"));
+        File.WriteAllText(Path.Combine(fixture.Root, "YADG.md"), "---\nyadg:\n  version: 1\n---\n");
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# First {#same}\n\n# Second {#same}");
+        var originalOut = Console.Out; var originalError = Console.Error; using var stdout = new StringWriter(); using var stderr = new StringWriter();
+        try { Console.SetOut(stdout); Console.SetError(stderr); Assert.Equal(2, Program.Main(new[] { "check", "--yolo", "--workspace", fixture.Root })); }
+        finally { Console.SetOut(originalOut); Console.SetError(originalError); }
+        Assert.Contains("YADG-REF-002", stderr.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Yolo_cli_is_explicit_and_preserves_missing_value_token()
+    {
+        using var fixture = Fixture.Create("{{content:introduction}}", "{{value:missing-id}}");
+        var templates = Path.Combine(fixture.Root, "YadgTemplates"); Directory.CreateDirectory(templates);
+        File.Copy(fixture.Template, Path.Combine(templates, "report.docx"));
+        File.WriteAllText(Path.Combine(fixture.Root, "YADG.md"), "---\nyadg:\n  version: 1\n---\n");
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Introduction {#introduction}\n\n- item\n\n---\n\nInline `code` and [@missing-reference].\n\n![Ghost alt](missing.png){#ghost-figure}\n");
+        var originalOut = Console.Out; var originalError = Console.Error;
+        using var stdout = new StringWriter(); using var stderr = new StringWriter();
+        try
+        {
+            Console.SetOut(stdout); Console.SetError(stderr);
+            Assert.Equal(2, Program.Main(new[] { "check", "--workspace", fixture.Root }));
+            Assert.Equal(0, Program.Main(new[] { "check", "--yolo", "--workspace", fixture.Root }));
+            var exit = Program.Main(new[] { "build", "--yolo", "--workspace", fixture.Root });
+            Assert.True(exit == 0, $"exit={exit}\nOUT:{stdout}\nERR:{stderr}");
+        }
+        finally { Console.SetOut(originalOut); Console.SetError(originalError); }
+        Assert.Contains("degradations=", stdout.ToString(), StringComparison.Ordinal);
+        Assert.Contains("YADG-YOLO-MD-001", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("YADG-YOLO-MD-002", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("YADG-YOLO-FIGURE-001", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("YADG-YOLO-UNRESOLVED-001", stderr.ToString(), StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "YadgPreWords", "report.docx")));
+        using var authored = WordprocessingDocument.Open(Path.Combine(fixture.Root, "YadgPreWords", "report.docx"), false);
+        Assert.Contains(authored.MainDocumentPart!.Document.Body!.Descendants<Text>(), t => t.Text?.Contains("{{value:missing-id}}", StringComparison.Ordinal) == true);
+        var authoredText = string.Concat(authored.MainDocumentPart.Document.Body.Descendants<Text>().Select(t => t.Text));
+        Assert.Contains("code", authoredText, StringComparison.Ordinal);
+        Assert.Contains("[@missing-reference]", authoredText, StringComparison.Ordinal);
+        Assert.Contains("YADG figure \"ghost-figure\" unavailable", authoredText, StringComparison.Ordinal);
+        Assert.Contains("YADG-YOLO-UNRESOLVED-001", stderr.ToString(), StringComparison.Ordinal);
+    }
+
     private static string Text(Paragraph paragraph) => string.Concat(paragraph.Descendants<Text>().Select(t => t.Text));
 
     private static YadgDocument Parse(string markdown, string thematic = "error", string code = "error")

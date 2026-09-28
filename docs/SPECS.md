@@ -44,3 +44,8 @@ Publishing copies finalized DOCX explicitly.
 ```
 
 YADG 1.1 improves authoring/discovery ergonomics without changing that ownership model.
+
+## Presentation and authoring resilience authority
+
+- `docs/specs/TEMPLATE-PRESENTATION.md` — generalized template-owned examples/resources and deterministic strict/YOLO presentation role resolution; supersedes narrower style/list presentation framing where stated.
+- `docs/specs/AUTHORING-RESILIENCE.md` — explicit `--yolo`, recovery catalog, visible degradation output, renderer fallback, and fatal boundaries; supersedes earlier failure-only statements for the named recoverable cases.

@@ -44,3 +44,22 @@ A template prototype is the explicit escape hatch. Create a real Word/Writer num
 ## Other template controls
 
 Front matter begins with a paragraph containing `{{yadg:frontmatter}}`, declares `version: 1`, and ends at `{{/yadg:frontmatter}}`. Existing caption prototypes, prepared table row markers, bookmarks, and fields remain template-owned. See the focused specifications linked from [the spec index](../SPECS.md) for exact template contracts.
+
+## Template presentation and fallback preview
+
+Run `yadg inspect template` to see front matter, placements, prototypes, role bindings, resolved style IDs/names/types, and searchable nearby Word text. The report previews deterministic YOLO candidates when strict role resolution fails. `yadg inspect styles` remains the list of concrete serialized styles.
+
+Presentation may come from the placement paragraph, a list/caption/prepared-table prototype, a style/numbering resource, or placeholder run formatting. Configure a concrete usable numbered style in strict mode, for example:
+
+```yaml
+styles:
+  lists:
+    unordered: "List Bullet 2" # must have actual bullet numbering
+    ordered: "List Number"     # must have actual decimal numbering
+```
+
+The UI name and internal ID may differ. `inspect styles` shows both. A name alone does not prove a numbering definition is usable.
+
+If strict `check` reports an unavailable style/numbering, inspect the template and correct its resources. During exploration, `yadg check --yolo` and `yadg build --yolo` may choose a compatible resource or the real-numbering built-ins `builtin:unordered-list-v1` / `builtin:ordered-list-v1`. The fallback uses Word numbering definitions, never literal bullet/number glyphs. Each use is a visible degradation; it does not replace fixing the production template.
+
+Use `yadg render --renderer libreoffice --renderer-path <bad-path> --yolo` to exercise the documented Word fallback (where Word is installed). The result reports requested versus actual renderer/runtime. If both renderers fail, no finalized output is claimed.

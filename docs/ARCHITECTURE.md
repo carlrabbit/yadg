@@ -143,3 +143,9 @@ The Word renderer processes trusted YADG-authored DOCX and owns its automation i
 Realistic compatibility fixtures are synthetic and redistribution-safe.
 
 The publisher does not execute content and defines no remote credential protocol.
+
+## Template presentation and explicit resilience
+
+Template presentation is resolved through one role/example model: contextual placement paragraphs, explicit prototypes, configured style/numbering resources, prepared table structures, placeholder run formatting, and compatibility defaults. `docs/specs/TEMPLATE-PRESENTATION.md` is authoritative; style IDs are implementation details and styles are one mechanism.
+
+Strict validation remains default. CLI `--yolo` for check/build/render enables only the enumerated safe recoveries and visible degradation diagnostics in `docs/specs/AUTHORING-RESILIENCE.md`. It is invocation-local and does not alter the Office-independent core's safety boundary. Semantic identity ambiguity, malformed configuration, traversal/reparse violations, and falsely claiming success remain fatal.

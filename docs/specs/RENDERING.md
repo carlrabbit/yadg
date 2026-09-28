@@ -131,3 +131,7 @@ Milestone-scoped human artifact review applies only when explicitly required by 
 ## Deferred behavior
 
 The common contract does not define renderer equivalence, generic PDF requirements, remote renderers, publication packages, or automatic renderer installation.
+
+## Explicit renderer fallback under YOLO
+
+Strict `render` continues to use only the requested renderer and fails when it cannot finalize the inputs. `render --yolo` may try the other supported renderer after the requested renderer fails. Each attempt runs against a staged copy of authored `YadgPreWords`; output is committed only after one renderer completes successfully. Partial output from a failed attempt is discarded. If both fail, render fails and authored intermediates remain intermediates. Diagnostics identify requested and actual renderer, the actual runtime, and the primary failure. A successful alternate-renderer DOCX remains finalized and may be published by the unchanged finalized-only publisher. See `AUTHORING-RESILIENCE.md`.

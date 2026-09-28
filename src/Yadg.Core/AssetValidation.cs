@@ -2,14 +2,14 @@ namespace Yadg.Core;
 
 public static class AssetValidation
 {
-    public static YadgDocument AttachAndValidate(YadgDocument document, string workspaceRoot, List<Diagnostic> diagnostics)
+    public static YadgDocument AttachAndValidate(YadgDocument document, string workspaceRoot, List<Diagnostic> diagnostics, bool yolo = false)
     {
         var figures = new Dictionary<string, YadgFigure>(StringComparer.Ordinal);
         foreach (var figure in document.Figures.Values)
         {
             if (figure.GeneratedSource is not null) { figures[figure.Id] = figure; continue; }
             var result = ReadAsset(figure, workspaceRoot);
-            if (result.Asset is null) { diagnostics.Add(result.Diagnostic!); figures[figure.Id] = figure; }
+            if (result.Asset is null) { diagnostics.Add(yolo && result.Diagnostic!.Code is "YADG-FIGURE-005" or "YADG-FIGURE-007" ? result.Diagnostic with { IsError = false, IsDegradation = true, Code = "YADG-YOLO-FIGURE-001", Message = $"Figure '{figure.Id}' asset is unavailable; fallback: visible figure placeholder." } : result.Diagnostic!); figures[figure.Id] = figure; }
             else figures[figure.Id] = figure with { Asset = result.Asset };
         }
         YadgBlock Map(YadgBlock block) => block switch
@@ -31,8 +31,10 @@ public static class AssetValidation
         var relative = Path.GetRelativePath(workspaceRoot, fullPath);
         if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
             return (null, new("YADG-FIGURE-004", $"Figure asset must remain within the workspace: '{figure.AssetPath}'.", true, figure.SourcePath));
-        if (!File.Exists(fullPath) || File.GetAttributes(fullPath).HasFlag(FileAttributes.ReparsePoint))
+        if (!File.Exists(fullPath))
             return (null, new("YADG-FIGURE-005", $"Figure asset must be an existing regular file: '{figure.AssetPath}'.", true, figure.SourcePath));
+        if (File.GetAttributes(fullPath).HasFlag(FileAttributes.ReparsePoint))
+            return (null, new("YADG-FIGURE-004", $"Figure asset must not be a symbolic link or reparse point: '{figure.AssetPath}'.", true, figure.SourcePath));
         var extension = Path.GetExtension(fullPath).ToLowerInvariant();
         if (extension is not ".png" and not ".jpg" and not ".jpeg")
             return (null, new("YADG-FIGURE-006", $"Unsupported figure image format '{extension}'. Only PNG and JPEG are supported.", true, figure.SourcePath));

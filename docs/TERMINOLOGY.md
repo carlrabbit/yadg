@@ -93,3 +93,15 @@ Logged-on Windows user session with a normal user profile and activated desktop 
 ## Human artifact-quality review
 
 Milestone-scoped human inspection of real finalized documents when automated structural checks cannot decide presentation fidelity.
+
+## Template presentation example
+
+A template-owned placement paragraph, caption/list/prepared-table prototype, configured style/numbering resource, and placeholder run can each serve as a concrete example for a semantic presentation role. Styles are one mechanism, not the product model.
+
+## Degradation diagnostic
+
+A visible, non-fatal report of an explicit YOLO recovery. It names the original problem and selected fallback. A successful YOLO check/build/render reports the number of degradations.
+
+## YOLO authoring mode
+
+An invocation-local best-effort mode enabled only by `--yolo` on `check`, `build`, or `render`. It can reduce presentation fidelity or use an alternate renderer, but does not bypass semantic identity, configuration, path, package-integrity, publication, or truthful-success boundaries.

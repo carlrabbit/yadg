@@ -360,3 +360,7 @@ M0003 deliberately does not define:
 - custom per-workspace style mappings.
 
 Those require later project authority.
+
+## M0012 resilience specialization
+
+The rules above describe strict mode. Under explicit `--yolo`, missing in-workspace figure files may become visible ID/caption/path placeholders, and failed Mermaid execution may become a visible semantic figure placeholder. Path escapes, reparse points, unsupported asset kinds, malformed Markdown identity, and other security/semantic errors remain fatal. See `AUTHORING-RESILIENCE.md`.

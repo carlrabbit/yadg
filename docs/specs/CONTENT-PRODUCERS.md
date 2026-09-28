@@ -303,3 +303,7 @@ M0008 does not define:
 - producer environment-variable maps;
 - shell-command strings/pipelines;
 - rendering Mermaid directly inside Word/LibreOffice.
+
+## M0012 resilience specialization
+
+Producer errors remain fatal in strict mode. Under explicit `--yolo`, a failed/unavailable Mermaid producer may be represented by an obvious visible placeholder figure that retains its stable ID and available caption/source context. YADG does not execute an unconfigured replacement program or silently drop the semantic figure. See `AUTHORING-RESILIENCE.md`.

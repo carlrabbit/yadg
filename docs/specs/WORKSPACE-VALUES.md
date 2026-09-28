@@ -114,3 +114,7 @@ Publication configuration is filesystem destination configuration and defines no
 Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid. M0012 adds the optional `markdown` mapping without changing the schema version.
 
 M0010 changes where existing `{{value:<id>}}` tags are supported; it does not add new workspace value syntax.
+
+## M0012 resilience specialization
+
+Malformed YAML/configuration remains fatal in every mode. The missing-value failure above describes strict validation; explicit `--yolo` may preserve the visible template token without inventing a value. Workspace Markdown policy and this recovery do not become persistent YOLO configuration. See `AUTHORING-RESILIENCE.md`.
