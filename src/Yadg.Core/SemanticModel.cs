@@ -2,7 +2,7 @@ namespace Yadg.Core;
 
 public sealed record Diagnostic(string Code, string Message, bool IsError = true, string? Location = null)
 {
-    public override string ToString() => Location is null ? $"{Code}: {Message}" : $"{Code}: {Location}: {Message}";
+    public override string ToString() => Location is null ? $"{(IsError ? "error" : "warning")} {Code}: {Message}" : $"{(IsError ? "error" : "warning")} {Code} {Location}: {Message}";
 }
 
 public abstract record YadgBlock;
@@ -17,11 +17,13 @@ public sealed record ImageAsset(string FullPath, string Format, int WidthPixels,
 
 public abstract record YadgInline;
 public sealed record YadgText(string Value) : YadgInline;
+public sealed record YadgLiteralText(string Value) : YadgInline;
 public sealed record YadgEmphasis(IReadOnlyList<YadgInline> Inlines) : YadgInline;
 public sealed record YadgStrong(IReadOnlyList<YadgInline> Inlines) : YadgInline;
 public sealed record YadgHardBreak : YadgInline;
 public sealed record YadgSoftBreak : YadgInline;
 public sealed record YadgReference(string Id) : YadgInline;
+public sealed record YadgCode(string Value) : YadgInline;
 
 public sealed record YadgSection(string Id, YadgHeading Heading, IReadOnlyList<YadgBlock> Body)
 {

@@ -21,7 +21,9 @@ public static class Program
         }
         var handlerExitCode = 0;
         var root = new RootCommand("YADG — template-first document authoring");
+        root.Add(CreateInitCommand(() => handlerExitCode = 2));
         root.Add(CreateCheckCommand(() => handlerExitCode = 2));
+        root.Add(CreateInspectCommand(() => handlerExitCode = 2));
         root.Add(CreateBuildCommand(() => handlerExitCode = 2));
         root.Add(CreateRenderCommand(() => handlerExitCode = 2));
         root.Add(CreatePublishCommand(() => handlerExitCode = 2));
@@ -38,7 +40,9 @@ public static class Program
     {
         var command = new Command("check", "Validate one YADG workspace without producing outputs.");
         var workspace = new Option<DirectoryInfo?>("--workspace") { Description = "Workspace root; defaults to the current directory." };
+        var list = new Option<bool>("--list") { Description = "List discovered sources, templates, and references." };
         command.Add(workspace);
+        command.Add(list);
         command.SetAction(parseResult =>
         {
             var path = parseResult.GetValue(workspace);
@@ -46,9 +50,11 @@ public static class Program
             try
             {
                 var diagnostics = ValidateTemplates(loaded);
-                PrintDiagnostics(diagnostics);
-                if (diagnostics.Any(d => d.IsError)) { fail(); return; }
-                Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {loaded.Document.References.Count} reference(s))");
+                if (parseResult.GetValue(list)) PrintInventory(loaded);
+                PrintDiagnostics(diagnostics, loaded.Root);
+                var refs = loaded.Document.References.Count + loaded.Document.Tables.Count + loaded.Document.Figures.Count;
+                if (diagnostics.Any(d => d.IsError)) { Console.WriteLine($"check: invalid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {refs} reference(s))"); fail(); return; }
+                Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {refs} reference(s))");
             }
             finally { loaded.CleanupTemporaryProducerFiles(); }
         });
@@ -67,7 +73,7 @@ public static class Program
             try
             {
                 var diagnostics = ValidateTemplates(loaded);
-                PrintDiagnostics(diagnostics);
+                PrintDiagnostics(diagnostics, loaded.Root);
                 if (diagnostics.Any(d => d.IsError)) { fail(); return; }
                 var output = Path.Combine(loaded.Root, "YadgPreWords");
                 Directory.CreateDirectory(output);
@@ -122,7 +128,7 @@ public static class Program
             try
             {
                 var result = Publisher.Publish(loaded, destination?.FullName);
-                PrintDiagnostics(result.Diagnostics);
+                PrintDiagnostics(result.Diagnostics, loaded.Root);
                 if (!result.Success) { fail(); return; }
                 Console.WriteLine($"publish: copied {result.PublishedCount} finalized DOCX file(s) to {result.Destination}");
             }
@@ -144,6 +150,79 @@ public static class Program
 
     private static void PrintDiagnostics(IEnumerable<Diagnostic> diagnostics)
     {
-        foreach (var diagnostic in diagnostics.Where(d => d.IsError)) Console.Error.WriteLine(diagnostic);
+        PrintDiagnostics(diagnostics, null);
+    }
+
+    private static void PrintDiagnostics(IEnumerable<Diagnostic> diagnostics, string? workspaceRoot)
+    {
+        foreach (var diagnostic in diagnostics)
+        {
+            var location = diagnostic.Location;
+            var message = diagnostic.Message;
+            if (workspaceRoot is not null && location is not null)
+            {
+                var root = Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                message = message.Replace(root, "", StringComparison.OrdinalIgnoreCase).Replace(root.TrimEnd(Path.DirectorySeparatorChar), ".", StringComparison.OrdinalIgnoreCase);
+                var suffix = "";
+                var path = location;
+                var match = System.Text.RegularExpressions.Regex.Match(location, @"^(.*?)(:\d+(?::\d+)?)$");
+                if (match.Success) { path = match.Groups[1].Value; suffix = match.Groups[2].Value; }
+                if (Path.IsPathRooted(path) && Path.GetFullPath(path).StartsWith(root, StringComparison.OrdinalIgnoreCase)) location = Path.GetRelativePath(workspaceRoot, path) + suffix;
+            }
+            Console.Error.WriteLine(location is null ? $"{(diagnostic.IsError ? "error" : "warning")} {diagnostic.Code}: {message}" : $"{(diagnostic.IsError ? "error" : "warning")} {diagnostic.Code} {location}: {message}");
+        }
+    }
+
+    private static void PrintInventory(YadgWorkspace workspace)
+    {
+        static string Rel(string root, string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
+        Console.WriteLine("Sources"); foreach (var item in workspace.Sources.OrderBy(x => Rel(workspace.Root, x), StringComparer.Ordinal)) Console.WriteLine($"  {Rel(workspace.Root, item)}");
+        Console.WriteLine("Templates"); foreach (var item in workspace.Templates.OrderBy(x => Rel(workspace.Root, x), StringComparer.Ordinal)) Console.WriteLine($"  {Rel(workspace.Root, item)}");
+        Console.WriteLine("References");
+        foreach (var id in workspace.Document.References.Keys.OrderBy(x => x, StringComparer.Ordinal)) Console.WriteLine($"  {id}  section");
+        foreach (var id in workspace.Document.Tables.Keys.OrderBy(x => x, StringComparer.Ordinal)) Console.WriteLine($"  {id}  table");
+        foreach (var id in workspace.Document.Figures.Keys.OrderBy(x => x, StringComparer.Ordinal)) Console.WriteLine($"  {id}  figure");
+    }
+
+    private static Command CreateInitCommand(Action fail)
+    {
+        var command = new Command("init", "Create a starter YADG workspace without overwriting existing files.");
+        var workspace = new Option<DirectoryInfo?>("--workspace") { Description = "Workspace root; defaults to the current directory." }; command.Add(workspace);
+        command.SetAction(result =>
+        {
+            var root = Path.GetFullPath(result.GetValue(workspace)?.FullName ?? Directory.GetCurrentDirectory());
+            var owned = new[] { "YADG.md", "content.md", "YadgTemplates" }.Select(name => Path.Combine(root, name)).Where(path => File.Exists(path) || Directory.Exists(path)).ToArray();
+            if (owned.Length > 0) { Console.Error.WriteLine($"error YADG-INIT-001: Bootstrap conflicts: {string.Join(", ", owned.Select(path => Path.GetRelativePath(root, path)))}"); fail(); return; }
+            try
+            {
+                Directory.CreateDirectory(root);
+                Directory.CreateDirectory(Path.Combine(root, "YadgTemplates"));
+                File.WriteAllText(Path.Combine(root, "YADG.md"), "---\nyadg:\n  version: 1\n---\n");
+                File.WriteAllText(Path.Combine(root, "content.md"), "# Introduction {#introduction}\n\nAdd your document content here.\n");
+                Console.WriteLine($"Initialized workspace at {root}. Add a prepared DOCX template with {{content:introduction}} in YadgTemplates, then run yadg check.");
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"error YADG-INIT-002: {ex.Message}"); fail(); }
+        });
+        return command;
+    }
+
+    private static Command CreateInspectCommand(Action fail)
+    {
+        var command = new Command("inspect", "Inspect template resources.");
+        var styles = new Command("styles", "List Word styles, aliases, visibility, and numbering information.");
+        var workspace = new Option<DirectoryInfo?>("--workspace") { Description = "Workspace root; defaults to the current directory." };
+        var template = new Option<string?>("--template") { Description = "One top-level DOCX template filename." };
+        styles.Add(workspace); styles.Add(template);
+        styles.SetAction(result =>
+        {
+            var root = Path.GetFullPath(result.GetValue(workspace)?.FullName ?? Directory.GetCurrentDirectory());
+            var dir = Path.Combine(root, "YadgTemplates"); var requested = result.GetValue(template);
+            if (!Directory.Exists(dir)) { Console.Error.WriteLine("error YADG-INSPECT-001: Missing YadgTemplates directory."); fail(); return; }
+            var files = Directory.EnumerateFiles(dir, "*.docx", SearchOption.TopDirectoryOnly).OrderBy(Path.GetFileName, StringComparer.Ordinal).ToArray();
+            if (requested is not null) files = files.Where(f => string.Equals(Path.GetFileName(f), requested, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (files.Length == 0) { Console.Error.WriteLine("error YADG-INSPECT-001: No matching top-level DOCX template was found."); fail(); return; }
+            foreach (var file in files) try { foreach (var line in WordAuthoring.InspectStyles(file)) Console.WriteLine($"{Path.GetFileName(file)}: {line}"); } catch (Exception ex) { Console.Error.WriteLine($"error YADG-INSPECT-002 {Path.GetRelativePath(root, file)}: {ex.Message}"); fail(); }
+        });
+        command.Add(styles); return command;
     }
 }

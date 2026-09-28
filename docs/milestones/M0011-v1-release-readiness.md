@@ -1,5 +1,9 @@
 # Milestone — M0011 V1.0 Release Readiness
 
+## Historical completion status
+
+M0011 is complete. YADG 1.0.0 is historical/released. The requirements below record the implementation and review contract used to produce that release; they do not describe a current release candidate or pending review.
+
 ## Correction status
 
 This is the corrected M0011 release-readiness authority for the existing PR11 implementation branch.

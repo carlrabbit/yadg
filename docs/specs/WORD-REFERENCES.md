@@ -72,7 +72,7 @@ prototypes:
 
 Unknown keys are errors.
 
-Style values are existing Word style IDs. Omitted bindings fall back to M0003 defaults. A configured style changes only which existing template style represents a semantic role.
+Style values select existing Word styles. Exact internal style IDs remain supported for compatibility; primary Word UI names and aliases are also supported under the precedence, ambiguity, and role type rules in `docs/specs/TEMPLATE-STYLES.md`. Omitted bindings fall back to M0003 defaults. A configured style changes only which existing template style represents a semantic role.
 
 `prototypes.figureCaption` and `prototypes.tableCaption` refer to template-local prototype IDs matching:
 

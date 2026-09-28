@@ -62,13 +62,15 @@ Unsupported list forms fail `check`.
 
 ### Word rendering
 
-Unordered list items use the existing Word paragraph style ID:
+List presentation, selectors, and the list-item prototype escape hatch are specialized by `docs/specs/TEMPLATE-STYLES.md`, which supersedes the fixed-style-only list binding below. `ListBullet` and `ListNumber` remain the default compatibility selectors when no front-matter binding is supplied.
+
+Unordered list items use the configured existing Word paragraph style (default internal ID):
 
 ```text
 ListBullet
 ```
 
-Ordered list items use:
+Ordered list items use the configured existing Word paragraph style (default internal ID):
 
 ```text
 ListNumber

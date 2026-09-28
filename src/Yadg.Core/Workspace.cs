@@ -29,8 +29,6 @@ public static class WorkspaceLoader
         else values = WorkspaceValuesParser.Parse(marker, diagnostics);
         var templateDir = Path.Combine(root, "YadgTemplates");
         if (!Directory.Exists(templateDir) || IsReparse(templateDir)) diagnostics.Add(new("YADG-WS-004", $"Missing regular template directory '{templateDir}'.", true, templateDir));
-        var outputDir = Path.Combine(root, "YadgPreWords");
-        if (!Directory.Exists(outputDir)) diagnostics.Add(new("YADG-WS-007", $"Missing output directory '{outputDir}'. Create YadgPreWords before building.", false, outputDir));
 
         var allFiles = new List<string>();
         Enumerate(root, allFiles, diagnostics);
@@ -44,7 +42,7 @@ public static class WorkspaceLoader
             : Array.Empty<string>();
         if (templates.Length == 0) diagnostics.Add(new("YADG-WS-005", "Workspace contains no top-level DOCX templates in YadgTemplates.", true, templateDir));
 
-        var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path)));
+        var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path, values.ThematicBreakPolicy, values.CodeInlinePolicy)));
         var document = MarkdownDocumentParser.Merge(parsed, diagnostics);
         document = AssetValidation.AttachAndValidate(document, root, diagnostics);
         var workspace = new YadgWorkspace(root, sources, templates, document, values, diagnostics);

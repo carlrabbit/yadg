@@ -1,0 +1,28 @@
+{
+  "fixtures": [
+    {
+      "id": "style-resolution",
+      "path": "tests/fixtures/m0012/style-resolution.docx",
+      "application": "Microsoft Word",
+      "version": "16.0.20326.20158",
+      "platform": "Microsoft Windows NT 10.0.26200.0",
+      "method": "Created as a new blank document and authored through the Microsoft Word COM document model, then saved as DOCX by Word",
+      "date": "2026-09-28T17:39:31.1972071+02:00",
+      "sha256": "0C98CEAF4F0A9A5065244D0ADFCBFD903B25B2F95901CABA75D794D3E6080352",
+      "synthetic": true,
+      "nonConfidential": true
+    },
+    {
+      "id": "list-prototypes",
+      "path": "tests/fixtures/m0012/list-prototypes.docx",
+      "application": "Microsoft Word",
+      "version": "16.0.20326.20158",
+      "platform": "Microsoft Windows NT 10.0.26200.0",
+      "method": "Created as a new blank document and authored through the Microsoft Word COM document model, then saved as DOCX by Word",
+      "date": "2026-09-28T17:39:31.8090733+02:00",
+      "sha256": "3B428C8814E2D544A678A78A5D9FC953E1C283D68A7E90055E329E4A331BDC34",
+      "synthetic": true,
+      "nonConfidential": true
+    }
+  ]
+}
