@@ -145,7 +145,9 @@ public sealed class M0012FocusedTests
         var commandExe = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
         var escapedMarker = marker.Replace("%", "%%", StringComparison.Ordinal);
         File.WriteAllText(Path.Combine(fixture.Root, "YADG.md"), $"---\nyadg:\n  version: 1\nproducers:\n  mermaid:\n    executable: {commandExe}\n    arguments:\n      - /c\n      - echo invoked>{escapedMarker}\n---\n");
-        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Introduction {#introduction}\n\n```mermaid {#sentinel}\nflowchart LR\nA-->B\n```");
+        var invalidMarkdown = "# Introduction {#introduction}\n\n---\n\n```mermaid {#sentinel}\nflowchart LR\nA-->B\n```";
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), invalidMarkdown);
+        Assert.Contains(MarkdownDocumentParser.Parse(invalidMarkdown, "content.md").Diagnostics, d => d.IsError && d.Code == "YADG-MD-UNSUPPORTED");
         var destination = Path.Combine(fixture.Root, "Published");
         var originalOut = Console.Out; var originalError = Console.Error; using var stdout = new StringWriter(); using var stderr = new StringWriter();
         try { Console.SetOut(stdout); Console.SetError(stderr); Assert.Equal(0, Program.Main(new[] { "publish", "--workspace", fixture.Root, "--publish-path", destination })); }
