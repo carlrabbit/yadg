@@ -107,8 +107,12 @@ foreach ($scenario in @('related-list-recovery','builtin-list-recovery')) {
             $prime = & $Cli render --workspace $workspace --renderer libreoffice --renderer-path $loPath 2>&1
             if ($LASTEXITCODE -ne 0) { throw "Initial LibreOffice result-set render failed before fallback check: $prime" }
             if (-not (Test-Path -LiteralPath (Join-Path $workspace 'YadgPdfs/template.pdf'))) { throw 'LibreOffice did not create the PDF needed for Word fallback freshness proof.' }
+            Copy-Item -LiteralPath (Join-Path $workspace 'YadgWords/template.docx') -Destination (Join-Path $workspace 'YadgWords/stale.docx')
+            Set-Content -LiteralPath (Join-Path $workspace 'YadgPdfs/stale.pdf') -Value 'stale PDF'
             $render = & $Cli render --workspace $workspace --renderer libreoffice --renderer-path (Join-Path $TemporaryRoot 'missing-soffice.exe') --yolo 2>&1
             if ($LASTEXITCODE -ne 0 -or ($render -join "`n") -notmatch 'requested=libreoffice; actual=word' -or ($render -join "`n") -notmatch 'degradations=1') { throw "Renderer fallback provenance/accounting failed: $render" }
+            $fallbackWordNames = @(Get-ChildItem -LiteralPath (Join-Path $workspace 'YadgWords') -Filter '*.docx' | Select-Object -ExpandProperty Name)
+            if ($fallbackWordNames.Count -ne 1 -or $fallbackWordNames[0] -ne 'template.docx') { throw 'Word fallback did not replace the full finalized DOCX result set.' }
             if (@(Get-ChildItem -LiteralPath (Join-Path $workspace 'YadgPdfs') -Filter '*.pdf').Count -ne 0) { throw 'Word fallback retained a stale LibreOffice PDF.' }
         } else {
             $rendererArgs = @('render','--workspace',$workspace,'--renderer',$renderer)
@@ -181,11 +185,12 @@ $wordPdfNames = @(Get-ChildItem -LiteralPath (Join-Path $renderSetWorkspace 'Yad
 if ($wordPdfNames.Count -ne 0) { throw 'Word success retained stale LibreOffice PDFs.' }
 $committedHash = (Get-FileHash -LiteralPath (Join-Path $renderSetWorkspace 'YadgWords/a.docx') -Algorithm SHA256).Hash
 Set-Content -LiteralPath (Join-Path $renderSetWorkspace 'YadgPreWords/a.docx') -Value 'not a DOCX'
-$failedRender = & $Cli render --workspace $renderSetWorkspace --renderer word 2>&1
-if ($LASTEXITCODE -eq 0) { throw 'Corrupt PreWord unexpectedly rendered successfully.' }
+$failedRender = & $Cli render --workspace $renderSetWorkspace --renderer libreoffice --renderer-path (Join-Path $TemporaryRoot 'missing-soffice.exe') --yolo 2>&1
+if ($LASTEXITCODE -eq 0) { throw 'Failed primary-plus-fallback renderer sequence unexpectedly succeeded.' }
+if (($failedRender -join "`n") -notmatch 'YADG-WORD') { throw "Fallback failure diagnostics omitted the failed Word renderer: $failedRender" }
 $afterFailureHash = (Get-FileHash -LiteralPath (Join-Path $renderSetWorkspace 'YadgWords/a.docx') -Algorithm SHA256).Hash
-if ($afterFailureHash -ne $committedHash) { throw 'Failed renderer attempt changed the prior finalized result set.' }
-$recoveryRuns += [ordered]@{ scenario = 'finalized-result-set-ownership'; initial = @('a.docx','b.docx'); afterLibreOfficeRerender = $loWordNames; pdfAfterLibreOffice = $loPdfNames; pdfAfterWord = $wordPdfNames; failedAttemptPreservedPrior = $afterFailureHash -eq $committedHash; result = 'passed' }
+if ($afterFailureHash -ne $committedHash) { throw 'Failed primary-plus-fallback renderer attempts changed the prior finalized result set.' }
+$recoveryRuns += [ordered]@{ scenario = 'finalized-result-set-ownership'; initial = @('a.docx','b.docx'); afterLibreOfficeRerender = $loWordNames; pdfAfterLibreOffice = $loPdfNames; pdfAfterWord = $wordPdfNames; failedPrimaryAndFallbackPreservedPrior = $afterFailureHash -eq $committedHash; result = 'passed' }
 [ordered]@{ repositoryRevision = $revision; worktreeDirty = [bool]$worktreeStatus; worktreeStatusSha256 = $statusHash; os = $os; wordVersion = $WordVersion; libreOfficeVersion = $LibreOfficeVersion; fixtures = $Fixtures; runs = $runs; recoveryRuns = $recoveryRuns } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'tier3-evidence.json')
 $global:LASTEXITCODE = 0
 Write-Output 'M0012 Tier 3 real Word/LibreOffice authoring matrix passed.'
