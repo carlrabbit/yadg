@@ -13,6 +13,7 @@
 | M0009 | Microsoft Word renderer and publishing | complete | Add real Microsoft Word finalization on Windows and explicit publication of finalized DOCX to a configurable/CLI-selected delivery path. |
 | M0010 | Realistic document composition and template compatibility | complete | Prove application-produced Word/LibreOffice templates, add template-relative heading composition, and extend visible value substitution across Word stories. |
 | M0011 | V1.0 release readiness | complete | Prepare and validate the YADG 1.0.0 .NET tool release line and its public documentation/release engineering. YADG 1.0.0 is released. |
-| M0012 | V1.1 authoring ergonomics and template introspection | ready | Improve workspace bootstrap, Markdown authoring policy, diagnostics/check discovery, Word style/list discoverability and configuration, authoring documentation, and repository/spec hygiene. |
+| M0012 | V1.1 authoring ergonomics and template introspection | complete | Improve workspace bootstrap, Markdown policy, diagnostics/discovery, template presentation introspection, explicit YOLO resilience, renderer fallback, and generated-artifact lifecycle behavior. |
+| M0013 | V1.1 release readiness | ready | Prepare the YADG 1.1.0 package, verify the complete installed CLI/authoring/YOLO surface, validate real Word/LibreOffice consumption, and bind release evidence plus human release review. |
 
 Milestone implementation starts from the active milestone document and its explicitly listed authority.

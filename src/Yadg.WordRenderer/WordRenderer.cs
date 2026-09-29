@@ -12,6 +12,8 @@ public sealed class WordRenderer
     public RenderResult Render(string workspaceRoot)
     {
         var diagnostics = new List<RendererDiagnostic>();
+        if (!OperatingSystem.IsWindows())
+            return Fail(diagnostics, "YADG-WORD-000", "Microsoft Word rendering is available only on Windows. Use LibreOffice or run this command on Windows.");
         var root = Path.GetFullPath(workspaceRoot);
         var preWords = Path.Combine(root, "YadgPreWords");
         if (!Directory.Exists(root)) return Fail(diagnostics, "YADG-WORD-001", $"Workspace directory does not exist: '{root}'.");
