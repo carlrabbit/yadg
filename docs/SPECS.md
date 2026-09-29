@@ -1,124 +1,53 @@
-# YADG Product Specification
+# YADG Product Specifications
 
 ## Purpose
 
-YADG maintains document content as source-controlled Markdown/workspace data while prepared Word DOCX templates remain authoritative for document presentation and Word-native structure.
+This file is the index and cross-cutting map for active product specifications.
 
-YADG authors, finalizes, and explicitly publishes finalized Word documents.
+Detailed normative behavior lives in focused files under `docs/specs/`.
 
-## Authority model
+When a focused specification explicitly states that it supersedes an earlier rule, the newer focused specification governs that overlapping subject.
 
-1. Markdown owns maintainable semantic document content.
-2. `YADG.md` owns workspace values, producer configuration, workspace notes, and optional publication defaults.
-3. DOCX templates own presentation and Word-native structures unless explicitly delegated.
-4. External content producers supply constrained generated semantic products.
-5. Office-independent authoring produces structurally complete authored DOCX.
-6. Renderers finalize fields/indexes/layout-dependent document state.
-7. Publishing copies finalized DOCX from workspace state to an explicit delivery destination.
+## Core authoring and composition
 
-## CLI
+- `docs/specs/AUTHORING-EXPERIENCE.md` — workspace bootstrap, configurable Markdown authoring policies, diagnostics, `check --list`, and authoring-oriented CLI behavior.
+- `docs/specs/DOCUMENT-COMPOSITION.md` — template-relative headings, paragraph composition, visible value substitution, and realistic document compatibility.
+- `docs/specs/STRUCTURED-CONTENT.md` — lists, tables, figures, assets, captions, and float-like placement; list-style details are specialized/superseded by `TEMPLATE-STYLES.md`.
+- `docs/specs/PREPARED-TABLES.md` — prepared Word table-row population.
 
-```text
-yadg check [--workspace <path>]
-yadg build [--workspace <path>]
-yadg render [--workspace <path>] [--renderer libreoffice|word] [--renderer-path <path>]
-yadg publish [--workspace <path>] [--publish-path <path>]
-```
+## Template presentation and Word structures
 
-`--renderer-path` is LibreOffice-specific.
+- `docs/specs/TEMPLATE-STYLES.md` — style discovery/resolution, style role types, Word UI name/alias handling, inline-code character styles, numbering resolution, and list-item prototypes.
+- `docs/specs/WORD-REFERENCES.md` — template control region/front matter, caption prototypes, bookmarks/fields, and semantic numeric references. Its older raw-style-ID requirement is superseded by `TEMPLATE-STYLES.md`.
 
-## Workspace artifacts
+## Workspace/configuration and producers
 
-```text
-YadgTemplates/*.docx   source templates
-YadgPreWords/*.docx    authored intermediate documents
-YadgWords/*.docx       finalized documents
-YadgPdfs/*.pdf         LibreOffice-specific existing PDF output
-```
+- `docs/specs/WORKSPACE-VALUES.md` — `YADG.md`, workspace values, and schema-v1 root configuration.
+- `docs/specs/CONTENT-PRODUCERS.md` — constrained external content producers and Mermaid.
 
-Published DOCX files live at the effective publication destination rather than in a mandatory workspace publication directory.
+## Rendering and delivery
 
-## Authoring
+- `docs/specs/RENDERING.md` — renderer-neutral finalization contract.
+- `docs/specs/WORD-RENDERER.md` — Microsoft Word renderer specialization.
+- `docs/specs/PUBLISHING.md` — finalized DOCX publication behavior.
 
-Existing Markdown sections/content, figures, tables, prepared tables, references, values, and external Mermaid producers remain in force.
+## Cross-cutting product model
 
-`check`/`build` remain semantically independent of rendering.
-
-M0010 establishes realistic document composition:
-
-- Markdown headings are rebased relative to the template outline context at each `section`/`content` insertion anchor;
-- effective Word heading levels 1 through 9 are template-style roles;
-- ordinary Markdown paragraphs retain template-owned paragraph formatting from the placement anchor;
-- workspace values substitute visible template text across supported Word stories, including notes, comments, and text boxes.
-
-Detailed behavior is in `docs/specs/DOCUMENT-COMPOSITION.md`.
-
-## Template vocabulary
-
-Block placement/control vocabulary remains main-document-body oriented.
-
-M0010 does not add block-placement tags to footnotes, endnotes, comments, headers, footers, or text boxes.
-
-Template front-matter heading bindings support effective levels 1 through 9.
-
-## Rendering
-
-Supported renderers:
+YADG remains template-first:
 
 ```text
-libreoffice
-word
+Markdown/workspace data own maintainable semantic content.
+Prepared DOCX templates own presentation and Word-native structure.
+YADG authors Office-independent DOCX.
+A selected renderer finalizes fields/index/layout-dependent state.
+Publishing copies finalized DOCX explicitly.
 ```
 
-LibreOffice remains the default for compatibility.
+YADG 1.1 improves authoring/discovery ergonomics without changing that ownership model.
 
-Both renderers produce finalized `YadgWords/*.docx`.
+For M0012, `YadgTemplates` is user/template input. `YadgPreWords`, `YadgWords`, and `YadgPdfs` are YADG-owned generated result sets and must not hold unrelated persistent files. Recursive Markdown discovery excludes those directories and dot directories. Publication is downstream-only and does not load authoring inputs or execute producers; successful rendering replaces its complete finalized result set.
 
-LibreOffice retains its existing PDF side output.
+## Presentation and authoring resilience authority
 
-Microsoft Word remains the V1 fidelity target.
-
-## Publishing
-
-`publish` copies all top-level finalized `YadgWords/*.docx` to an explicit filesystem destination.
-
-Effective destination:
-
-```text
---publish-path
-    overrides
-YADG.md publish.path
-    otherwise error
-```
-
-Relative paths resolve against workspace root.
-
-Publishing never invokes build/render and does not publish PDFs.
-
-## Compatibility proof
-
-Before V1 release-readiness, M0010 requires committed realistic DOCX fixtures originating independently from Microsoft Word and LibreOffice Writer.
-
-Both fixtures must pass YADG authoring and both supported renderer paths.
-
-These application-produced fixtures complement, rather than replace, focused synthetic OpenXML tests.
-
-## Platform
-
-Office-independent authoring components remain isolated from Microsoft Word automation.
-
-The complete Word-enabled product's authoritative build/integration locus is Windows.
-
-The M0010 full compatibility target additionally requires real Microsoft Word and LibreOffice.
-
-## Diagnostics
-
-Diagnostics remain first-class.
-
-Invalid heading rebasing, unsupported effective heading depth, malformed/missing values in supported stories, and realistic-template incompatibilities fail before successful authoring is claimed.
-
-## Non-goals
-
-YADG is not a DMS client, generic Word layout engine, general plugin host, or generic Markdown-to-DOCX converter.
-
-M0010 does not introduce Markdown syntax for Word footnotes, endnotes, comments, text boxes, headers, or footers.
+- `docs/specs/TEMPLATE-PRESENTATION.md` — generalized template-owned examples/resources and deterministic strict/YOLO presentation role resolution; supersedes narrower style/list presentation framing where stated.
+- `docs/specs/AUTHORING-RESILIENCE.md` — explicit `--yolo`, recovery catalog, visible degradation output, renderer fallback, and fatal boundaries; supersedes earlier failure-only statements for the named recoverable cases.

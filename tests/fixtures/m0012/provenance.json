@@ -1,0 +1,52 @@
+{
+  "fixtures": [
+    {
+      "id": "style-resolution",
+      "path": "tests/fixtures/m0012/style-resolution.docx",
+      "application": "Microsoft Word",
+      "version": "16.0.20326.20158",
+      "platform": "Microsoft Windows NT 10.0.26200.0",
+      "method": "Created as a new blank document and authored through the Microsoft Word COM document model, then saved as DOCX by Word",
+      "date": "2026-09-29T06:33:54.2245958+02:00",
+      "sha256": "9C4B36E7AED2412352A05CCC90936C68A298C47F99A25745A7FCEB9925902241",
+      "synthetic": true,
+      "nonConfidential": true
+    },
+    {
+      "id": "list-prototypes",
+      "path": "tests/fixtures/m0012/list-prototypes.docx",
+      "application": "Microsoft Word",
+      "version": "16.0.20326.20158",
+      "platform": "Microsoft Windows NT 10.0.26200.0",
+      "method": "Created as a new blank document and authored through the Microsoft Word COM document model, then saved as DOCX by Word",
+      "date": "2026-09-29T06:33:54.9441384+02:00",
+      "sha256": "0C9AEF0DD889103063DA6EA27C83793B40135886C6AE1388727CDE2F6AC3E94A",
+      "synthetic": true,
+      "nonConfidential": true
+    },
+    {
+      "id": "related-list-recovery",
+      "path": "tests/fixtures/m0012/related-list-recovery.docx",
+      "application": "Microsoft Word",
+      "version": "16.0.20326.20158",
+      "platform": "Microsoft Windows NT 10.0.26200.0",
+      "method": "Created as a new blank document and authored through the Microsoft Word COM document model, then saved as DOCX by Word",
+      "date": "2026-09-29T06:33:55.5777419+02:00",
+      "sha256": "BF06BE35055102A48CB70ECFC2762E0A1E5D1731B7B585839030EFEE9C12DFE9",
+      "synthetic": true,
+      "nonConfidential": true
+    },
+    {
+      "id": "builtin-list-recovery",
+      "path": "tests/fixtures/m0012/builtin-list-recovery.docx",
+      "application": "Microsoft Word",
+      "version": "16.0.20326.20158",
+      "platform": "Microsoft Windows NT 10.0.26200.0",
+      "method": "Created as a new blank document and authored through the Microsoft Word COM document model, then saved as DOCX by Word",
+      "date": "2026-09-29T06:33:56.2265094+02:00",
+      "sha256": "B91A10972A062A64D4E3D1AA0B421C9C7CED74C90F51E497C873EEBA4103A12A",
+      "synthetic": true,
+      "nonConfidential": true
+    }
+  ]
+}

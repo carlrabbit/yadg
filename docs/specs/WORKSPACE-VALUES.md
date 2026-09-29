@@ -6,6 +6,7 @@ Authoritative for root `YADG.md` front matter and workspace scalar values.
 
 Other root mappings are specialized by:
 
+- `markdown` -> `docs/specs/AUTHORING-EXPERIENCE.md`
 - `producers` -> `docs/specs/CONTENT-PRODUCERS.md`
 - `publish` -> `docs/specs/PUBLISHING.md`
 
@@ -38,14 +39,17 @@ yadg:
 
 M0010 does not increment it.
 
-Allowed root keys remain:
+Allowed root keys are:
 
 ```text
 yadg
 values
+markdown
 producers
 publish
 ```
+
+`markdown` is an optional schema-v1 mapping specialized by `AUTHORING-EXPERIENCE.md`. It accepts only `thematicBreak: error|ignore` and `codeInline: error|ignore|style`; both default to `error`. Unknown keys and modes are errors.
 
 `yadg` is required whenever front matter is present.
 
@@ -107,6 +111,10 @@ Publication configuration is filesystem destination configuration and defines no
 
 ## Compatibility
 
-Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid.
+Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid. M0012 adds the optional `markdown` mapping without changing the schema version.
 
 M0010 changes where existing `{{value:<id>}}` tags are supported; it does not add new workspace value syntax.
+
+## M0012 resilience specialization
+
+Malformed YAML/configuration remains fatal in every mode. The missing-value failure above describes strict validation; explicit `--yolo` may preserve the visible template token without inventing a value. Workspace Markdown policy and this recovery do not become persistent YOLO configuration. See `AUTHORING-RESILIENCE.md`.

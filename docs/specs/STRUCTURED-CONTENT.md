@@ -62,13 +62,15 @@ Unsupported list forms fail `check`.
 
 ### Word rendering
 
-Unordered list items use the existing Word paragraph style ID:
+List presentation, selectors, and the list-item prototype escape hatch are specialized by `docs/specs/TEMPLATE-STYLES.md`, which supersedes the fixed-style-only list binding below. `ListBullet` and `ListNumber` remain the default compatibility selectors when no front-matter binding is supplied.
+
+Unordered list items use the configured existing Word paragraph style (default internal ID):
 
 ```text
 ListBullet
 ```
 
-Ordered list items use:
+Ordered list items use the configured existing Word paragraph style (default internal ID):
 
 ```text
 ListNumber
@@ -184,10 +186,11 @@ Remote URLs and data URIs are unsupported.
 
 The resolved asset must:
 
-- exist as a regular file;
-- resolve within the declared workspace;
-- not be a symbolic link/reparse point;
+- exist as a readable file;
+- have a lexical path within the declared workspace;
 - have a supported extension/decodable format.
+
+The selected local workspace is trusted input. A file link is usable when normal OS file access can read its content; YADG does not resolve its target to enforce physical containment. Lexical `../` escapes remain invalid. Recursive Markdown discovery does not follow linked child directories.
 
 Path normalization and validation happen before output artifacts are modified.
 
@@ -358,3 +361,7 @@ M0003 deliberately does not define:
 - custom per-workspace style mappings.
 
 Those require later project authority.
+
+## M0012 resilience specialization
+
+The rules above describe strict mode. Under explicit `--yolo`, missing in-workspace figure files may become visible ID/caption/path placeholders, and failed Mermaid execution may become a visible semantic figure placeholder. Lexical path escapes, unsupported asset kinds, malformed Markdown identity, and other semantic errors remain fatal. A link attribute alone is not an error. See `AUTHORING-RESILIENCE.md`.

@@ -2,7 +2,20 @@ namespace Yadg.Core;
 
 public sealed record Diagnostic(string Code, string Message, bool IsError = true, string? Location = null)
 {
-    public override string ToString() => Location is null ? $"{Code}: {Message}" : $"{Code}: {Location}: {Message}";
+    public bool IsDegradation { get; init; }
+    public DocxLocation? StructuredLocation { get; init; }
+    public Diagnostic(string code, string message, bool isError, DocxLocation location) : this(code, message, isError, location.FilePath) => StructuredLocation = location;
+    public override string ToString() => Location is null ? $"{(IsError ? "error" : "warning")} {Code}: {Message}" : $"{(IsError ? "error" : "warning")} {Code} {StructuredLocation?.Format() ?? Location}: {Message}";
+}
+
+public sealed record DocxLocation(string FilePath, string Story, IReadOnlyList<string> HeadingContext, int? Ordinal, string Excerpt, string? PackagePart = null, string? ParagraphId = null)
+{
+    public string Format(string? displayPath = null)
+    {
+        var context = HeadingContext.Count == 0 ? "" : " > " + string.Join(" > ", HeadingContext.Select(heading => $"\"{heading.Replace("\"", "\\\"", StringComparison.Ordinal)}\""));
+        var ordinal = Ordinal is int value ? $" > paragraph {value}" : "";
+        return $"{displayPath ?? FilePath}\n{Story}{context}{ordinal}\nnear: \"{Excerpt}\"";
+    }
 }
 
 public abstract record YadgBlock;
@@ -17,11 +30,13 @@ public sealed record ImageAsset(string FullPath, string Format, int WidthPixels,
 
 public abstract record YadgInline;
 public sealed record YadgText(string Value) : YadgInline;
+public sealed record YadgLiteralText(string Value) : YadgInline;
 public sealed record YadgEmphasis(IReadOnlyList<YadgInline> Inlines) : YadgInline;
 public sealed record YadgStrong(IReadOnlyList<YadgInline> Inlines) : YadgInline;
 public sealed record YadgHardBreak : YadgInline;
 public sealed record YadgSoftBreak : YadgInline;
 public sealed record YadgReference(string Id) : YadgInline;
+public sealed record YadgCode(string Value) : YadgInline;
 
 public sealed record YadgSection(string Id, YadgHeading Heading, IReadOnlyList<YadgBlock> Body)
 {

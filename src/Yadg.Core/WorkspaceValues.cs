@@ -8,6 +8,8 @@ public sealed record WorkspaceValues(IReadOnlyDictionary<string, string> Values)
 {
     public IReadOnlyDictionary<string, MermaidProducerConfiguration> Producers { get; init; } = new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal);
     public string? PublishPath { get; init; }
+    public string ThematicBreakPolicy { get; init; } = "error";
+    public string CodeInlinePolicy { get; init; } = "error";
     public static WorkspaceValues Empty { get; } = new(new Dictionary<string, string>(StringComparer.Ordinal));
 }
 
@@ -18,6 +20,50 @@ public static class WorkspaceValuesParser
     private static readonly Regex Id = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled);
     private static readonly Regex Number = new("^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$", RegexOptions.Compiled);
     private static readonly Regex DateLike = new("^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[Tt ].*)?$", RegexOptions.Compiled);
+
+    public static string? ParsePublishPath(string path, List<Diagnostic> diagnostics)
+    {
+        string text;
+        try { text = File.ReadAllText(path, Encoding.UTF8); }
+        catch (Exception ex) { diagnostics.Add(new("YADG-PUBLISH-009", $"Unable to read publication configuration: {ex.Message}", true, path)); return null; }
+        if (text.Length > 0 && text[0] == '\ufeff') text = text[1..];
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        var close = lines.Length > 0 && lines[0] == "---" ? Array.FindIndex(lines, 1, line => line == "---") : -1;
+        if (close < 0) { diagnostics.Add(new("YADG-PUBLISH-009", "Cannot read publish.path: YADG.md has no valid front matter block.", true, path)); return null; }
+        var inPublish = false;
+        var publishSeen = false;
+        string? publishPath = null;
+        for (var i = 1; i < close; i++)
+        {
+            var raw = lines[i];
+            if (string.IsNullOrWhiteSpace(raw) || raw.TrimStart().StartsWith("#", StringComparison.Ordinal)) continue;
+            var indent = raw.Length - raw.TrimStart(' ').Length;
+            var line = raw.Trim();
+            if (indent == 0)
+            {
+                var colon = line.IndexOf(':');
+                if (colon < 1) continue;
+                inPublish = line[..colon] == "publish";
+                if (inPublish)
+                {
+                    if (publishSeen) diagnostics.Add(new("YADG-PUBLISH-009", "Duplicate publish configuration.", true, $"{path}:{i + 1}"));
+                    publishSeen = true;
+                    if (line[(colon + 1)..].Trim().Length != 0) diagnostics.Add(new("YADG-PUBLISH-009", "publish must be a mapping to read publish.path.", true, $"{path}:{i + 1}"));
+                }
+                continue;
+            }
+            if (!inPublish || indent != 2) continue;
+            var split = line.IndexOf(':');
+            if (split < 1) { diagnostics.Add(new("YADG-PUBLISH-009", "Malformed publish configuration.", true, $"{path}:{i + 1}")); continue; }
+            var key = line[..split].Trim();
+            if (key != "path") { diagnostics.Add(new("YADG-PUBLISH-009", $"Unknown publish key '{key}'.", true, $"{path}:{i + 1}")); continue; }
+            if (publishPath is not null) { diagnostics.Add(new("YADG-PUBLISH-009", "Duplicate publish.path.", true, $"{path}:{i + 1}")); continue; }
+            if (!TryStringScalar(line[(split + 1)..].Trim(), out var value) || string.IsNullOrWhiteSpace(value)) diagnostics.Add(new("YADG-PUBLISH-009", "publish.path must be a non-empty string.", true, $"{path}:{i + 1}"));
+            else publishPath = value;
+        }
+        if (publishSeen && publishPath is null && !diagnostics.Any(d => d.IsError)) diagnostics.Add(new("YADG-PUBLISH-009", "publish.path must be a non-empty string.", true, path));
+        return publishPath;
+    }
 
     public static WorkspaceValues Parse(string path, List<Diagnostic> diagnostics)
     {
@@ -46,9 +92,12 @@ public static class WorkspaceValuesParser
         var producerKeys = new HashSet<string>(StringComparer.Ordinal);
         var publishKeys = new HashSet<string>(StringComparer.Ordinal);
         var mermaidKeys = new HashSet<string>(StringComparer.Ordinal);
+        var markdownKeys = new HashSet<string>(StringComparer.Ordinal);
         var producerArguments = new List<string>();
         string? producerExecutable = null;
         string? publishPath = null;
+        var thematicBreak = "error";
+        var codeInline = "error";
         var publishSeen = false;
         var section = "";
         var versionSeen = false;
@@ -81,7 +130,7 @@ public static class WorkspaceValuesParser
             if (indent == 0)
             {
                 if (!rootKeys.Add(key)) Error(diagnostics, "YADG-VALUES-006", $"Duplicate front matter key '{key}'.", location, i);
-                if (key is not "yadg" and not "values" and not "producers" and not "publish") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
+                if (key is not "yadg" and not "values" and not "producers" and not "publish" and not "markdown") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
                 if (rawValue.Length != 0) Error(diagnostics, "YADG-VALUES-005", $"Mapping key '{key}' must not have an inline value.", location, i);
                 if (key == "publish") publishSeen = true;
                 section = key; continue;
@@ -104,6 +153,15 @@ public static class WorkspaceValuesParser
                 if (!TryScalar(rawValue, out var value) || value.Contains('\n') || value.Contains('\r'))
                 { Error(diagnostics, "YADG-VALUES-011", $"Workspace value '{key}' must be a single-line YAML string scalar.", location, i); continue; }
                 values[key] = value; continue;
+            }
+            if (section == "markdown" && indent == 2)
+            {
+                if (!markdownKeys.Add(key)) { Error(diagnostics, "YADG-VALUES-006", $"Duplicate markdown key '{key}'.", location, i); continue; }
+                if (!TryStringScalar(rawValue, out var mode)) { Error(diagnostics, "YADG-VALUES-007", $"markdown.{key} must be a supported string mode.", location, i); continue; }
+                if (key == "thematicBreak" && mode is "error" or "ignore") thematicBreak = mode;
+                else if (key == "codeInline" && mode is "error" or "ignore" or "style") codeInline = mode;
+                else Error(diagnostics, "YADG-VALUES-007", key is "thematicBreak" or "codeInline" ? $"Unsupported markdown.{key} mode '{mode}'." : $"Unknown markdown key '{key}'.", location, i);
+                continue;
             }
             if (section == "producers" && indent == 2)
             {
@@ -142,7 +200,7 @@ public static class WorkspaceValuesParser
         if (!rootKeys.Contains("yadg") || !versionSeen) diagnostics.Add(new("YADG-VALUES-008", "Workspace front matter must declare yadg.version: 1.", true, location));
         if (producerKeys.Contains("mermaid") && producerExecutable is null) diagnostics.Add(new("YADG-PRODUCER-003", "Mermaid producer configuration requires executable.", true, location));
         if (publishSeen && publishPath is null) diagnostics.Add(new("YADG-PUBLISH-001", "publish.path must be a non-empty string.", true, location));
-        return new(values) { PublishPath = publishPath, Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
+        return new(values) { PublishPath = publishPath, ThematicBreakPolicy = thematicBreak, CodeInlinePolicy = codeInline, Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
     }
 
     private static bool TryScalar(string raw, out string value)
@@ -168,5 +226,18 @@ public static class WorkspaceValuesParser
         value = raw; return true;
     }
 
-    private static void Error(List<Diagnostic> diagnostics, string code, string message, string location, int line) => diagnostics.Add(new(code, message, true, $"{location}:{line + 1}"));
+    private static void Error(List<Diagnostic> diagnostics, string code, string message, string location, int line)
+    {
+        var column = 1;
+        try
+        {
+            if (File.Exists(location))
+            {
+                var sourceLine = File.ReadLines(location).Skip(line).FirstOrDefault();
+                if (sourceLine is not null) column = sourceLine.TakeWhile(char.IsWhiteSpace).Count() + 1;
+            }
+        }
+        catch { }
+        diagnostics.Add(new(code, message, true, $"{location}:{line + 1}:{column}"));
+    }
 }

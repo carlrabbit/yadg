@@ -72,7 +72,7 @@ prototypes:
 
 Unknown keys are errors.
 
-Style values are existing Word style IDs. Omitted bindings fall back to M0003 defaults. A configured style changes only which existing template style represents a semantic role.
+Style values select existing Word styles. Exact internal style IDs remain supported for compatibility; primary Word UI names and aliases are also supported under the precedence, ambiguity, and role type rules in `docs/specs/TEMPLATE-STYLES.md`. Omitted bindings fall back to M0003 defaults. A configured style changes only which existing template style represents a semantic role.
 
 `prototypes.figureCaption` and `prototypes.tableCaption` refer to template-local prototype IDs matching:
 
@@ -238,3 +238,7 @@ M0004 does not define:
 - prepared-table row population;
 - field evaluation/rendering;
 - PDF output.
+
+## M0012 resilience specialization
+
+The failures above describe strict validation. Explicit `check --yolo` / `build --yolo` preserves missing value tags visibly as `{{value:id}}`; unresolved numeric semantic references remain visible as `[@id]`-equivalent source identity rather than inventing a number. Duplicate/ambiguous object identities remain fatal. See `AUTHORING-RESILIENCE.md`.

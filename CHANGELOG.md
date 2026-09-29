@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
-Initial V1 release candidate for Windows x64 and .NET 10:
+Post-1.0 development toward YADG 1.1.
+
+## 1.0.0
+
+Initial YADG 1.0 release:
 
 - one `Yadg` .NET tool exposing `yadg check`, `build`, `render`, and `publish`;
 - template-first Markdown/DOCX authoring with relative heading composition and document-wide visible value substitution;
@@ -10,4 +14,4 @@ Initial V1 release candidate for Windows x64 and .NET 10:
 - LibreOffice and interactive Microsoft Word finalization paths;
 - explicit finalized-DOCX filesystem publishing.
 
-V1 remains framework-dependent, Windows-only, and does not publish PDF or provide unattended/server-side Word automation. YADG is licensed under MIT.
+YADG 1.0 is framework-dependent, Windows-only, does not publish PDF, and does not provide unattended/server-side Word automation. YADG is licensed under MIT.

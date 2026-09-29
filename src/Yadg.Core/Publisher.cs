@@ -6,15 +6,23 @@ public static class Publisher
 {
     public static PublishResult Publish(YadgWorkspace workspace, string? cliPath = null)
     {
-        var diagnostics = workspace.Diagnostics.Where(d => d.IsError).ToList();
-        var configured = string.IsNullOrWhiteSpace(cliPath) ? workspace.Values.PublishPath : cliPath;
+        var result = Publish(workspace.Root, cliPath, workspace.Values.PublishPath);
+        return result with { Diagnostics = workspace.Diagnostics.Where(d => d.IsError).Concat(result.Diagnostics).ToArray() };
+    }
+
+    public static PublishResult Publish(string workspaceRoot, string? cliPath, string? configuredPath)
+    {
+        var diagnostics = new List<Diagnostic>();
+        var root = Path.GetFullPath(workspaceRoot);
+        if (!Directory.Exists(root)) diagnostics.Add(new("YADG-PUBLISH-010", $"Workspace directory does not exist: '{root}'.", true, root));
+        var configured = string.IsNullOrWhiteSpace(cliPath) ? configuredPath : cliPath;
         if (string.IsNullOrWhiteSpace(configured))
-            diagnostics.Add(new("YADG-PUBLISH-001", "No effective publication destination was provided. Use --publish-path or YADG.md publish.path.", true, workspace.Root));
-        var destination = configured is null ? null : Path.GetFullPath(Path.IsPathRooted(configured) ? configured : Path.Combine(workspace.Root, configured));
-        if (destination is not null && IsReserved(destination, workspace.Root))
+            diagnostics.Add(new("YADG-PUBLISH-001", "No effective publication destination was provided. Use --publish-path or YADG.md publish.path.", true, root));
+        var destination = configured is null ? null : Path.GetFullPath(Path.IsPathRooted(configured) ? configured : Path.Combine(root, configured));
+        if (destination is not null && IsReserved(destination, root))
             diagnostics.Add(new("YADG-PUBLISH-002", $"Publication destination is reserved or underneath a reserved YADG directory: '{destination}'.", true, destination));
 
-        var source = Path.Combine(workspace.Root, "YadgWords");
+        var source = Path.Combine(root, "YadgWords");
         if (!Directory.Exists(source)) diagnostics.Add(new("YADG-PUBLISH-003", $"Finalized DOCX directory does not exist: '{source}'.", true, source));
         var inputs = Directory.Exists(source) ? Directory.EnumerateFiles(source, "*.docx", SearchOption.TopDirectoryOnly).OrderBy(p => p, StringComparer.Ordinal).ToArray() : Array.Empty<string>();
         if (inputs.Length == 0) diagnostics.Add(new("YADG-PUBLISH-004", $"No top-level finalized DOCX files were found in '{source}'.", true, source));

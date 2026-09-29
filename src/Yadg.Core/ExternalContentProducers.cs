@@ -7,7 +7,7 @@ public static class MermaidProducer
 {
     private const int TimeoutMilliseconds = 60_000;
 
-    public static YadgDocument RenderFigures(YadgDocument document, string workspaceRoot, WorkspaceValues values, List<Diagnostic> diagnostics, List<string> temporaryPaths)
+    public static YadgDocument RenderFigures(YadgDocument document, string workspaceRoot, WorkspaceValues values, List<Diagnostic> diagnostics, List<string> temporaryPaths, bool yolo = false)
     {
         var replacements = new Dictionary<string, YadgFigure>(StringComparer.Ordinal);
         foreach (var figure in document.Figures.Values.Where(f => f.GeneratedSource is not null))
@@ -28,6 +28,9 @@ public static class MermaidProducer
         var blocks = document.Blocks.Select(Map).ToArray();
         var sections = document.References.ToDictionary(p => p.Key, p => p.Value with { Body = p.Value.Body.Select(Map).ToArray() }, StringComparer.Ordinal);
         var figures = document.Figures.ToDictionary(p => p.Key, p => replacements.TryGetValue(p.Key, out var replacement) ? replacement : p.Value, StringComparer.Ordinal);
+        if (yolo)
+            for (var i = diagnostics.Count - 1; i >= 0; i--)
+                if (diagnostics[i].Code.StartsWith("YADG-PRODUCER-", StringComparison.Ordinal)) diagnostics[i] = diagnostics[i] with { Code = "YADG-YOLO-PRODUCER-001", IsError = false, IsDegradation = true, Message = diagnostics[i].Message + "; fallback: visible Mermaid figure placeholder." };
         return document with { Blocks = blocks, References = sections, Figures = figures };
     }
 

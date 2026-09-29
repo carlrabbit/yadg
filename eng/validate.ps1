@@ -8,3 +8,9 @@ if ($vsMsbuild) { & $vsMsbuild "$PSScriptRoot/../Yadg.slnx" /t:Build /p:Configur
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 dotnet test "$PSScriptRoot/../Yadg.slnx" --no-build --configuration Release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& "$PSScriptRoot/verify-m0012-fixtures.ps1"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$repo = Split-Path -Parent $PSScriptRoot
+$trackedOperational = & git -C $repo ls-files | Where-Object { $_ -match '^(\.execution|\.review|artifacts)/' }
+if ($trackedOperational) { throw "Operational state is tracked: $($trackedOperational -join ', ')" }
+Write-Output 'Repository hygiene verified: execution, review, and artifacts state is untracked.'

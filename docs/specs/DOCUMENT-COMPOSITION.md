@@ -342,3 +342,7 @@ M0010 does not make block YADG placement tags valid in those stories.
 `section`, `content`, `table`, `figure`, and prepared-table placement remain governed by their existing main-document-body contracts.
 
 M0010 does not add generic support for every OOXML part, tracked-change authoring, arbitrary XML text substitution, new image formats, new Markdown block types, NuGet packaging, GitHub workflows, or V1 release publication automation.
+
+## M0012 resilience specialization
+
+The missing-value failure above describes strict mode. Explicit `--yolo` may preserve the original visible `{{value:id}}` or `[@id]` token while emitting a degradation; malformed configuration and ambiguous identity remain fatal. See `AUTHORING-RESILIENCE.md`.

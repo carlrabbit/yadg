@@ -12,7 +12,7 @@ public sealed record RendererDiagnostic(string Code, string Message, string? Loc
     public override string ToString() => Location is null ? $"{Code}: {Message}" : $"{Code}: {Location}: {Message}";
 }
 
-public sealed record RenderResult(bool Success, IReadOnlyList<RendererDiagnostic> Diagnostics, string? RuntimeVersion = null, string? Executable = null, string? ProfileIdentity = null);
+public sealed record RenderResult(bool Success, IReadOnlyList<RendererDiagnostic> Diagnostics, string? RuntimeVersion = null, string? Executable = null, string? ProfileIdentity = null, string ActualRenderer = "unknown");
 
 public sealed class LibreOfficeRenderer
 {
@@ -28,11 +28,11 @@ public sealed class LibreOfficeRenderer
         var inputs = Directory.EnumerateFiles(preWords, "*.docx", SearchOption.TopDirectoryOnly).OrderBy(p => p, StringComparer.Ordinal).ToArray();
         if (inputs.Length == 0) return Fail(diagnostics, "YADG-RENDER-003", $"No top-level DOCX inputs were found in '{preWords}'.");
         var executable = ResolveExecutable(rendererPath, diagnostics);
-        if (executable is null) return new(false, diagnostics);
+        if (executable is null) return new(false, diagnostics, ActualRenderer: "libreoffice");
         var version = ReadVersion(executable, diagnostics);
-        if (version is null) return new(false, diagnostics, null, executable);
+        if (version is null) return new(false, diagnostics, null, executable, ActualRenderer: "libreoffice");
         var python = ResolvePython(executable, diagnostics);
-        if (python is null) return new(false, diagnostics, version, executable);
+        if (python is null) return new(false, diagnostics, version, executable, ActualRenderer: "libreoffice");
         var sidecar = Path.Combine(AppContext.BaseDirectory, "uno_renderer.py");
         if (!File.Exists(sidecar)) return Fail(diagnostics, "YADG-RENDER-006", $"Renderer UNO sidecar is missing: '{sidecar}'.");
 
@@ -43,24 +43,26 @@ public sealed class LibreOfficeRenderer
         try
         {
             office = StartOffice(executable, profile, port, diagnostics);
-            if (office is null) return new(false, diagnostics, version, executable, sessionId);
+            if (office is null) return new(false, diagnostics, version, executable, sessionId, "libreoffice");
             foreach (var input in inputs)
             {
                 var stagedInput = Path.Combine(stage, "input-" + Path.GetFileName(input));
                 NormalizeImageRelationships(input, stagedInput);
                 var stagedDocx = Path.Combine(stage, Path.GetFileName(input)); var stagedPdf = Path.Combine(stage, Path.GetFileNameWithoutExtension(input) + ".pdf");
                 var sidecarResult = RunSidecar(python, sidecar, port, stagedInput, stagedDocx, stagedPdf, diagnostics);
-                if (!sidecarResult) return new(false, diagnostics, version, executable, sessionId);
+                if (!sidecarResult) return new(false, diagnostics, version, executable, sessionId, "libreoffice");
                 if (!File.Exists(stagedDocx) || new FileInfo(stagedDocx).Length == 0) return Fail(diagnostics, "YADG-RENDER-014", $"LibreOffice did not produce a non-empty DOCX for '{input}'.", version, executable, sessionId);
                 if (!File.Exists(stagedPdf) || new FileInfo(stagedPdf).Length == 0) return Fail(diagnostics, "YADG-RENDER-015", $"LibreOffice did not produce a non-empty PDF for '{input}'.", version, executable, sessionId);
             }
-            Directory.CreateDirectory(words); Directory.CreateDirectory(pdfs);
+            var stagedWords = Path.Combine(stage, "YadgWords"); var stagedPdfs = Path.Combine(stage, "YadgPdfs");
+            Directory.CreateDirectory(stagedWords); Directory.CreateDirectory(stagedPdfs);
             foreach (var input in inputs)
             {
-                File.Move(Path.Combine(stage, Path.GetFileName(input)), Path.Combine(words, Path.GetFileName(input)), true);
-                File.Move(Path.Combine(stage, Path.GetFileNameWithoutExtension(input) + ".pdf"), Path.Combine(pdfs, Path.GetFileNameWithoutExtension(input) + ".pdf"), true);
+                File.Move(Path.Combine(stage, Path.GetFileName(input)), Path.Combine(stagedWords, Path.GetFileName(input)));
+                File.Move(Path.Combine(stage, Path.GetFileNameWithoutExtension(input) + ".pdf"), Path.Combine(stagedPdfs, Path.GetFileNameWithoutExtension(input) + ".pdf"));
             }
-            return new(true, diagnostics, version, executable, sessionId);
+            FinalizedOutputCommit.Commit(root, stagedWords, stagedPdfs);
+            return new(true, diagnostics, version, executable, sessionId, "libreoffice");
         }
         catch (Exception ex) { return Fail(diagnostics, "YADG-RENDER-016", $"LibreOffice rendering failed: {ex.Message}", version, executable, sessionId); }
         finally
@@ -139,5 +141,5 @@ public sealed class LibreOfficeRenderer
             foreach (var (relationship, content) in replacements) { var name = relationship.FullName; relationship.Delete(); var replacement = archive.CreateEntry(name, CompressionLevel.Optimal); using var write = new StreamWriter(replacement.Open(), new System.Text.UTF8Encoding(false)); write.Write(content); }
         }
     }
-    private static RenderResult Fail(List<RendererDiagnostic> diagnostics, string code, string message, string? version = null, string? executable = null, string? profile = null) { diagnostics.Add(new(code, message)); return new(false, diagnostics, version, executable, profile); }
+    private static RenderResult Fail(List<RendererDiagnostic> diagnostics, string code, string message, string? version = null, string? executable = null, string? profile = null) { diagnostics.Add(new(code, message)); return new(false, diagnostics, version, executable, profile, "libreoffice"); }
 }
