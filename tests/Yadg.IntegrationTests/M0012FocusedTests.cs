@@ -409,6 +409,13 @@ public sealed class M0012FocusedTests
         var result = AssetValidation.AttachAndValidate(model, fixture.Root, diagnostics, yolo: true);
         Assert.Contains(diagnostics, d => d.IsError && d.Code == "YADG-FIGURE-004");
         Assert.Null(result.FindFigure("escape")?.Asset);
+        foreach (var (source, id) in new[] { ("![Remote](https://example.invalid/image.png){#remote}", "remote"), ("![Data](data:image/png;base64,AAAA){#data}", "data") })
+        {
+            var remoteDiagnostics = new List<Diagnostic>();
+            var remoteModel = Parse(source);
+            AssetValidation.AttachAndValidate(remoteModel, fixture.Root, remoteDiagnostics, yolo: true);
+            Assert.Contains(remoteDiagnostics, d => d.IsError && d.Code == "YADG-FIGURE-003");
+        }
 
         var outside = Path.Combine(Path.GetTempPath(), "yadg-m0012-outside-" + Guid.NewGuid().ToString("N") + ".png");
         var link = Path.Combine(fixture.Root, "linked.png");
