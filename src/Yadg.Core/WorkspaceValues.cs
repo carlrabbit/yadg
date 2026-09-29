@@ -21,6 +21,50 @@ public static class WorkspaceValuesParser
     private static readonly Regex Number = new("^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$", RegexOptions.Compiled);
     private static readonly Regex DateLike = new("^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[Tt ].*)?$", RegexOptions.Compiled);
 
+    public static string? ParsePublishPath(string path, List<Diagnostic> diagnostics)
+    {
+        string text;
+        try { text = File.ReadAllText(path, Encoding.UTF8); }
+        catch (Exception ex) { diagnostics.Add(new("YADG-PUBLISH-009", $"Unable to read publication configuration: {ex.Message}", true, path)); return null; }
+        if (text.Length > 0 && text[0] == '\ufeff') text = text[1..];
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        var close = lines.Length > 0 && lines[0] == "---" ? Array.FindIndex(lines, 1, line => line == "---") : -1;
+        if (close < 0) { diagnostics.Add(new("YADG-PUBLISH-009", "Cannot read publish.path: YADG.md has no valid front matter block.", true, path)); return null; }
+        var inPublish = false;
+        var publishSeen = false;
+        string? publishPath = null;
+        for (var i = 1; i < close; i++)
+        {
+            var raw = lines[i];
+            if (string.IsNullOrWhiteSpace(raw) || raw.TrimStart().StartsWith("#", StringComparison.Ordinal)) continue;
+            var indent = raw.Length - raw.TrimStart(' ').Length;
+            var line = raw.Trim();
+            if (indent == 0)
+            {
+                var colon = line.IndexOf(':');
+                if (colon < 1) continue;
+                inPublish = line[..colon] == "publish";
+                if (inPublish)
+                {
+                    if (publishSeen) diagnostics.Add(new("YADG-PUBLISH-009", "Duplicate publish configuration.", true, $"{path}:{i + 1}"));
+                    publishSeen = true;
+                    if (line[(colon + 1)..].Trim().Length != 0) diagnostics.Add(new("YADG-PUBLISH-009", "publish must be a mapping to read publish.path.", true, $"{path}:{i + 1}"));
+                }
+                continue;
+            }
+            if (!inPublish || indent != 2) continue;
+            var split = line.IndexOf(':');
+            if (split < 1) { diagnostics.Add(new("YADG-PUBLISH-009", "Malformed publish configuration.", true, $"{path}:{i + 1}")); continue; }
+            var key = line[..split].Trim();
+            if (key != "path") { diagnostics.Add(new("YADG-PUBLISH-009", $"Unknown publish key '{key}'.", true, $"{path}:{i + 1}")); continue; }
+            if (publishPath is not null) { diagnostics.Add(new("YADG-PUBLISH-009", "Duplicate publish.path.", true, $"{path}:{i + 1}")); continue; }
+            if (!TryStringScalar(line[(split + 1)..].Trim(), out var value) || string.IsNullOrWhiteSpace(value)) diagnostics.Add(new("YADG-PUBLISH-009", "publish.path must be a non-empty string.", true, $"{path}:{i + 1}"));
+            else publishPath = value;
+        }
+        if (publishSeen && publishPath is null && !diagnostics.Any(d => d.IsError)) diagnostics.Add(new("YADG-PUBLISH-009", "publish.path must be a non-empty string.", true, path));
+        return publishPath;
+    }
+
     public static WorkspaceValues Parse(string path, List<Diagnostic> diagnostics)
     {
         string text;

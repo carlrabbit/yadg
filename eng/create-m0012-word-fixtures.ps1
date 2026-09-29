@@ -7,7 +7,7 @@ $word.Visible = $false
 $word.DisplayAlerts = 0
 $created = [System.Collections.Generic.List[object]]::new()
 try {
-    foreach ($scenario in @('style-resolution','list-prototypes')) {
+    foreach ($scenario in @('style-resolution','list-prototypes','related-list-recovery','builtin-list-recovery')) {
         $path = Join-Path $fixtureDir "$scenario.docx"
         $doc = $word.Documents.Add()
         try {
@@ -19,8 +19,12 @@ try {
                 $custom.BaseStyle = $doc.Styles.Item('List Bullet')
                 $custom.Font.Color = 0x008000
                 $lines = @('{{yadg:frontmatter}}','version: 1','styles:','  headings:','    1: Heading 1','  lists:','    unordered: User Bullets','    ordered: List Number','  codeInline: Code Character','{{/yadg:frontmatter}}','Word-origin style discovery sample.','{{content:introduction}}','Template-owned list style sample.','Word list relationship sample.','Word ordered list relationship sample.')
-            } else {
+            } elseif ($scenario -eq 'list-prototypes') {
                 $lines = @('{{yadg:frontmatter}}','version: 1','styles:','  headings:','    1: Heading 1','  codeInline: Code Character','prototypes:','  unorderedListItem: bullet-item','  orderedListItem: number-item','{{/yadg:frontmatter}}','{{yadg:prototype:bullet-item}}','{{item}}','{{/yadg:prototype:bullet-item}}','{{yadg:prototype:number-item}}','{{item}}','{{/yadg:prototype:number-item}}','Word-origin list prototypes.','{{content:introduction}}')
+            } elseif ($scenario -eq 'related-list-recovery') {
+                $lines = @('{{yadg:frontmatter}}','version: 1','styles:','  lists:','    unordered: Missing Bullet','{{/yadg:frontmatter}}','Word-origin related-list recovery sample.','{{content:introduction}}','Related bullet presentation sample.')
+            } else {
+                $lines = @('{{yadg:frontmatter}}','version: 1','styles:','  lists:','    unordered: Missing Bullet','    ordered: Missing Number','{{/yadg:frontmatter}}','Word-origin built-in-list recovery sample.','{{content:introduction}}')
             }
             foreach ($line in $lines) {
                 $range = $doc.Range($doc.Content.End - 1, $doc.Content.End - 1)
@@ -28,7 +32,7 @@ try {
             }
             foreach ($paragraph in $doc.Paragraphs) {
                 $text = $paragraph.Range.Text.Trim()
-                if ($text -eq 'Word-origin style discovery sample.' -or $text -eq 'Word-origin list prototypes.') { $paragraph.Style = $doc.Styles.Item('Heading 1') }
+                if ($text -eq 'Word-origin style discovery sample.' -or $text -eq 'Word-origin list prototypes.' -or $text -eq 'Word-origin related-list recovery sample.' -or $text -eq 'Word-origin built-in-list recovery sample.') { $paragraph.Style = $doc.Styles.Item('Heading 1') }
                 if ($scenario -eq 'style-resolution' -and $text -eq 'Word list relationship sample.') { $paragraph.Style = $doc.Styles.Item('User Bullets'); $paragraph.Range.ListFormat.ApplyBulletDefault() }
                 if ($scenario -eq 'style-resolution' -and $text -eq 'Word ordered list relationship sample.') { $paragraph.Style = $doc.Styles.Item('List Number'); $paragraph.Range.ListFormat.ApplyNumberDefault() }
                 if ($scenario -eq 'list-prototypes' -and $text -eq '{{item}}') {
@@ -36,6 +40,7 @@ try {
                     if ($previous.Range.Text.Trim() -eq '{{yadg:prototype:bullet-item}}') { $paragraph.Range.ListFormat.ApplyBulletDefault() }
                     else { $paragraph.Range.ListFormat.ApplyNumberDefault() }
                 }
+                if ($scenario -eq 'related-list-recovery' -and $text -eq 'Related bullet presentation sample.') { $paragraph.Style = $doc.Styles.Item('List Bullet'); $paragraph.Range.ListFormat.ApplyBulletDefault() }
             }
             $doc.SaveAs2($path, 16)
             $doc.Close($false)

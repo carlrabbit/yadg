@@ -15,7 +15,7 @@ $statusBytes = [Text.Encoding]::UTF8.GetBytes($worktreeStatus)
 $statusHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($statusBytes))
 $os = (Get-CimInstance Win32_OperatingSystem).Caption
 $loPath = if (Test-Path 'C:\Program Files\LibreOffice\program\soffice.com') { 'C:\Program Files\LibreOffice\program\soffice.com' } else { (Get-Command soffice.exe).Source }
-foreach ($fixture in $Fixtures) {
+foreach ($fixture in ($Fixtures | Where-Object { [string]$_.id -notmatch 'recovery' })) {
     if ([string]$fixture.application -ne 'Microsoft Word') { throw "Unsupported M0012 fixture origin '$($fixture.application)'." }
     $templatePath = Join-Path $RepositoryRoot ([string]$fixture.path)
     $inspectRoot = Join-Path $TemporaryRoot ("inspect-" + [string]$fixture.id)
@@ -81,98 +81,111 @@ foreach ($fixture in $Fixtures) {
     }
 }
 
-function New-RecoveryTemplate([string] $Source, [string] $Destination, [bool] $RemoveListResources, [bool] $RemoveDefaultBulletStyle) {
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $sourceArchive = [IO.Compression.ZipFile]::OpenRead($Source)
-    $targetArchive = [IO.Compression.ZipFile]::Open($Destination, [IO.Compression.ZipArchiveMode]::Create)
-    try {
-        foreach ($entry in $sourceArchive.Entries) {
-            $target = $targetArchive.CreateEntry($entry.FullName, [IO.Compression.CompressionLevel]::Optimal)
-            $sourceStream = $entry.Open(); $targetStream = $target.Open()
-            try {
-                if ($entry.FullName -eq 'word/document.xml' -or (($RemoveListResources -or $RemoveDefaultBulletStyle) -and $entry.FullName -eq 'word/styles.xml')) {
-                    $reader = [IO.StreamReader]::new($sourceStream); try { [xml]$xml = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                    $ns = [Xml.XmlNamespaceManager]::new($xml.NameTable); $ns.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
-                    if ($entry.FullName -eq 'word/document.xml') {
-                        foreach ($node in $xml.SelectNodes('//w:t', $ns)) { if ($node.InnerText.Contains('User Bullets')) { $node.InnerText = $node.InnerText.Replace('User Bullets', 'Missing Bullet') } }
-                        if ($RemoveListResources) {
-                            foreach ($node in @($xml.SelectNodes('//w:numPr', $ns))) { $node.ParentNode.RemoveChild($node) | Out-Null }
-                            foreach ($node in @($xml.SelectNodes('//w:pStyle[@w:val="ListBullet" or @w:val="ListNumber" or @w:val="UserBullets"]', $ns))) { $node.ParentNode.RemoveChild($node) | Out-Null }
-                        }
-                    } else {
-                        $styleQuery = if ($RemoveListResources) { '//w:style[@w:styleId="ListBullet" or @w:styleId="ListNumber" or @w:styleId="UserBullets"]' } else { '//w:style[@w:styleId="UserBullets"]' }
-                        foreach ($node in @($xml.SelectNodes($styleQuery, $ns))) { $node.ParentNode.RemoveChild($node) | Out-Null }
-                    }
-                    if ($entry.FullName -eq 'word/numbering.xml' -and $RemoveListResources) {
-                        $reader = [IO.StreamReader]::new($sourceStream); try { [xml]$xml = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                        $ns = [Xml.XmlNamespaceManager]::new($xml.NameTable); $ns.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
-                        foreach ($node in @($xml.SelectNodes('//w:num | //w:abstractNum', $ns))) { $node.ParentNode.RemoveChild($node) | Out-Null }
-                    }
-                    $xml.Save($targetStream)
-                } elseif ($entry.FullName -eq 'word/numbering.xml' -and ($RemoveListResources -or $RemoveDefaultBulletStyle)) {
-                    $reader = [IO.StreamReader]::new($sourceStream); try { [xml]$xml = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                    $ns = [Xml.XmlNamespaceManager]::new($xml.NameTable); $ns.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
-                    if ($RemoveListResources) { foreach ($node in @($xml.SelectNodes('//w:num | //w:abstractNum', $ns))) { $node.ParentNode.RemoveChild($node) | Out-Null } }
-                    elseif ($RemoveDefaultBulletStyle) { foreach ($node in @($xml.SelectNodes('//w:pStyle[@w:val="ListBullet"]', $ns))) { $node.SetAttribute('val', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'UserBullets') } }
-                    $xml.Save($targetStream)
-                } else { $sourceStream.CopyTo($targetStream) }
-            } finally { $sourceStream.Dispose(); $targetStream.Dispose() }
-        }
-    } finally { $targetArchive.Dispose(); $sourceArchive.Dispose() }
-}
-
-$baseFixture = $Fixtures | Where-Object { [string]$_.id -eq 'style-resolution' } | Select-Object -First 1
-$basePath = Join-Path $RepositoryRoot ([string]$baseFixture.path)
 $recoveryRuns = @()
-foreach ($scenario in @('related-list','builtin-lists')) {
-    $removeResources = $scenario -eq 'builtin-lists'
-    $derivedTemplate = Join-Path $TemporaryRoot "$scenario-template.docx"
-    New-RecoveryTemplate $basePath $derivedTemplate $removeResources ($scenario -eq 'related-list')
+foreach ($scenario in @('related-list-recovery','builtin-list-recovery')) {
+    $fixture = $Fixtures | Where-Object { [string]$_.id -eq $scenario } | Select-Object -First 1
+    if ($null -eq $fixture) { throw "Missing dedicated Word-origin recovery fixture '$scenario'." }
+    $templatePath = Join-Path $RepositoryRoot ([string]$fixture.path)
     $workspace = Join-Path $TemporaryRoot "$scenario-workspace"
     New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'YadgTemplates') | Out-Null
-    Copy-Item $derivedTemplate (Join-Path $workspace 'YadgTemplates/template.docx')
-    Set-Content -LiteralPath (Join-Path $workspace 'YADG.md') -Value @('---','yadg:','  version: 1','markdown:','  codeInline: style','---')
+    Copy-Item -LiteralPath $templatePath -Destination (Join-Path $workspace 'YadgTemplates/template.docx')
+    Set-Content -LiteralPath (Join-Path $workspace 'YADG.md') -Value @('---','yadg:','  version: 1','---')
     Set-Content -LiteralPath (Join-Path $workspace 'content.md') -Value @('# Introduction {#introduction}','','- Related bullet one','- Related bullet two','','1. Ordered one','2. Ordered two')
     $strictOutput = & $Cli check --workspace $workspace 2>&1
-    if ($LASTEXITCODE -eq 0) { throw "$scenario strict check unexpectedly passed; correction requires strict/YOLO paired evidence." }
-    if (($strictOutput -join "`n") -notmatch 'near:') { throw "$scenario strict DOCX diagnostic omitted searchable nearby text/context." }
-    $yoloOutput = & $Cli build --yolo --workspace $workspace 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "$scenario YOLO build failed: $yoloOutput" }
-    if ($scenario -eq 'builtin-lists' -and ($yoloOutput -join "`n") -notmatch 'builtin:unordered-list-v1') { throw 'YOLO did not report its built-in unordered-list example.' }
+    if ($LASTEXITCODE -eq 0) { throw "$scenario strict check unexpectedly passed." }
+    if (($strictOutput -join "`n") -notmatch 'near:') { throw "$scenario strict DOCX diagnostic omitted searchable text." }
     $inspection = & $Cli inspect template --workspace $workspace
-    if ($LASTEXITCODE -ne 0 -or ($inspection -join "`n") -notmatch 'strict=unresolved') { throw "$scenario inspect template did not show strict failure/fallback preview." }
-    if ($scenario -eq 'related-list' -and ($inspection -join "`n") -notmatch 'yolo candidate: List Bullet') { throw 'YOLO did not select the related Word bullet presentation deterministically.' }
-    $renderers = if ($scenario -eq 'builtin-lists') { @('word','libreoffice') } else { @('word') }
+    if ($LASTEXITCODE -ne 0) { throw "$scenario inspect template failed: $inspection" }
+    if ($scenario -eq 'related-list-recovery' -and ($inspection -join "`n") -notmatch 'yolo candidate: List Bullet') { throw 'Inspection did not select the related Word bullet presentation.' }
+    if ($scenario -eq 'builtin-list-recovery' -and ($inspection -join "`n") -notmatch 'builtin:unordered-list-v1') { throw 'Inspection did not preview built-in unordered numbering.' }
+    $buildOutput = & $Cli build --workspace $workspace --yolo 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "$scenario YOLO build failed: $buildOutput" }
+    if ($scenario -eq 'builtin-list-recovery' -and ($buildOutput -join "`n") -notmatch 'builtin:unordered-list-v1') { throw 'YOLO build did not report built-in list degradation.' }
+    $renderers = if ($scenario -eq 'builtin-list-recovery') { @('word','libreoffice') } else { @('word') }
     foreach ($renderer in $renderers) {
-        if ($scenario -eq 'related-list') {
+        if ($scenario -eq 'related-list-recovery') {
+            $prime = & $Cli render --workspace $workspace --renderer libreoffice --renderer-path $loPath 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "Initial LibreOffice result-set render failed before fallback check: $prime" }
+            if (-not (Test-Path -LiteralPath (Join-Path $workspace 'YadgPdfs/template.pdf'))) { throw 'LibreOffice did not create the PDF needed for Word fallback freshness proof.' }
             $render = & $Cli render --workspace $workspace --renderer libreoffice --renderer-path (Join-Path $TemporaryRoot 'missing-soffice.exe') --yolo 2>&1
-            if ($LASTEXITCODE -ne 0 -or ($render -join "`n") -notmatch 'requested=libreoffice; actual=word' -or ($render -join "`n") -notmatch 'degradations=1') { throw "YOLO renderer substitution did not truthfully report requested LibreOffice/actual Word: $render" }
+            if ($LASTEXITCODE -ne 0 -or ($render -join "`n") -notmatch 'requested=libreoffice; actual=word' -or ($render -join "`n") -notmatch 'degradations=1') { throw "Renderer fallback provenance/accounting failed: $render" }
+            if (@(Get-ChildItem -LiteralPath (Join-Path $workspace 'YadgPdfs') -Filter '*.pdf').Count -ne 0) { throw 'Word fallback retained a stale LibreOffice PDF.' }
         } else {
             $rendererArgs = @('render','--workspace',$workspace,'--renderer',$renderer)
             if ($renderer -eq 'libreoffice') { $rendererArgs += @('--renderer-path',$loPath) }
             $render = & $Cli @rendererArgs 2>&1
-            if ($LASTEXITCODE -ne 0) { throw "$scenario finalization failed through $renderer`: $render" }
+            if ($LASTEXITCODE -ne 0) { throw "$scenario finalization through $renderer failed: $render" }
         }
         $finalized = Get-ChildItem -LiteralPath (Join-Path $workspace 'YadgWords') -Filter '*.docx' | Select-Object -First 1
+        if (-not $finalized) { throw "$scenario finalized DOCX missing through $renderer." }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [IO.Compression.ZipFile]::OpenRead($finalized.FullName)
         try {
-            $read = [IO.StreamReader]::new($zip.GetEntry('word/document.xml').Open()); try { [xml]$docXml = $read.ReadToEnd() } finally { $read.Dispose() }
+            $reader = [IO.StreamReader]::new($zip.GetEntry('word/document.xml').Open()); try { [xml]$docXml = $reader.ReadToEnd() } finally { $reader.Dispose() }
             $ns = [Xml.XmlNamespaceManager]::new($docXml.NameTable); $ns.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
-            if ($scenario -eq 'builtin-lists' -and $docXml.SelectNodes('//w:pPr/w:numPr', $ns).Count -lt 4) { throw "$scenario list numbering did not survive $renderer finalization." }
-            if ($scenario -eq 'related-list' -and $docXml.SelectNodes('//w:pPr/w:pStyle[@w:val="ListBullet"]', $ns).Count -lt 2) { throw "$scenario did not preserve the selected related Word list style through $renderer finalization." }
-            if ($removeResources -or $scenario -eq 'related-list') {
-                $numberingEntry = $zip.GetEntry('word/numbering.xml'); $reader = [IO.StreamReader]::new($numberingEntry.Open()); try { [xml]$numXml = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                $numNs = [Xml.XmlNamespaceManager]::new($numXml.NameTable); $numNs.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
-                if ($removeResources -and (-not $numXml.SelectSingleNode('//w:abstractNum/w:lvl/w:numFmt[@w:val="bullet"]', $numNs) -or -not $numXml.SelectSingleNode('//w:abstractNum/w:lvl/w:numFmt[@w:val="decimal"]', $numNs))) { throw "Built-in ordered/unordered real numbering did not survive $renderer finalization." }
-                if ($scenario -eq 'related-list' -and -not $numXml.SelectSingleNode('//w:abstractNum/w:lvl[w:pStyle[@w:val="ListBullet"]]/w:numFmt[@w:val="bullet"]', $numNs)) { throw "Related Word style's inherited real bullet numbering did not survive $renderer finalization." }
-            }
+            if ($scenario -eq 'builtin-list-recovery' -and $docXml.SelectNodes('//w:pPr/w:numPr', $ns).Count -lt 4) { throw "Built-in real numbering failed through $renderer." }
+            if ($scenario -eq 'related-list-recovery' -and $docXml.SelectNodes('//w:pPr/w:pStyle[@w:val="ListBullet"]', $ns).Count -lt 2) { throw 'Related Word list style was not used.' }
         } finally { $zip.Dispose() }
         $artifactName = "yolo-$scenario-$renderer.docx"
         Copy-Item $finalized.FullName (Join-Path $EvidenceRoot $artifactName) -Force
-        $recoveryRuns += [ordered]@{ scenario = $scenario; sourceFixture = $baseFixture.id; sourceFixtureSha256 = $baseFixture.sha256; derivedTemplateSha256 = (Get-FileHash $derivedTemplate -Algorithm SHA256).Hash; renderer = $renderer; artifact = $artifactName; result = 'passed' }
+        $recoveryRuns += [ordered]@{ scenario = $scenario; sourceFixture = $fixture.id; sourceFixtureSha256 = $fixture.sha256; renderer = $renderer; artifact = $artifactName; result = 'passed' }
     }
 }
+
+$staleFixture = $Fixtures | Where-Object { [string]$_.id -eq 'style-resolution' } | Select-Object -First 1
+$staleWorkspace = Join-Path $TemporaryRoot 'stale-preword-replacement'
+$staleTemplateRoot = Join-Path $staleWorkspace 'YadgTemplates'
+New-Item -ItemType Directory -Force -Path $staleTemplateRoot | Out-Null
+$staleSource = Join-Path $RepositoryRoot ([string]$staleFixture.path)
+Copy-Item -LiteralPath $staleSource -Destination (Join-Path $staleTemplateRoot 'a.docx')
+Copy-Item -LiteralPath $staleSource -Destination (Join-Path $staleTemplateRoot 'b.docx')
+Set-Content -LiteralPath (Join-Path $staleWorkspace 'YADG.md') -Value @('---','yadg:','  version: 1','markdown:','  codeInline: style','---')
+Set-Content -LiteralPath (Join-Path $staleWorkspace 'content.md') -Value @('# Introduction {#introduction}','','A styled `code sample`.','','- Bullet item','','1. Ordered item')
+& $Cli build --workspace $staleWorkspace
+if ($LASTEXITCODE -ne 0) { throw 'Initial A+B strict build failed in stale-output Tier 3 scenario.' }
+if ((Get-ChildItem -LiteralPath (Join-Path $staleWorkspace 'YadgPreWords') -Filter '*.docx').Count -ne 2) { throw 'Initial stale-output scenario did not produce A+B.' }
+$bPath = Join-Path $staleTemplateRoot 'b.docx'
+$lockedTemplate = [IO.File]::Open($bPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+try {
+    & $Cli build --workspace $staleWorkspace --yolo
+    if ($LASTEXITCODE -ne 0) { throw 'YOLO replacement build failed while template B was recoverably unavailable.' }
+} finally { $lockedTemplate.Dispose() }
+$preWordNames = @(Get-ChildItem -LiteralPath (Join-Path $staleWorkspace 'YadgPreWords') -Filter '*.docx' | Select-Object -ExpandProperty Name)
+if ($preWordNames.Count -ne 1 -or $preWordNames[0] -ne 'a.docx') { throw "Successful YOLO replacement retained a stale/skipped PreWord: $($preWordNames -join ', ')." }
+& $Cli render --workspace $staleWorkspace --renderer word
+if ($LASTEXITCODE -ne 0) { throw 'Word renderer failed after successful YOLO output-set replacement.' }
+$finalNames = @(Get-ChildItem -LiteralPath (Join-Path $staleWorkspace 'YadgWords') -Filter '*.docx' | Select-Object -ExpandProperty Name)
+if ($finalNames.Count -ne 1 -or $finalNames[0] -ne 'a.docx') { throw "Renderer processed a stale/skipped PreWord: $($finalNames -join ', ')." }
+$recoveryRuns += [ordered]@{ scenario = 'stale-preword-replacement-render'; sourceFixture = $staleFixture.id; sourceFixtureSha256 = $staleFixture.sha256; initialTemplateSet = @('a.docx','b.docx'); skippedTemplate = 'b.docx'; finalPreWords = $preWordNames; finalized = $finalNames; renderer = 'word'; result = 'passed' }
+
+$renderSetWorkspace = Join-Path $TemporaryRoot 'render-result-set-ownership'
+$renderTemplateRoot = Join-Path $renderSetWorkspace 'YadgTemplates'
+New-Item -ItemType Directory -Force -Path $renderTemplateRoot | Out-Null
+Copy-Item -LiteralPath $staleSource -Destination (Join-Path $renderTemplateRoot 'a.docx')
+Copy-Item -LiteralPath $staleSource -Destination (Join-Path $renderTemplateRoot 'b.docx')
+Set-Content -LiteralPath (Join-Path $renderSetWorkspace 'YADG.md') -Value @('---','yadg:','  version: 1','markdown:','  codeInline: style','---')
+Set-Content -LiteralPath (Join-Path $renderSetWorkspace 'content.md') -Value @('# Introduction {#introduction}','','A styled `code sample`.','','- Bullet item','','1. Ordered item')
+& $Cli build --workspace $renderSetWorkspace
+if ($LASTEXITCODE -ne 0) { throw 'A+B render freshness build failed.' }
+& $Cli render --workspace $renderSetWorkspace --renderer libreoffice --renderer-path $loPath
+if ($LASTEXITCODE -ne 0) { throw 'Initial A+B LibreOffice render failed.' }
+Remove-Item -LiteralPath (Join-Path $renderSetWorkspace 'YadgPreWords/b.docx')
+& $Cli render --workspace $renderSetWorkspace --renderer libreoffice --renderer-path $loPath
+if ($LASTEXITCODE -ne 0) { throw 'A-only LibreOffice rerender failed.' }
+$loWordNames = @(Get-ChildItem -LiteralPath (Join-Path $renderSetWorkspace 'YadgWords') -Filter '*.docx' | Select-Object -ExpandProperty Name)
+$loPdfNames = @(Get-ChildItem -LiteralPath (Join-Path $renderSetWorkspace 'YadgPdfs') -Filter '*.pdf' | Select-Object -ExpandProperty Name)
+if ($loWordNames.Count -ne 1 -or $loWordNames[0] -ne 'a.docx' -or $loPdfNames.Count -ne 1 -or $loPdfNames[0] -ne 'a.pdf') { throw 'LibreOffice rerender retained stale finalized artifacts.' }
+& $Cli render --workspace $renderSetWorkspace --renderer word
+if ($LASTEXITCODE -ne 0) { throw 'Word render following LibreOffice failed.' }
+$wordPdfNames = @(Get-ChildItem -LiteralPath (Join-Path $renderSetWorkspace 'YadgPdfs') -Filter '*.pdf' | Select-Object -ExpandProperty Name)
+if ($wordPdfNames.Count -ne 0) { throw 'Word success retained stale LibreOffice PDFs.' }
+$committedHash = (Get-FileHash -LiteralPath (Join-Path $renderSetWorkspace 'YadgWords/a.docx') -Algorithm SHA256).Hash
+Set-Content -LiteralPath (Join-Path $renderSetWorkspace 'YadgPreWords/a.docx') -Value 'not a DOCX'
+$failedRender = & $Cli render --workspace $renderSetWorkspace --renderer word 2>&1
+if ($LASTEXITCODE -eq 0) { throw 'Corrupt PreWord unexpectedly rendered successfully.' }
+$afterFailureHash = (Get-FileHash -LiteralPath (Join-Path $renderSetWorkspace 'YadgWords/a.docx') -Algorithm SHA256).Hash
+if ($afterFailureHash -ne $committedHash) { throw 'Failed renderer attempt changed the prior finalized result set.' }
+$recoveryRuns += [ordered]@{ scenario = 'finalized-result-set-ownership'; initial = @('a.docx','b.docx'); afterLibreOfficeRerender = $loWordNames; pdfAfterLibreOffice = $loPdfNames; pdfAfterWord = $wordPdfNames; failedAttemptPreservedPrior = $afterFailureHash -eq $committedHash; result = 'passed' }
 [ordered]@{ repositoryRevision = $revision; worktreeDirty = [bool]$worktreeStatus; worktreeStatusSha256 = $statusHash; os = $os; wordVersion = $WordVersion; libreOfficeVersion = $LibreOfficeVersion; fixtures = $Fixtures; runs = $runs; recoveryRuns = $recoveryRuns } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'tier3-evidence.json')
+$global:LASTEXITCODE = 0
 Write-Output 'M0012 Tier 3 real Word/LibreOffice authoring matrix passed.'

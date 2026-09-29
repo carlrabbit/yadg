@@ -22,14 +22,14 @@ public sealed class WordRenderer
         var session = Path.Combine(Path.GetTempPath(), "yadg-word-" + Guid.NewGuid().ToString("N"));
         var stage = Path.Combine(session, "stage");
         Directory.CreateDirectory(stage);
-        var result = new RenderResult(false, diagnostics);
+        var result = new RenderResult(false, diagnostics, ActualRenderer: "word");
         var thread = new Thread(() => result = RenderOnSta(root, inputs, stage, diagnostics)) { IsBackground = true, Name = "YADG Microsoft Word renderer" };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         if (!thread.Join(TimeoutMs))
         {
             diagnostics.Add(new("YADG-WORD-010", $"Microsoft Word rendering exceeded the {TimeoutMs / 1000}-second bound; the owned automation thread did not complete."));
-            result = new(false, diagnostics);
+            result = new(false, diagnostics, ActualRenderer: "word");
         }
         try { if (Directory.Exists(session)) Directory.Delete(session, true); } catch { }
         return result;
@@ -67,7 +67,7 @@ public sealed class WordRenderer
                 catch (Exception ex)
                 {
                     diagnostics.Add(new("YADG-WORD-011", $"Word finalization failed at open/refresh/save for '{input}': {ex.Message}", input));
-                    return new(false, diagnostics, version);
+                    return new(false, diagnostics, version, ActualRenderer: "word");
                 }
                 finally
                 {
@@ -77,21 +77,21 @@ public sealed class WordRenderer
                 if (!File.Exists(stagedOutput) || new FileInfo(stagedOutput).Length == 0)
                     return Fail(diagnostics, "YADG-WORD-012", $"Word did not produce a finalized DOCX for '{input}'.", version);
             }
-            var output = Path.Combine(root, "YadgWords");
+            var output = Path.Combine(stage, "YadgWords");
             Directory.CreateDirectory(output);
-            foreach (var input in inputs)
-                File.Move(Path.Combine(stage, Path.GetFileName(input)), Path.Combine(output, Path.GetFileName(input)), true);
-            return new(true, diagnostics, version);
+            foreach (var input in inputs) File.Move(Path.Combine(stage, Path.GetFileName(input)), Path.Combine(output, Path.GetFileName(input)));
+            FinalizedOutputCommit.Commit(root, output, null);
+            return new(true, diagnostics, version, ActualRenderer: "word");
         }
         catch (COMException ex)
         {
             diagnostics.Add(new("YADG-WORD-004", $"Microsoft Word COM activation or interrogation failed (0x{ex.HResult:X8}): {ex.Message}"));
-            return new(false, diagnostics);
+            return new(false, diagnostics, ActualRenderer: "word");
         }
         catch (Exception ex)
         {
             diagnostics.Add(new("YADG-WORD-005", $"Microsoft Word renderer failed: {ex.Message}"));
-            return new(false, diagnostics);
+            return new(false, diagnostics, ActualRenderer: "word");
         }
         finally
         {
@@ -123,6 +123,6 @@ public sealed class WordRenderer
     private static RenderResult Fail(List<RendererDiagnostic> diagnostics, string code, string message, string? version = null)
     {
         diagnostics.Add(new(code, message));
-        return new(false, diagnostics, version);
+        return new(false, diagnostics, version, ActualRenderer: "word");
     }
 }

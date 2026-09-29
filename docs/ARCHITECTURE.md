@@ -18,6 +18,8 @@ Owns workspace/front-matter discovery, Markdown parsing, semantic objects, value
 
 It must not depend on Microsoft Word COM automation.
 
+The workspace selected by the user is trusted local input. YADG does not sandbox filesystem links or require physical containment of file-link targets. Recursive Markdown discovery prunes dot directories and `YadgTemplates`, `YadgPreWords`, `YadgWords`, and `YadgPdfs` before descent, and skips linked child directories without following them. Explicit workspace and conventional-directory paths use normal operating-system file access. Figure paths still must remain lexically inside the workspace.
+
 Markdown source heading levels remain semantic source hierarchy. Template-relative Word heading levels are an authoring concern because they depend on the concrete insertion context of each DOCX template.
 
 ## Word authoring
@@ -82,6 +84,8 @@ Mermaid output becomes an ordinary semantic figure before Word authoring.
 
 Renderers consume `YadgPreWords/*.docx` and produce finalized workspace artifacts.
 
+`YadgTemplates` is user input. `YadgPreWords`, `YadgWords`, and `YadgPdfs` are YADG-owned generated artifact sets. A successful renderer replaces the complete current `YadgWords` set; LibreOffice also replaces `YadgPdfs`, while Word clears stale PDFs. Failed attempts preserve the previous finalized sets.
+
 ### LibreOffice
 
 Existing isolated UNO renderer.
@@ -120,6 +124,8 @@ explicit filesystem destination/*.docx
 
 The publisher copies bytes; it does not open or modify Word documents.
 
+Publication reads finalized inputs and publication destination configuration only. An explicit `--publish-path` does not read `YADG.md`; a configured destination reads only the `publish.path` portion needed for delivery. Publication never loads Markdown, templates, figures, or content producers.
+
 ## Dependency direction
 
 Semantic/core and Open XML authoring must not gain renderer-specific COM dependencies.
@@ -148,4 +154,4 @@ The publisher does not execute content and defines no remote credential protocol
 
 Template presentation is resolved through one role/example model: contextual placement paragraphs, explicit prototypes, configured style/numbering resources, prepared table structures, placeholder run formatting, and compatibility defaults. `docs/specs/TEMPLATE-PRESENTATION.md` is authoritative; style IDs are implementation details and styles are one mechanism.
 
-Strict validation remains default. CLI `--yolo` for check/build/render enables only the enumerated safe recoveries and visible degradation diagnostics in `docs/specs/AUTHORING-RESILIENCE.md`. It is invocation-local and does not alter the Office-independent core's safety boundary. Semantic identity ambiguity, malformed configuration, traversal/reparse violations, and falsely claiming success remain fatal.
+Strict validation remains default. CLI `--yolo` for check/build/render enables only the enumerated safe recoveries and visible degradation diagnostics in `docs/specs/AUTHORING-RESILIENCE.md`. It is invocation-local. Semantic identity ambiguity, malformed required configuration, lexical asset escape, and falsely claiming success remain fatal. YADG does not treat filesystem links alone as a safety violation.

@@ -186,10 +186,11 @@ Remote URLs and data URIs are unsupported.
 
 The resolved asset must:
 
-- exist as a regular file;
-- resolve within the declared workspace;
-- not be a symbolic link/reparse point;
+- exist as a readable file;
+- have a lexical path within the declared workspace;
 - have a supported extension/decodable format.
+
+The selected local workspace is trusted input. A file link is usable when normal OS file access can read its content; YADG does not resolve its target to enforce physical containment. Lexical `../` escapes remain invalid. Recursive Markdown discovery does not follow linked child directories.
 
 Path normalization and validation happen before output artifacts are modified.
 
@@ -363,4 +364,4 @@ Those require later project authority.
 
 ## M0012 resilience specialization
 
-The rules above describe strict mode. Under explicit `--yolo`, missing in-workspace figure files may become visible ID/caption/path placeholders, and failed Mermaid execution may become a visible semantic figure placeholder. Path escapes, reparse points, unsupported asset kinds, malformed Markdown identity, and other security/semantic errors remain fatal. See `AUTHORING-RESILIENCE.md`.
+The rules above describe strict mode. Under explicit `--yolo`, missing in-workspace figure files may become visible ID/caption/path placeholders, and failed Mermaid execution may become a visible semantic figure placeholder. Lexical path escapes, unsupported asset kinds, malformed Markdown identity, and other semantic errors remain fatal. A link attribute alone is not an error. See `AUTHORING-RESILIENCE.md`.

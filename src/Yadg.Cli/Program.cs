@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Reflection;
 using System.Runtime.Versioning;
+using DocumentFormat.OpenXml.Packaging;
 using Yadg.Core;
 using Yadg.Word;
 using Yadg.Renderer;
@@ -49,11 +50,13 @@ public static class Program
             var useYolo = parseResult.GetValue(yolo); var loaded = WorkspaceLoader.Load(path?.FullName, useYolo);
             try
             {
-                var diagnostics = ValidateTemplates(loaded, useYolo);
+                var validation = ValidateTemplates(loaded, useYolo);
+                var diagnostics = validation.Diagnostics;
                 if (parseResult.GetValue(list)) PrintInventory(loaded);
                 PrintDiagnostics(diagnostics, loaded.Root);
                 var refs = loaded.Document.References.Count + loaded.Document.Tables.Count + loaded.Document.Figures.Count;
                 if (diagnostics.Any(d => d.IsError)) { Console.WriteLine($"check: invalid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {refs} reference(s))"); fail(); return; }
+                if (useYolo && validation.UsableTemplates == 0) { Console.Error.WriteLine("error YADG-YOLO-OUTPUT-001: No usable template remains for a useful build."); fail(); return; }
                 var degradeCount = diagnostics.Count(d => d.IsDegradation);
                 Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {refs} reference(s)){(useYolo ? $"; degradations={degradeCount}" : "")}");
             }
@@ -72,28 +75,47 @@ public static class Program
         {
             var path = parseResult.GetValue(workspace);
             var useYolo = parseResult.GetValue(yolo); var loaded = WorkspaceLoader.Load(path?.FullName, useYolo);
+            string? stageRoot = null;
             try
             {
                 PrintDiagnostics(loaded.Diagnostics, loaded.Root);
                 if (loaded.Diagnostics.Any(d => d.IsError)) { fail(); return; }
                 var output = Path.Combine(loaded.Root, "YadgPreWords");
-                Directory.CreateDirectory(output);
+                stageRoot = Path.Combine(loaded.Root, ".yadg-build-stage-" + Guid.NewGuid().ToString("N"));
+                var stageOutput = Path.Combine(stageRoot, "YadgPreWords");
+                Directory.CreateDirectory(stageOutput);
                 var written = 0; var degradationCount = loaded.Diagnostics.Count(d => d.IsDegradation);
                 foreach (var template in loaded.Templates)
                 {
                     TemplateAnalysis analysis;
                     try { analysis = WordAuthoring.Analyze(template, loaded.Document, loaded.Values.Values, useYolo); }
-                    catch (Exception ex) when (useYolo) { Console.Error.WriteLine($"degradation YADG-YOLO-TEMPLATE-001 {Path.GetRelativePath(loaded.Root, template)}: template could not be inspected safely; fallback: skip this template. Reason: {ex.Message}"); degradationCount++; continue; }
+                    catch (Exception ex)
+                    {
+                        var recoverable = IsRecoverableTemplateFailure(ex);
+                        if (useYolo && recoverable)
+                        {
+                            Console.Error.WriteLine($"degradation YADG-YOLO-TEMPLATE-001 {Path.GetRelativePath(loaded.Root, template)}: file-local access failure; fallback: skip this template. Reason: {ex.Message}");
+                            degradationCount++;
+                            continue;
+                        }
+                        PrintDiagnostics(new[] { new Diagnostic("YADG-WORD-OPEN", $"Template inspection failed; no template skip was applied. Reason: {ex.Message}", true, template) }, loaded.Root);
+                        fail(); return;
+                    }
                     PrintDiagnostics(analysis.Diagnostics, loaded.Root);
                     if (analysis.Diagnostics.Any(d => d.IsError)) { fail(); return; }
                     degradationCount += analysis.Diagnostics.Count(d => d.IsDegradation);
-                    WordAuthoring.Author(template, Path.Combine(output, Path.GetFileName(template)), loaded.Document, loaded.Values.Values, useYolo); written++;
+                    WordAuthoring.Author(template, Path.Combine(stageOutput, Path.GetFileName(template)), loaded.Document, loaded.Values.Values, useYolo); written++;
                 }
                 if (written == 0) { Console.Error.WriteLine("error YADG-YOLO-OUTPUT-001: No requested template produced a useful authored DOCX."); fail(); return; }
+                CommitPreWordOutputs(stageOutput, output);
                 Console.WriteLine($"build: wrote {written} template output(s) to {output}{(useYolo ? $"; degradations={degradationCount}" : "")}");
             }
             catch (Exception ex) { Console.Error.WriteLine(new Diagnostic("YADG-BUILD-001", $"Unable to author workspace output: {ex.Message}", true, loaded.Root)); fail(); }
-            finally { loaded.CleanupTemporaryProducerFiles(); }
+            finally
+            {
+                loaded.CleanupTemporaryProducerFiles();
+                if (stageRoot is not null && Directory.Exists(stageRoot)) try { Directory.Delete(stageRoot, true); } catch { }
+            }
         });
         return command;
     }
@@ -122,13 +144,13 @@ public static class Program
                 if (!result.Success)
                 {
                     var alternate = rendererId.Equals("word", StringComparison.OrdinalIgnoreCase) ? "libreoffice" : "word";
-                    var second = RunStagedRenderer(alternate, root, alternate == "libreoffice" ? null : null);
-                    foreach (var d in result.Diagnostics) Console.Error.WriteLine($"degradation YADG-YOLO-RENDER-001 requested={rendererId}: {d}");
+                    var second = RunStagedRenderer(alternate, root, null);
                     if (!second.Success) { foreach (var d in second.Diagnostics) Console.Error.WriteLine(d); fail(); return; }
+                    Console.Error.WriteLine($"degradation YADG-YOLO-RENDER-001: requested renderer '{rendererId}' failed; fallback: '{second.ActualRenderer}' ({second.RuntimeVersion ?? "runtime version unavailable"}).");
+                    foreach (var d in result.Diagnostics) Console.Error.WriteLine($"  detail {d}");
                     result = second;
-                    Console.Error.WriteLine($"degradation YADG-YOLO-RENDER-001: requested renderer '{rendererId}' failed; fallback: '{alternate}' ({second.RuntimeVersion ?? "runtime version unavailable"}).");
                 }
-                var actual = result.Executable is not null ? "libreoffice" : "word";
+                var actual = result.ActualRenderer;
                 foreach (var diagnostic in result.Diagnostics) Console.Error.WriteLine(diagnostic);
                 var fallbackUsed = !actual.Equals(rendererId, StringComparison.OrdinalIgnoreCase);
                 Console.WriteLine($"render: finalized PreWords; requested={rendererId}; actual={actual}; runtime={result.RuntimeVersion ?? "runtime detected"}; yolo={(fallbackUsed ? "fallback used" : "no fallback")}; degradations={(fallbackUsed ? 1 : 0)}");
@@ -153,28 +175,82 @@ public static class Program
         {
             var path = parseResult.GetValue(workspace);
             var destination = parseResult.GetValue(publishPath);
-            var loaded = WorkspaceLoader.Load(path?.FullName);
-            try
+            var root = Path.GetFullPath(path?.FullName ?? Directory.GetCurrentDirectory());
+            var diagnostics = new List<Diagnostic>();
+            string? configured = null;
+            if (destination is null)
             {
-                var result = Publisher.Publish(loaded, destination?.FullName);
-                PrintDiagnostics(result.Diagnostics, loaded.Root);
-                if (!result.Success) { fail(); return; }
-                Console.WriteLine($"publish: copied {result.PublishedCount} finalized DOCX file(s) to {result.Destination}");
+                var marker = Path.Combine(root, "YADG.md");
+                if (File.Exists(marker)) configured = WorkspaceValuesParser.ParsePublishPath(marker, diagnostics);
+                else diagnostics.Add(new("YADG-PUBLISH-009", $"Missing YADG.md needed to read publish.path: '{marker}'.", true, marker));
             }
-            finally { loaded.CleanupTemporaryProducerFiles(); }
+            if (diagnostics.Any(d => d.IsError)) { PrintDiagnostics(diagnostics, root); fail(); return; }
+            var result = Publisher.Publish(root, destination?.FullName, configured);
+            PrintDiagnostics(result.Diagnostics, root);
+            if (!result.Success) { fail(); return; }
+            Console.WriteLine($"publish: copied {result.PublishedCount} finalized DOCX file(s) to {result.Destination}");
         });
         return command;
     }
 
-    private static IReadOnlyList<Diagnostic> ValidateTemplates(YadgWorkspace workspace, bool yolo = false)
+    private sealed record TemplateValidation(IReadOnlyList<Diagnostic> Diagnostics, int UsableTemplates);
+
+    private static TemplateValidation ValidateTemplates(YadgWorkspace workspace, bool yolo = false)
     {
         var diagnostics = workspace.Diagnostics.ToList();
+        var usable = 0;
         foreach (var template in workspace.Templates)
         {
-            try { diagnostics.AddRange(WordAuthoring.Analyze(template, workspace.Document, workspace.Values.Values, yolo).Diagnostics); }
-            catch (Exception ex) { diagnostics.Add(new(yolo ? "YADG-YOLO-TEMPLATE-001" : "YADG-WORD-OPEN", $"Cannot inspect DOCX template: {ex.Message}" + (yolo ? "; fallback: skip this template." : ""), !yolo, template) { IsDegradation = yolo }); }
+            try
+            {
+                var analysis = WordAuthoring.Analyze(template, workspace.Document, workspace.Values.Values, yolo);
+                diagnostics.AddRange(analysis.Diagnostics);
+                if (analysis.IsValid) usable++;
+            }
+            catch (Exception ex)
+            {
+                var recoverable = IsRecoverableTemplateFailure(ex);
+                var degradation = yolo && recoverable;
+                diagnostics.Add(new(degradation ? "YADG-YOLO-TEMPLATE-001" : "YADG-WORD-OPEN", degradation ? $"Template cannot be read due to a file-local access failure; fallback: skip this template. Reason: {ex.Message}" : $"Template inspection failed ({(recoverable ? "file-local access failure" : "unsafe/corrupt or unexpected failure")}); no template skip was applied. Reason: {ex.Message}", !degradation, template) { IsDegradation = degradation });
+            }
         }
-        return diagnostics;
+        return new(diagnostics, usable);
+    }
+
+    private static bool IsRecoverableTemplateFailure(Exception ex)
+    {
+        if (ex is OpenXmlPackageException or InvalidDataException) return false;
+        return ex is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException or IOException;
+    }
+
+    private static void CommitPreWordOutputs(string stagedOutput, string outputDirectory)
+    {
+        Directory.CreateDirectory(outputDirectory);
+        var backupDirectory = Path.Combine(Path.GetDirectoryName(stagedOutput)!, "previous-docx");
+        Directory.CreateDirectory(backupDirectory);
+        var movedPrevious = new List<(string Original, string Backup)>();
+        var committed = new List<string>();
+        try
+        {
+            foreach (var existing in Directory.EnumerateFiles(outputDirectory, "*.docx", SearchOption.TopDirectoryOnly).ToArray())
+            {
+                var backup = Path.Combine(backupDirectory, Path.GetFileName(existing));
+                File.Move(existing, backup);
+                movedPrevious.Add((existing, backup));
+            }
+            foreach (var staged in Directory.EnumerateFiles(stagedOutput, "*.docx", SearchOption.TopDirectoryOnly).ToArray())
+            {
+                var destination = Path.Combine(outputDirectory, Path.GetFileName(staged));
+                File.Move(staged, destination);
+                committed.Add(destination);
+            }
+        }
+        catch
+        {
+            foreach (var file in committed) if (File.Exists(file)) File.Delete(file);
+            foreach (var (original, backup) in movedPrevious) if (File.Exists(backup)) File.Move(backup, original, true);
+            throw;
+        }
     }
 
     private static void PrintDiagnostics(IEnumerable<Diagnostic> diagnostics)
@@ -186,9 +262,11 @@ public static class Program
     {
         foreach (var diagnostic in diagnostics)
         {
-            var location = diagnostic.Location;
+            var location = diagnostic.StructuredLocation is { } structured && workspaceRoot is not null
+                ? structured.Format(Path.GetRelativePath(workspaceRoot, structured.FilePath).Replace('\\', '/'))
+                : diagnostic.StructuredLocation?.Format() ?? diagnostic.Location;
             var message = diagnostic.Message;
-            if (workspaceRoot is not null && location is not null)
+            if (diagnostic.StructuredLocation is null && workspaceRoot is not null && location is not null)
             {
                 var root = Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
                 message = message.Replace(root, "", StringComparison.OrdinalIgnoreCase).Replace(root.TrimEnd(Path.DirectorySeparatorChar), ".", StringComparison.OrdinalIgnoreCase);
@@ -266,7 +344,7 @@ public static class Program
             if (requested is not null) files = files.Where(f => string.Equals(Path.GetFileName(f), requested, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (files.Length == 0) { Console.Error.WriteLine("error YADG-INSPECT-001: No matching top-level DOCX template was found."); fail(); return; }
             foreach (var file in files)
-                try { foreach (var line in WordAuthoring.InspectTemplate(file)) Console.WriteLine(line); }
+                try { foreach (var line in WordAuthoring.InspectTemplate(file, root)) Console.WriteLine(line); }
                 catch (Exception ex) { Console.Error.WriteLine($"error YADG-INSPECT-003 {Path.GetRelativePath(root, file)}: {ex.Message}"); fail(); }
         });
         command.Add(styles); command.Add(templateCommand); return command;
@@ -281,29 +359,10 @@ public static class Program
             foreach (var input in Directory.EnumerateFiles(Path.Combine(workspaceRoot, "YadgPreWords"), "*.docx", SearchOption.TopDirectoryOnly)) File.Copy(input, Path.Combine(stage, "YadgPreWords", Path.GetFileName(input)), true);
             var result = rendererId.Equals("word", StringComparison.OrdinalIgnoreCase) ? new WordRendererEngine().Render(stage) : new LibreOfficeRenderer().Render(stage, rendererPath);
             if (!result.Success) return result;
-            var outputs = new List<(string Source, string Destination)>();
-            foreach (var dir in new[] { "YadgWords", "YadgPdfs" })
-                if (Directory.Exists(Path.Combine(stage, dir))) foreach (var file in Directory.EnumerateFiles(Path.Combine(stage, dir), "*", SearchOption.TopDirectoryOnly)) outputs.Add((file, Path.Combine(workspaceRoot, dir, Path.GetFileName(file))));
-            var backups = new List<(string Destination, string Backup)>(); var committed = new List<string>();
-            try
-            {
-                foreach (var (source, destination) in outputs)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    if (File.Exists(destination)) { var backup = Path.Combine(stage, "backup-" + Guid.NewGuid().ToString("N")); File.Move(destination, backup); backups.Add((destination, backup)); }
-                    File.Move(source, destination); committed.Add(destination);
-                }
-                foreach (var item in backups) if (File.Exists(item.Backup)) File.Delete(item.Backup);
-            }
-            catch
-            {
-                foreach (var destination in committed) if (File.Exists(destination)) File.Delete(destination);
-                foreach (var (destination, backup) in backups) if (File.Exists(backup)) { Directory.CreateDirectory(Path.GetDirectoryName(destination)!); File.Move(backup, destination, true); }
-                throw;
-            }
+            FinalizedOutputCommit.Commit(workspaceRoot, Path.Combine(stage, "YadgWords"), result.ActualRenderer == "libreoffice" ? Path.Combine(stage, "YadgPdfs") : null);
             return result;
         }
-        catch (Exception ex) { return new(false, new[] { new RendererDiagnostic("YADG-YOLO-STAGE-001", $"Staged renderer output could not be committed safely: {ex.Message}") }); }
+        catch (Exception ex) { return new(false, new[] { new RendererDiagnostic("YADG-YOLO-STAGE-001", $"Staged renderer output could not be committed safely: {ex.Message}") }, ActualRenderer: rendererId); }
         finally { try { if (Directory.Exists(stage)) Directory.Delete(stage, true); } catch { } }
     }
 }

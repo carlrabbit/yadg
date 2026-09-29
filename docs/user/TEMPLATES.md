@@ -55,7 +55,7 @@ Presentation may come from the placement paragraph, a list/caption/prepared-tabl
 styles:
   lists:
     unordered: "List Bullet 2" # must have actual bullet numbering
-    ordered: "List Number"     # must have actual decimal numbering
+    ordered: "List Number"     # must resolve to any real ordered Word numbering format
 ```
 
 The UI name and internal ID may differ. `inspect styles` shows both. A name alone does not prove a numbering definition is usable.

@@ -26,6 +26,8 @@ For the full workflow see [Getting started](GETTING-STARTED.md), and for support
 
 `--yolo` is opt-in for `check`, `build`, and `render`; normal commands remain strict. A `degradation YADG-YOLO-*` line states both the issue and the selected fallback. Successful YOLO commands report a degradation count. Fix degradations before production/CI runs.
 
-YOLO cannot resolve duplicate/ambiguous semantic IDs, malformed `YADG.md`, workspace/path traversal or reparse violations, unsafe/corrupt DOCX packages, unsafe publication destinations, no-output cases, or a failed pair of renderers. `publish` never publishes `YadgPreWords`. These failures remain errors in YOLO mode.
+YOLO cannot resolve duplicate/ambiguous semantic IDs, malformed required `YADG.md` configuration, lexically escaping figure paths, unsafe/corrupt DOCX packages, unsafe publication destinations, no-output cases, or a failed pair of renderers. A file symlink/reparse attribute alone is not an error. Recursive source discovery skips linked child directories and prunes dot and YADG artifact directories. `publish` reads finalized `YadgWords` only and never publishes `YadgPreWords`.
+
+`YadgTemplates` contains user template inputs. `YadgPreWords`, `YadgWords`, and `YadgPdfs` are complete YADG-generated result sets; successful build/render replaces them. Keep unrelated persistent files elsewhere.
 
 For a DOCX error, `yadg inspect template` and the diagnostic location show the story, nearest template heading path, searchable text excerpt, and supplemental paragraph ordinal where available.

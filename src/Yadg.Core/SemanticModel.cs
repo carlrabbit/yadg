@@ -3,7 +3,19 @@ namespace Yadg.Core;
 public sealed record Diagnostic(string Code, string Message, bool IsError = true, string? Location = null)
 {
     public bool IsDegradation { get; init; }
-    public override string ToString() => Location is null ? $"{(IsError ? "error" : "warning")} {Code}: {Message}" : $"{(IsError ? "error" : "warning")} {Code} {Location}: {Message}";
+    public DocxLocation? StructuredLocation { get; init; }
+    public Diagnostic(string code, string message, bool isError, DocxLocation location) : this(code, message, isError, location.FilePath) => StructuredLocation = location;
+    public override string ToString() => Location is null ? $"{(IsError ? "error" : "warning")} {Code}: {Message}" : $"{(IsError ? "error" : "warning")} {Code} {StructuredLocation?.Format() ?? Location}: {Message}";
+}
+
+public sealed record DocxLocation(string FilePath, string Story, IReadOnlyList<string> HeadingContext, int? Ordinal, string Excerpt, string? PackagePart = null, string? ParagraphId = null)
+{
+    public string Format(string? displayPath = null)
+    {
+        var context = HeadingContext.Count == 0 ? "" : " > " + string.Join(" > ", HeadingContext.Select(heading => $"\"{heading.Replace("\"", "\\\"", StringComparison.Ordinal)}\""));
+        var ordinal = Ordinal is int value ? $" > paragraph {value}" : "";
+        return $"{displayPath ?? FilePath}\n{Story}{context}{ordinal}\nnear: \"{Excerpt}\"";
+    }
 }
 
 public abstract record YadgBlock;

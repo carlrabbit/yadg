@@ -27,7 +27,7 @@ yadg render --renderer word
 yadg publish --publish-path ./Published
 ```
 
-`init` never overwrites `YADG.md`, `content.md`, or `YadgTemplates/`. `check` validates without producing outputs; `build` creates authored DOCX; `render` finalizes; `publish` copies finalized DOCX files. Publishing does not build or render.
+`init` never overwrites `YADG.md`, `content.md`, or `YadgTemplates/`. `check` validates without producing outputs; `build` replaces the generated authored DOCX set; `render` replaces the complete finalized DOCX/PDF sets for its actual renderer; `publish` copies finalized DOCX files without loading current authoring inputs or running producers. Keep unrelated persistent files outside generated artifact directories.
 
 ## User guides
 

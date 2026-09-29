@@ -2,229 +2,242 @@
 
 ## Status
 
-Authoritative for YADG 1.1 template-presentation resolution after the M0012 correction.
+Authoritative for YADG 1.1 template-presentation resolution after M0012 corrections.
 
-This supersedes narrower statements that make Word style lookup the primary presentation model.
-
-`TEMPLATE-STYLES.md` remains authoritative for concrete style discovery and exact selector mechanics where it does not conflict here.
+This supersedes narrower statements that make style lookup or per-command ad hoc resolution the presentation model.
 
 ## Principle
 
 YADG is template-first.
 
-A template may communicate presentation through:
+Presentation can come from:
 
 - placement/context paragraphs;
 - explicit YADG prototypes;
 - Word styles;
 - numbering definitions;
 - prepared table structures;
-- placeholder run formatting;
-- template-owned Word fields/structures.
+- placeholder-run formatting;
+- template-owned fields/structures;
+- explicit built-in YOLO fallback examples.
 
-These are mechanisms beneath one product model:
+These are mechanisms under one semantic presentation resolver.
 
-> Resolve each semantic presentation role from the best applicable template-owned example/resource. Under explicit YOLO mode, continue through deterministic related resources and versioned built-in fallback examples.
+## Single source of truth
 
-Styles are one presentation mechanism, not the product model.
+Strict validation, actual authoring, `inspect template`, and YOLO preview consume the same semantic presentation result.
 
-## Terms
+They must not independently answer whether a role is resolved.
 
-### Semantic presentation role
-
-Examples:
+Implementation structure is free, but behavior must be equivalent to:
 
 ```text
-body paragraph
-heading level 1..9
-unordered list item
-ordered list item
-generated table
-prepared table row
-figure caption
-table caption
-inline code
-value replacement run
+ResolvePresentation(role, template, context, mode)
+    -> PresentationResolution
 ```
 
-### Template example
-
-A concrete template structure cloned or inherited for its presentation/Word mechanics.
-
-Examples include placement paragraphs, caption prototypes, list-item prototypes, prepared-table prototype rows, and placeholder runs.
-
-### Contextual example
-
-Presentation inherited from the concrete insertion location without a separately named prototype.
-
-### Configured resource
-
-A template-owned resource selected through front matter, such as a paragraph/character/table style.
-
-### Built-in fallback example
-
-A conservative, versioned YADG example used only under explicit YOLO when no safe template-owned resource satisfies the role.
-
-### Degradation
-
-A non-fatal YOLO recovery that changes fidelity/presentation/runtime choice while retaining truthful content.
-
-## Resolution
-
-### Strict
+with enough data to express:
 
 ```text
-explicit template example/prototype
--> contextual template example where applicable
+role
+strict status
+selected source kind
+selected source identifier/name
+capability
+YOLO related candidate
+YOLO built-in fallback
+diagnostics
+```
+
+## Source kinds
+
+A role may resolve through:
+
+```text
+prototype
+contextual-example
+configured-resource
+compatibility-default
+related-template-resource   # YOLO only
+builtin-fallback            # YOLO only
+plain-representation        # YOLO only
+visible-placeholder         # YOLO only where defined
+```
+
+## Strict resolution
+
+Role-specific precedence is authoritative.
+
+Generic shape:
+
+```text
+explicit prototype/example
+-> contextual example where applicable
 -> configured resource
--> existing role-specific compatibility default
+-> role-specific compatibility default
 -> error
 ```
 
-Older role-specific precedence remains where established; e.g. an explicit list-item prototype stays authoritative over list-style binding.
+A source earlier in the chain suppresses irrelevant later requirements.
 
-Strict never uses heuristic related-resource selection or built-in YOLO examples.
+A valid `unorderedListItem` prototype means the unordered-list role is strictly resolved even if the configured/default list style is absent. The same rule applies to ordered-list and caption prototypes and prepared-table/contextual examples.
 
-### YOLO
+## YOLO resolution
 
-YOLO first runs the complete strict chain.
+YOLO first evaluates the complete strict chain.
 
-If strict fails for a recoverable presentation reason:
+If strict resolution fails for a recoverable presentation reason:
 
 ```text
-compatible related template example/resource
--> versioned built-in fallback example
--> plain/unformatted truthful representation
--> visible placeholder when the semantic object cannot otherwise be represented
--> degradation diagnostic
+compatible related template resource
+-> versioned built-in fallback
+-> plain truthful representation
+-> visible placeholder where defined
+-> degradation
 ```
 
-A step is skipped when it would fabricate meaning.
+YOLO does not change strict selector matching rules.
 
-## Determinism
+## List capability
 
-Identical template/workspace/YADG version/mode must yield identical fallback selection.
+### Unordered
 
-Only type/capability-compatible candidates qualify.
+A usable unordered-list source has effective real Word numbering whose effective level is bullet format.
 
-Capability outranks names.
+### Ordered
 
-Within equal capability:
+A usable ordered-list source has effective real Word ordered numbering and is not restricted to decimal.
 
-1. stronger role-specific semantic/name hint;
-2. normalized visible name;
-3. internal style/resource ID.
+Roman, alphabetic, decimal variants, and other Word ordered formats qualify when the effective level represents a visible ordered sequence.
 
-Do not expose runtime enumeration or hash-map order as fallback behavior.
+Bullet and explicit no-numbering/plain formats do not qualify.
+
+The same capability classifier is used by:
+
+- strict validation;
+- related-candidate discovery;
+- authoring;
+- `inspect template`.
 
 ## Role contracts
 
-### Ordinary paragraph
+### Ordinary/contextual paragraph
 
-Preferred source is the concrete placement/insertion paragraph and its paragraph/run properties.
+Preferred source:
 
-YOLO fallback identity:
+```text
+contextual placement/insertion paragraph
+```
+
+YOLO fallback:
 
 ```text
 builtin:plain-v1
 ```
 
-meaning ordinary paragraph/plain run presentation without claiming template ownership.
-
-### Headings
+### Heading
 
 Strict:
 
 ```text
-configured heading role
--> HeadingN compatibility default
+configured heading resource
+-> existing HeadingN compatibility default
 -> error
 ```
 
-YOLO may choose a paragraph style with matching effective outline level.
+A heading resource's effective outline level is resolved using direct and inherited style semantics.
 
-If none exists, it may preserve heading text in a plain paragraph with the necessary direct outline level when structurally safe. This does not prove numbering/TOC fidelity; numeric section references follow actual resulting numbering capability and are never invented.
+YOLO may select a compatible paragraph style with the required effective outline level.
 
-### Unordered list item
+If none exists and structurally safe, use plain paragraph presentation with direct outline level as a degradation.
+
+### Unordered list
 
 Strict:
 
 ```text
-explicit unorderedListItem prototype
--> configured/default unordered list style with valid bullet numbering
+unorderedListItem prototype
+-> configured/default bullet-capable paragraph style/resource
 -> error
 ```
 
 YOLO:
 
 ```text
-usable template bullet-list example/style
+compatible related bullet resource
 -> builtin:unordered-list-v1
--> plain paragraph preserving item content
+-> plain item paragraphs
 ```
 
-The built-in uses real Word numbering, not literal bullet text.
-
-### Ordered list item
+### Ordered list
 
 Strict:
 
 ```text
-explicit orderedListItem prototype
--> configured/default ordered list style with valid ordered numbering
+orderedListItem prototype
+-> configured/default ordered-numbering paragraph style/resource
 -> error
 ```
 
 YOLO:
 
 ```text
-usable template ordered-list example/style
+compatible related ordered-numbering resource
 -> builtin:ordered-list-v1
--> plain paragraph preserving item content
+-> plain item paragraphs
 ```
-
-The built-in uses real single-level decimal numbering, not literal number text.
 
 ### Generated table
 
-Strict generated-table style behavior remains.
+Strict uses configured/default table presentation.
 
-Prepared-table behavior remains governed by the prepared-table contract.
+YOLO may select another compatible table style, then a structurally valid unstyled table.
 
-YOLO may choose another concrete table style if the selected style is unavailable. If none exists, an otherwise valid generated table may be emitted without a table-style reference.
+### Prepared table
 
-If a prepared-table prototype is unusable but the semantic table is available and placement is unambiguous, YOLO may render a generated table at that placement after emitting a degradation.
+The prepared-table prototype row owns its row presentation.
 
-### Captions
+If the prepared prototype is unusable and the semantic table is unambiguous, YOLO may degrade to generated-table rendering.
 
-Numbered captions prefer explicit caption prototypes because the prototype owns real `SEQ` semantics, label text, punctuation and presentation.
+Inspection reports whichever source authoring actually uses.
 
-Existing plain-caption fallback remains where already allowed.
+### Caption
 
-YOLO may degrade to a plain caption paragraph.
+Strict:
 
-If numeric target semantics cannot truthfully be established, YADG does not invent a number; the reference is handled as visibly unresolved by `AUTHORING-RESILIENCE.md`.
+```text
+figure/table caption prototype
+-> existing role-specific plain/style fallback where already allowed
+-> error when required semantics cannot be established
+```
+
+A valid caption prototype owns SEQ semantics and presentation. Missing caption style is irrelevant when the prototype fully owns the role.
+
+YOLO may degrade to a plain caption; numeric semantics are never invented.
 
 ### Inline code
 
-Strict `markdown.codeInline: style` requires the configured `codeInline` character style.
+Strict:
+
+```text
+configured codeInline character style
+-> error when policy=style
+```
 
 YOLO:
 
 ```text
-compatible character style with strong code/source/monospace hint
--> ordinary run/plain text
+compatible related code/source/monospace character style
+-> ordinary text
 ```
-
-Do not choose arbitrary unrelated character styles.
 
 ### Value replacement
 
-Existing base-format rule remains: the run containing the first logical tag character is the formatting example.
+Existing placeholder-run formatting remains the contextual example.
 
-YOLO never invents a missing value.
+Missing-value recovery is governed by resilience, not by inventing content.
 
-## Built-in fallback examples
+## Built-in fallbacks
 
 Required identities:
 
@@ -234,70 +247,61 @@ builtin:unordered-list-v1
 builtin:ordered-list-v1
 ```
 
-Storage is implementation-owned (code, packaged resource, OOXML fragment, etc.).
+List built-ins use real numbering definitions.
 
-Built-ins:
+They are:
 
-- are never used in strict mode;
-- are visually conservative;
-- are never reported as template-owned;
-- are visible through `inspect template` when they would be selected;
-- are covered by both Word and LibreOffice compatibility tests.
-
-YOLO list built-ins may create/import the minimal numbering definitions needed for their own example. This narrow exception does not change strict template-owned numbering behavior.
+- YOLO-only;
+- versioned;
+- inspectable;
+- clearly identified as implementation-owned, not template-owned;
+- tested through Word and LibreOffice.
 
 ## `inspect template`
 
-Add:
+`inspect template` consumes the same presentation resolution used by strict analysis/authoring.
+
+It reports semantic roles, not competing raw mechanisms.
+
+Example with prototype:
 
 ```text
-yadg inspect template [--workspace <path>] [--template <filename.docx>]
+unordered-list
+  strict: resolved
+  source: prototype
+  id: bullet-item
+  near: "{{item}}"
 ```
 
-This presents YADG's semantic view of the template.
+It must not also claim the role is unresolved because `ListBullet` is absent.
 
-At minimum report:
-
-### Template/control structure
-
-- front-matter/control region presence;
-- placement tags and type/ID;
-- prototype IDs and recognized role;
-- prepared-table markers where discoverable;
-- other template-owned authoring structures useful for diagnosis.
-
-### Presentation roles
-
-For each relevant role:
-
-- configured selector/prototype;
-- strict resolved source/status;
-- visible name/internal ID/type for style-backed resolution;
-- numbering/outline capability where relevant;
-- YOLO candidate/fallback preview if strict fails.
-
-Example:
+Example without prototype:
 
 ```text
 unordered-list
   configured: ListBullet
   strict: unresolved
   yolo:
-    template candidate: "List Bullet 2" (id=ListBullet2, bullet numbering)
-    builtin fallback: builtin:unordered-list-v1
+    related: "Corporate Bullet" (id=CorpBullet)
+    builtin: builtin:unordered-list-v1
 ```
 
-### Human locations
+Raw style inventory remains the job of `yadg inspect styles`.
 
-Entries use story/container + heading context + searchable nearby text + supplemental structural ordinal.
+## Human location context
 
-Exact output is human-readable, not a stable machine serialization.
+Presentation inspection and Word diagnostics use the shared structured location model.
 
-## Human DOCX locator
+For body content, nearest heading path derives from effective outline semantics, including:
 
-Prefer recognizable/searchable content over bare ordinals.
+- direct paragraph outline level;
+- paragraph style outline level;
+- inherited `basedOn` outline level;
+- equivalent heading semantics already used by document composition.
 
-Example:
+Literal `Heading1`...`Heading9` IDs are not required.
+
+Visible shape:
 
 ```text
 YadgTemplates/report.docx
@@ -305,50 +309,26 @@ body > "Risk Model" > "Assumptions" > paragraph 16
 near: "Missing values are treated as..."
 ```
 
-Other story:
+CLI keeps the file path workspace-relative.
 
-```text
-YadgTemplates/report.docx
-default footer > paragraph 2
-near: "Document version: {{value:document-version}}"
-```
+## Deterministic related-resource selection
 
-Prototype:
+Only capability-compatible resources qualify.
 
-```text
-YadgTemplates/report.docx
-prototype "bullet-item"
-near: "{{item}}"
-```
+Within equally capable candidates:
 
-Excerpt rules:
+1. stronger role-specific semantic/name hint;
+2. normalized visible name;
+3. internal ID.
 
-- collapse whitespace;
-- omit control characters;
-- keep bounded length;
-- avoid dumping long document contents;
-- retain enough literal text for Word Find where practical.
-
-Package part, paragraph ordinal and `w14:paraId` may be retained as secondary machine data.
-
-## Relationship to `inspect styles`
-
-`inspect styles` answers:
-
-> Which concrete serialized styles exist and what are their IDs/names/aliases/capabilities?
-
-`inspect template` answers:
-
-> What YADG structures/presentation roles exist, what will strict mode use, and what would YOLO do?
-
-Neither command executes external content producers.
+Do not use incidental document/hash-map enumeration order.
 
 ## Compatibility
 
-Existing valid template bindings remain valid.
+Existing valid strict templates remain valid.
 
-Strict mode does not gain fuzzy/heuristic matching merely because YOLO exists.
+These corrections remove contradictory duplicate resolution logic; they do not make YOLO heuristics part of strict mode.
 
 ## Non-goals
 
-This spec does not create a GUI/template editor, promise every Word gallery item is addressable, or make built-in YOLO styling a production/template-design substitute.
+This specification does not create a GUI template editor or make fallback examples a substitute for production template design.

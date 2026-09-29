@@ -2,27 +2,40 @@
 
 ## Status
 
-Authoritative for explicit YOLO recovery introduced by the M0012 correction.
+Authoritative for YADG 1.1 resilience after M0012 corrections.
 
-Strict mode remains authoritative when `--yolo` is absent.
+Strict mode remains default and authoritative when `--yolo` is absent.
 
 ## Purpose
 
-YADG must serve two different questions.
+Strict asks:
 
-Strict:
+> Is this production-correct?
 
-> Is this workspace/template/runtime production-correct under the configured contract?
+YOLO asks:
 
-YOLO:
+> What is the best useful artifact YADG can safely and truthfully produce now?
 
-> What is the best useful artifact YADG can safely produce from what I currently have?
+YOLO is not silent exception swallowing.
 
-YOLO is an authoring escape hatch, not silent error suppression.
+## Trusted local workspace
+
+YADG is a local user-scope authoring tool. The workspace selected by the user is trusted input; YADG is not a hostile-filesystem sandbox.
+
+Accordingly:
+
+- ordinary file symlinks/reparse points are not fatal merely for being links;
+- the workspace root and explicitly addressed conventional directories may be reached through links/junctions;
+- recursive discovery does not follow linked/reparse child directories, to avoid cycles/duplicate/unbounded traversal;
+- linked recursive directories may be skipped with a non-fatal warning;
+- explicit asset paths that lexically escape the workspace remain invalid for portability/reproducibility;
+- YADG does not resolve final symlink targets merely to establish physical containment.
+
+The inability of a Windows test account to create symlinks is not an acceptance failure.
 
 ## Activation
 
-YOLO is invocation-local:
+Invocation-local only:
 
 ```text
 yadg check --yolo
@@ -30,202 +43,109 @@ yadg build --yolo
 yadg render --yolo
 ```
 
-M0012 does not persist YOLO in `YADG.md`.
+No persistent YOLO mode is introduced.
 
-`init`, `inspect styles`, and `inspect template` do not need YOLO.
+## Degradation model
 
-`publish` remains finalized-artifact-only and has no PreWord fallback.
+A recovered strict failure becomes one explicit logical degradation event.
 
-## Degradation diagnostics
+Each event contains:
 
-A recovered strict error becomes a visible degradation.
-
-Example:
-
-```text
-degradation YADG-YOLO-LIST-001 YadgTemplates/report.docx:
-style "ListBullet" is unavailable; fallback: builtin:unordered-list-v1
-```
-
-Each degradation identifies:
-
+- code;
 - original problem;
 - selected fallback;
-- location/context where available.
+- location/context where available;
+- optional detail diagnostics.
 
-Successful YOLO commands summarize the number of degradations.
+Command summaries count logical degradation events consistently.
 
-## Exit semantics
+## Template failure classification
 
-### Check
-
-`check --yolo` succeeds when every otherwise-fatal problem is absent or covered by a defined safe YOLO recovery.
-
-It does not rewrite files.
-
-### Build
-
-`build --yolo` succeeds when no fatal global boundary is crossed and at least one requested template produces a useful authored DOCX.
-
-A recoverable failed template may be skipped while other templates continue; the skip is a degradation.
-
-If no authored DOCX is produced, build fails.
-
-### Render
-
-`render --yolo` succeeds when the requested renderer succeeds or the alternate supported renderer successfully finalizes all authored inputs for that invocation.
-
-If both fail, render fails.
-
-`YadgPreWords` is never promoted to finalized output merely to make YOLO succeed.
-
-### Publish
-
-Publishing remains:
+Do not implement YOLO template handling as:
 
 ```text
-YadgWords/*.docx
+catch any exception -> skip template
 ```
 
-only.
+Failures are classified.
 
-A DOCX finalized by an alternate renderer under YOLO is still finalized and publishable.
+A file-local condition may be skipped under YOLO when it can be isolated safely, another usable template remains, and skipping requires no semantic guess.
+
+Corrupt/unreadable state that prevents safe DOCX handling and unknown unexpected implementation failures remain errors rather than being silently normalized to a skip.
+
+## `check --yolo`
+
+Check succeeds only if:
+
+- all remaining issues are either non-fatal or safely recovered; and
+- at least one template is usable for a potential build.
+
+If every template is skipped/unusable, check fails explicitly.
+
+## `build --yolo`
+
+Build succeeds only if at least one requested template produces an authored DOCX and no fatal global boundary is crossed.
+
+A recoverable template may be skipped.
+
+### Complete PreWord result set
+
+On successful strict or YOLO build:
+
+```text
+YadgPreWords/*.docx
+```
+
+represents exactly the outputs produced by that invocation.
+
+Stale prior outputs do not survive.
+
+Use staging/commit or equivalent result-set replacement. If build fails before commit, do not leave a partially new set.
 
 ## Recovery catalog
 
-### Presentation resources
+Retain the defined recoveries:
 
-Use `TEMPLATE-PRESENTATION.md`.
+- presentation-resource fallback through `TEMPLATE-PRESENTATION.md`;
+- thematic-break omission;
+- inline-code related style/plain text;
+- missing value token preserved visibly;
+- unresolved reference preserved visibly;
+- missing in-workspace figure asset -> visible placeholder;
+- Mermaid producer failure -> visible placeholder;
+- missing/unusable list presentation -> related resource/built-in/plain;
+- caption semantics -> plain caption without invented numbering;
+- recoverable single-template skip when another useful output remains.
 
-YOLO may select a compatible related template resource, use a built-in fallback example, or preserve content plainly.
+## Fatal boundaries
 
-### Thematic break
+Still fatal:
 
-If strict policy would error, YOLO may omit the thematic break and emit a degradation.
+- malformed required configuration that cannot be interpreted for the operation;
+- duplicate/ambiguous semantic identity;
+- explicit lexical workspace asset escape;
+- corrupt DOCX state that prevents safe handling;
+- recovery requiring fabricated semantic meaning;
+- no usable template/output;
+- both supported renderers failing;
+- false claims that an operation succeeded.
 
-### Inline code
-
-If configured presentation cannot be satisfied:
-
-1. use a compatible related code/source/monospace character style if safely identifiable;
-2. otherwise preserve code content as ordinary text.
-
-Never drop the code content.
-
-### Missing workspace value
-
-Strict remains error.
-
-YOLO preserves the original visible token:
-
-```text
-{{value:missing-id}}
-```
-
-and emits a degradation.
-
-It does not invent empty/guessed content.
-
-### Unresolved semantic reference
-
-Strict remains error.
-
-YOLO preserves an obvious visible unresolved representation equivalent to the source identity, e.g.:
-
-```text
-[@missing-id]
-```
-
-It does not invent a target or number.
-
-Duplicate/ambiguous target identity is fatal because choosing one would fabricate meaning.
-
-### Missing ordinary figure asset
-
-If the path itself is valid and inside the workspace but the file is absent/unreadable, YOLO may emit a visible placeholder containing:
-
-- stable figure ID;
-- caption/alt text where available;
-- short failure reason.
-
-Example:
-
-```text
-[YADG figure "system-context" unavailable: images/system-context.png]
-```
-
-Path escape/reparse/security violations remain fatal.
-
-### External producer failure
-
-If Mermaid/external producer execution fails/unavailable, YOLO may emit a visible placeholder semantic figure rather than dropping the object.
-
-The producer failure remains visible as a degradation.
-
-YOLO does not substitute an arbitrary unconfigured executable.
-
-### List presentation
-
-Resolution follows:
-
-```text
-strict prototype/style chain
--> compatible real template list resource
--> builtin unordered/ordered list fallback
--> plain item paragraphs
-```
-
-Built-in list fallbacks use real numbering.
-
-Plain fallback preserves item content.
-
-### Caption numbering
-
-YOLO may render a plain caption if numbered prototype mechanics are unavailable.
-
-A numeric reference that can no longer be established remains visibly unresolved rather than receiving an invented number.
-
-### Individual unreadable template
-
-When multiple templates exist, YOLO may skip a template for a file-local failure that can be isolated safely and continue others.
-
-A corrupt package is never modified/guessed through.
-
-If no useful authored output remains, build fails.
+A symlink/reparse attribute by itself is not a fatal boundary.
 
 ## Renderer fallback
 
-### Requested Word
+Under explicit `--yolo`:
 
 ```text
-word
--> failure/unavailable under --yolo
--> libreoffice
+word -> libreoffice
+libreoffice -> word
 ```
 
-### Requested LibreOffice
+Each attempt uses staged output.
 
-```text
-libreoffice
--> failure/unavailable under --yolo
--> word
-```
+The actual renderer identity is explicit result provenance, not inferred from incidental fields.
 
-If an explicit LibreOffice `--renderer-path` fails and Word is substituted, report both facts.
-
-### Retry safety
-
-Preserve existing renderer staging/commit behavior.
-
-Attempt fallback only after the primary renderer reports failure without committing successful-looking final output for that invocation.
-
-Do not merge partial output from primary and fallback runs.
-
-### Reporting
-
-Preserve primary diagnostics as degradation context.
-
-Successful fallback output must identify:
+Successful fallback reports:
 
 ```text
 requested renderer
@@ -234,76 +154,96 @@ actual runtime version
 YOLO fallback = yes
 ```
 
-Do not print the requested renderer as if it actually rendered the document.
+A renderer substitution is one logical degradation event. Primary renderer diagnostics may be detail lines beneath that event.
 
-### Both renderers fail
+If both renderers fail, return non-zero and do not promote PreWords.
 
-Return non-zero.
+## Finalized result-set freshness
 
-Leave PreWords untouched as authored intermediates.
+A successful render owns the complete generated finalized result set.
 
-Do not put them into `YadgWords`.
+For actual LibreOffice:
 
-## Fatal boundaries
+```text
+YadgWords/*.docx
+YadgPdfs/*.pdf
+```
 
-YOLO does not guess through:
+correspond exactly to current PreWords.
 
-- malformed workspace configuration that cannot be interpreted;
-- duplicate/ambiguous semantic identity;
-- unsafe path traversal/reparse/security conditions;
-- corrupt DOCX state that prevents safe package handling;
-- a recovery that would fabricate semantic content;
-- inability to produce any requested useful output;
-- both renderers failing;
-- unsafe publication destination;
-- external publication/authentication failures.
+For actual Word:
 
-Rule:
+```text
+YadgWords/*.docx
+```
 
-> YOLO may sacrifice presentation fidelity or runtime choice. It may not fabricate identity, bypass safety, or misstate what happened.
+correspond exactly to current PreWords and stale PDFs from earlier LibreOffice runs are absent.
 
-## Determinism
+This includes YOLO alternate-renderer success.
 
-Fallback choice is deterministic.
+Use result-set staging/commit so prior finalized artifacts are not deleted merely because a new renderer attempt started.
 
-Use the candidate eligibility/tie-break rules in `TEMPLATE-PRESENTATION.md`.
+## Publishing boundary
 
-Never define "first" by incidental enumeration order.
+Publishing is downstream of authoring.
 
-## Inspection
+`publish` does not use the authoring pipeline, parse Markdown, inspect templates, validate figures, or execute content producers.
 
-`yadg inspect template` previews relevant YOLO presentation fallbacks without changing the template.
+With explicit `--publish-path`, current authoring validity is irrelevant to an already-finalized `YadgWords` artifact.
 
-`yadg check --yolo` reports recoveries the current workspace would require.
+Without the CLI destination, only the configuration needed to obtain `publish.path` is read.
+
+## Relative/human diagnostics
+
+CLI workspace-local paths are relative.
+
+DOCX context is structured separately from the filesystem path and includes searchable nearby text/effective heading context where available.
+
+Do not make relative-path conversion depend on parsing a multiline location string.
+
+## Discovery pruning
+
+Recursive Markdown discovery does not descend into:
+
+```text
+YadgTemplates
+YadgPreWords
+YadgWords
+YadgPdfs
+dot-prefixed directories
+linked/reparse child directories
+```
+
+The first five categories are deliberately excluded source trees. Linked child directories are skipped to avoid recursive filesystem graph traversal.
+
+## Validation rules
+
+For each recoverable class, pair strict and YOLO evidence where applicable.
+
+For each true fatal boundary, prove YOLO still fails.
+
+Tests also prove:
+
+- ordinary link attributes are not rejected as fatal;
+- link creation privilege is not a product prerequisite;
+- recursive linked directories are skipped non-fatally when testable;
+- stale PreWords and finalized outputs do not survive successful result-set replacement;
+- publisher independence from authoring/producers;
+- actual renderer provenance/degradation counting.
+
+## Tier-3 fixture rule
+
+Recovery scenarios whose acceptance relies on Word-origin template behavior use committed templates actually created/saved through Microsoft Word.
+
+Direct XML/ZIP mutation may be useful for focused synthetic tests but is not authoritative Word-origin Tier-3 evidence.
 
 ## Documentation
 
-Show the intended workflow:
-
-```powershell
-# production correctness
-yadg check
-yadg build
-
-# exploratory/best effort
-yadg check --yolo
-yadg build --yolo
-yadg render --renderer word --yolo
-```
-
-Explain that production/CI normally uses strict commands.
-
-YOLO artifacts are useful for authoring progress; degradation diagnostics identify what remains to fix.
-
-## Validation rule
-
-For each recoverable class, pair strict and YOLO evidence:
+Keep the intended workflow clear:
 
 ```text
-strict -> fails
-YOLO   -> succeeds with explicit degradation
+strict = production correctness
+YOLO   = truthful best-effort authoring progress
 ```
 
-Fatal scenarios fail in both modes.
-
-Real cross-renderer fallback is validated on the declared Windows/Word/LibreOffice Tier-3 locus.
+YOLO may reduce fidelity. It may not misstate output freshness, selected renderer, semantic identity, or success.

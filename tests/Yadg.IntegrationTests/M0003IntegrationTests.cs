@@ -124,7 +124,11 @@ public sealed class M0003IntegrationTests
         styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "ListNumber", StyleParagraphProperties = new StyleParagraphProperties(new NumberingProperties(new NumberingId { Val = 2 })) });
         stylesPart.Styles = styles; stylesPart.Styles.Save();
         var numberingPart = main.AddNewPart<NumberingDefinitionsPart>();
-        numberingPart.Numbering = new Numbering(new AbstractNum { AbstractNumberId = 1 }, new AbstractNum { AbstractNumberId = 2 }, new NumberingInstance { NumberID = 1, AbstractNumId = new AbstractNumId { Val = 1 } }, new NumberingInstance { NumberID = 2, AbstractNumId = new AbstractNumId { Val = 2 } }); numberingPart.Numbering.Save();
+        numberingPart.Numbering = new Numbering(
+            new AbstractNum(new Level(new StartNumberingValue { Val = 1 }, new NumberingFormat { Val = NumberFormatValues.Bullet }, new LevelText { Val = "•" })) { AbstractNumberId = 1 },
+            new AbstractNum(new Level(new StartNumberingValue { Val = 1 }, new NumberingFormat { Val = NumberFormatValues.Decimal }, new LevelText { Val = "%1." })) { AbstractNumberId = 2 },
+            new NumberingInstance { NumberID = 1, AbstractNumId = new AbstractNumId { Val = 1 } },
+            new NumberingInstance { NumberID = 2, AbstractNumId = new AbstractNumId { Val = 2 } }); numberingPart.Numbering.Save();
         var body = new Body(new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }), new Run(new Text("Prepared template"))), new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "BodyText" }), new Run(new Text(contentTag))));
         if (direct is not null) { body.Append(new Paragraph(new Run(new Text(direct.Value.Table))), new Paragraph(new Run(new Text(direct.Value.Figure)))); }
         body.Append(new Paragraph(new Run(new Text("Unrelated template content"))), new SectionProperties(new PageSize { Width = 12240, Height = 15840 }, new PageMargin { Top = 1440, Bottom = 1440, Left = 1440, Right = 1440 }));

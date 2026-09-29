@@ -2,12 +2,12 @@
 
 ## Status
 
-Authoritative for the common renderer/finalizer boundary.
+Authoritative for the common renderer/finalizer boundary after the M0012 correction.
 
 Renderer-specific authority:
 
 - Microsoft Word: `docs/specs/WORD-RENDERER.md`
-- LibreOffice: retained M0005 behavior below.
+- LibreOffice: retained renderer behavior below.
 
 ## Boundary
 
@@ -28,10 +28,10 @@ renderer-specific finalized artifacts
 ## CLI
 
 ```text
-yadg render [--workspace <path>] [--renderer <id>] [--renderer-path <path>]
+yadg render [--workspace <path>] [--renderer <id>] [--renderer-path <path>] [--yolo]
 ```
 
-Supported IDs after M0009:
+Supported IDs:
 
 ```text
 libreoffice
@@ -42,35 +42,71 @@ Default remains `libreoffice`.
 
 `--renderer-path` applies only to LibreOffice and is invalid for Word.
 
-## Common input/output
+## Common input
 
-Renderers process top-level `YadgPreWords/*.docx` only and do not recurse.
+Renderers process top-level:
+
+```text
+YadgPreWords/*.docx
+```
+
+only and do not recurse.
 
 At least one authored DOCX is required.
 
-Renderers never modify `YadgPreWords`.
+Renderers never modify PreWords.
 
-Both renderers produce:
+## Generated output ownership
 
-```text
-YadgWords/<name>.docx
-```
+The finalized workspace directories are YADG-owned generated artifact sets.
 
-Existing corresponding outputs may be replaced after preflight; unrelated files are preserved.
+### Actual LibreOffice renderer
 
-## Renderer-specific additional output
-
-LibreOffice retains its existing:
+A successful invocation produces the complete current set:
 
 ```text
-YadgPdfs/<name>.pdf
+YadgWords/<current-preword-name>.docx
+YadgPdfs/<current-preword-name>.pdf
 ```
 
-output from the same refreshed session.
+for every current top-level PreWord.
 
-The Microsoft Word renderer introduced by M0009 creates finalized DOCX only.
+No stale finalized DOCX/PDF from an earlier render remains after successful completion.
 
-PDF is therefore renderer-specific, not a generic publication requirement.
+### Actual Microsoft Word renderer
+
+A successful invocation produces the complete current set:
+
+```text
+YadgWords/<current-preword-name>.docx
+```
+
+for every current top-level PreWord.
+
+Because Word does not produce PDF, a successful Word render leaves no stale YADG-generated PDF from a previous LibreOffice render in `YadgPdfs`.
+
+### Renderer fallback
+
+When YOLO falls back to the alternate renderer, output ownership follows the **actual** renderer, not the requested renderer.
+
+## Result-set commit
+
+The renderer may stage individual document processing however it chooses, but successful workspace commit is a complete result-set replacement.
+
+The required invariant is:
+
+```text
+success
+=> generated finalized directories reflect this invocation only
+```
+
+Do not preserve unrelated/stale files inside YADG-generated artifact directories.
+
+Do not delete the prior committed result set merely because a new renderer attempt has begun.
+
+A failed renderer attempt does not claim a new finalized set.
+
+Preserving the previous committed result set after failure is preferred and is required for the staged YOLO fallback path.
 
 ## Common finalization goal
 
@@ -80,13 +116,13 @@ A successful renderer establishes current observable values for supported Word-n
 - semantic references;
 - section-number references;
 - template-owned indexes where supported;
-- pagination-dependent state required for those displayed results.
+- pagination-dependent state required for displayed results.
 
 Exact APIs differ by renderer.
 
 ## LibreOffice retained behavior
 
-M0005 LibreOffice behavior remains:
+LibreOffice retains:
 
 - isolated temporary user profile;
 - local UNO/API connection;
@@ -96,7 +132,7 @@ M0005 LibreOffice behavior remains:
 - PDF export;
 - bounded startup/operation;
 - concrete runtime/OS provenance;
-- real-runtime validation for LibreOffice claims.
+- real-runtime validation.
 
 ## Microsoft Word specialization
 
@@ -106,21 +142,52 @@ The authoritative Word locus is an interactive Windows user session with desktop
 
 ## Failure semantics
 
-Each renderer preflights its required runtime before corresponding normal outputs are modified.
+Each renderer preflights its required runtime before committing a new finalized result set.
 
 Runtime/open/refresh/save/export failures produce actionable diagnostics and non-zero status.
 
-Rollback of completed sibling documents is not required.
-
 Temporary/incomplete outputs are not successful outputs.
+
+## Explicit renderer fallback under YOLO
+
+Strict `render` uses only the requested renderer.
+
+`render --yolo` may try the other supported renderer after the requested renderer fails.
+
+Each attempt operates on staged copies of the authored input; failed attempt outputs are discarded before fallback.
+
+If both fail, render fails and authored intermediates remain intermediates.
+
+Successful fallback reports explicitly:
+
+```text
+requested renderer
+actual renderer
+actual runtime version
+YOLO fallback = yes
+```
+
+The actual renderer identity is carried explicitly in renderer/result state and is not inferred from nullable executable/path fields.
+
+One renderer substitution is one logical degradation event; primary diagnostics may be attached as details.
 
 ## Publication boundary
 
 Rendering creates finalized workspace artifacts.
 
-Publishing is a separate M0009 command governed by `docs/specs/PUBLISHING.md`.
+Publishing is separate and governed by `PUBLISHING.md`.
 
 No renderer implicitly publishes.
+
+## Validation additions
+
+Prove at minimum:
+
+1. render A+B, reduce PreWords to A, render again -> Words contains only A;
+2. LibreOffice A+B then A -> both Words and PDFs contain only A;
+3. LibreOffice success followed by Word success -> stale PDFs are absent;
+4. YOLO fallback commits exactly the actual renderer's result set;
+5. failed primary+fallback does not delete the previously committed finalized result set merely because a new attempt started.
 
 ## Human-visible correctness
 
@@ -131,7 +198,3 @@ Milestone-scoped human artifact review applies only when explicitly required by 
 ## Deferred behavior
 
 The common contract does not define renderer equivalence, generic PDF requirements, remote renderers, publication packages, or automatic renderer installation.
-
-## Explicit renderer fallback under YOLO
-
-Strict `render` continues to use only the requested renderer and fails when it cannot finalize the inputs. `render --yolo` may try the other supported renderer after the requested renderer fails. Each attempt runs against a staged copy of authored `YadgPreWords`; output is committed only after one renderer completes successfully. Partial output from a failed attempt is discarded. If both fail, render fails and authored intermediates remain intermediates. Diagnostics identify requested and actual renderer, the actual runtime, and the primary failure. A successful alternate-renderer DOCX remains finalized and may be published by the unchanged finalized-only publisher. See `AUTHORING-RESILIENCE.md`.

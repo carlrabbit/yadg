@@ -45,6 +45,8 @@ Publishing copies finalized DOCX explicitly.
 
 YADG 1.1 improves authoring/discovery ergonomics without changing that ownership model.
 
+For M0012, `YadgTemplates` is user/template input. `YadgPreWords`, `YadgWords`, and `YadgPdfs` are YADG-owned generated result sets and must not hold unrelated persistent files. Recursive Markdown discovery excludes those directories and dot directories. Publication is downstream-only and does not load authoring inputs or execute producers; successful rendering replaces its complete finalized result set.
+
 ## Presentation and authoring resilience authority
 
 - `docs/specs/TEMPLATE-PRESENTATION.md` — generalized template-owned examples/resources and deterministic strict/YOLO presentation role resolution; supersedes narrower style/list presentation framing where stated.

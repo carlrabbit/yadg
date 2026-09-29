@@ -2,13 +2,15 @@
 
 ## Status
 
-Authoritative for the `publish` command introduced by M0009.
+Authoritative for the `publish` command after the M0012 correction.
 
 ## Purpose
 
-Publishing is the explicit boundary between finalized workspace artifacts and delivered documents.
+Publishing is the explicit downstream boundary between finalized workspace artifacts and delivered documents.
 
-M0009 publishes finalized DOCX only. It does not define DMS integration, release archives, manifests, signing, remote stores, or PDF delivery.
+It publishes finalized DOCX only.
+
+It does not define DMS integration, release archives, manifests, signing, remote stores, or PDF delivery.
 
 ## Workspace artifact roles
 
@@ -16,19 +18,17 @@ M0009 publishes finalized DOCX only. It does not define DMS integration, release
 YadgTemplates/*.docx   template source
 YadgPreWords/*.docx    authored intermediate DOCX
 YadgWords/*.docx       finalized DOCX
-YadgPdfs/*.pdf         existing LibreOffice renderer by-product
+YadgPdfs/*.pdf         renderer-specific generated PDF
 publish destination    delivered DOCX
 ```
 
-Only top-level `YadgWords/*.docx` files are M0009 publish inputs.
+Only top-level `YadgWords/*.docx` files are publish inputs.
 
 ## CLI
 
 ```text
 yadg publish [--workspace <path>] [--publish-path <path>]
 ```
-
-`--workspace` keeps its existing semantics.
 
 Destination precedence:
 
@@ -42,26 +42,52 @@ error
 
 `publish` never invokes `build` or `render`.
 
-## Workspace configuration
+It also never invokes the authoring pipeline.
 
-Root `YADG.md` front matter may contain:
+## Downstream independence
+
+Publishing does not need current Markdown/template authoring state to be valid.
+
+It must not:
+
+- parse Markdown content;
+- inspect or validate DOCX templates;
+- validate authoring figures/assets;
+- execute Mermaid or any external content producer;
+- require list/style/prototype resolution;
+- require an authoring `check` to pass.
+
+An already-finalized `YadgWords` artifact remains publishable even if the author has since edited/broken current source/template inputs.
+
+### Explicit CLI destination
+
+When `--publish-path` is supplied, publication uses:
+
+- selected workspace root;
+- finalized `YadgWords/*.docx`;
+- CLI destination;
+- publication-specific path/file preflight.
+
+It does not need to parse `YADG.md` merely to validate unrelated authoring configuration.
+
+### Configured destination
+
+When `--publish-path` is absent, read `YADG.md` only as needed to obtain:
 
 ```yaml
 publish:
-  path: ./Published
+  path: ...
 ```
 
-The `publish` mapping contains exactly `path`.
+If configuration cannot be parsed sufficiently to obtain a valid destination, publication fails.
 
-`path` is a non-empty string. Unknown `publish` keys are errors.
-
-A workspace may omit `publish`; this remains valid for `check`, `build`, and `render`.
+Unrelated authoring validation is not part of publication.
 
 ## Path resolution
 
 Absolute publication paths are normalized and used directly.
 
-Relative publication paths, from either CLI or configuration, resolve relative to the workspace root.
+Relative publication paths resolve relative to workspace root.
 
 The destination may be inside or outside the workspace.
 
@@ -74,9 +100,9 @@ YadgWords
 YadgPdfs
 ```
 
-A workspace-local path such as `./Published` is valid.
+A workspace-local destination such as `./Published` is valid.
 
-M0009 defines only ordinary filesystem destinations. UNC/mounted paths work only insofar as the operating system exposes them as filesystem paths.
+Ordinary filesystem links/junctions are handled by normal OS filesystem behavior; YADG does not establish a hostile-filesystem sandbox around publication.
 
 ## Inputs and outputs
 
@@ -84,7 +110,7 @@ At least one top-level finalized DOCX must exist in `YadgWords/`.
 
 Publishing does not recurse.
 
-Each input preserves its basename:
+Each input preserves basename:
 
 ```text
 YadgWords/<name>.docx
@@ -92,52 +118,62 @@ YadgWords/<name>.docx
 <publish-path>/<name>.docx
 ```
 
-All top-level finalized DOCX files are published. There is no per-document filter in M0009.
+All top-level finalized DOCX files are published.
 
-The destination directory is created when necessary after preflight succeeds.
+The destination is created when necessary after preflight.
 
-Existing same-name destination files may be replaced. Unrelated destination files are preserved.
+Existing same-name destination files may be replaced.
 
-M0009 does not clean stale destination files.
+Unrelated destination files are preserved.
+
+Publishing does not clean stale destination files.
 
 ## Failure and commit behavior
 
-Before changing delivered files, `publish` validates at least:
+Before changing delivered files, validate at least:
 
-- workspace conventions;
+- workspace root/destination context needed for publication;
 - effective destination;
-- destination is not a reserved YADG directory/descendant;
+- destination is not a reserved YADG generated/input directory/descendant;
 - finalized input directory;
 - at least one publishable DOCX;
-- source inputs are regular files;
+- source inputs are usable files;
 - destination can be created/accessed sufficiently to begin publication.
 
-Each output is copied through a temporary file in the destination filesystem and committed to the final filename only after the copy succeeds.
+Each output is copied through a temporary file in the destination filesystem and committed only after the copy succeeds.
 
 Rollback of already committed sibling files after a later sibling failure is not required.
 
-Temporary/incomplete files must not be presented as successful delivery and are cleaned best-effort.
+Temporary/incomplete files are cleaned best-effort and are not presented as successful delivery.
 
 ## Validation interaction
 
-`check` validates optional `publish.path` schema/syntax but does not require the destination to exist or be writable.
+`check` may validate optional `publish.path` schema as part of authoring/workspace configuration, but `publish` does not rerun authoring validation.
 
-`build` and `render` do not touch the publication destination.
+`build` and `render` do not touch publication destination.
 
 Only `publish` performs destination runtime validation.
 
 ## Renderer independence
 
-`publish` does not care whether `YadgWords` was produced by LibreOffice or Microsoft Word.
+`publish` does not care whether `YadgWords` was produced by LibreOffice or Microsoft Word, including YOLO renderer fallback.
 
-The publisher copies bytes and does not modify or recalculate document contents.
+The publisher copies bytes and does not modify/recalculate document contents.
+
+## Producer non-execution acceptance
+
+Validation must prove that publication does not execute external producers.
+
+A test should configure a producer whose invocation would be observable, place an existing finalized DOCX in `YadgWords`, invoke `publish`, and prove successful delivery without producer invocation.
+
+Also prove explicit `--publish-path` can publish finalized output while current Markdown/template authoring is invalid.
 
 ## PDF
 
-`YadgPdfs` remains an existing LibreOffice output.
+`YadgPdfs` is not a publish input.
 
-PDF is not a M0009 publish input and no V1 publication guarantee is made for PDF.
+No V1/V1.1 PDF publication guarantee is introduced here.
 
 ## Deferred behavior
 
-M0009 does not define PDF publication, manifests/hashes, ZIP/release packaging, DMS integration, remote storage APIs, signing, filtering/renaming, stale-output cleanup, publication history, or implicit build/render.
+This specification does not define PDF publication, manifests/hashes, ZIP/release packaging, DMS integration, remote storage APIs, signing, filtering/renaming, destination synchronization, publication history, or implicit build/render.

@@ -29,8 +29,15 @@ public sealed record TemplateMetadata(
 }
 public sealed record TemplateAnalysis(IReadOnlyList<TemplatePlacement> Placements, IReadOnlyList<Diagnostic> Diagnostics, TemplateMetadata Metadata, IReadOnlyList<PreparedTableBinding>? PreparedBindings = null)
 {
+    public IReadOnlyDictionary<string, PresentationResolution> Presentation { get; init; } = new Dictionary<string, PresentationResolution>(StringComparer.Ordinal);
     public bool IsValid => Diagnostics.All(d => !d.IsError);
 }
+
+public enum PresentationSourceKind { Prototype, ContextualExample, ConfiguredResource, CompatibilityDefault, RelatedTemplateResource, BuiltinFallback, PlainRepresentation, VisiblePlaceholder }
+public enum PresentationCapability { None, Paragraph, Character, Table, BulletNumbering, OrderedNumbering, OutlineLevel, SequenceField, PreparedRow, ContextualFormatting }
+public sealed record PresentationResolution(string Role, bool StrictResolved, PresentationSourceKind? SourceKind, string? SourceId, string? DisplayName, PresentationCapability RequiredCapability, bool CapabilitySatisfied, string? YoloRelatedCandidate, string? YoloBuiltinFallback, IReadOnlyList<Diagnostic> Diagnostics);
+internal enum ListNumberingCapability { None, Bullet, Ordered }
+internal sealed record PresentationResolutionSet(TemplateMetadata Metadata, IReadOnlyDictionary<string, PresentationResolution> Roles, IReadOnlyList<Diagnostic> Diagnostics);
 
 public sealed class WordAuthoringException(Diagnostic diagnostic) : Exception(diagnostic.ToString())
 {
@@ -63,7 +70,7 @@ public static class WordAuthoring
         }).ToArray();
     }
 
-    public static IReadOnlyList<string> InspectTemplate(string templatePath)
+    public static IReadOnlyList<string> InspectTemplate(string templatePath, string? workspaceRoot = null)
     {
         using var document = WordprocessingDocument.Open(templatePath, false);
         var body = document.MainDocumentPart?.Document.Body ?? throw new InvalidDataException("DOCX has no main document body.");
@@ -79,7 +86,11 @@ public static class WordAuthoring
         {
             var text = ParagraphText(paragraph);
             var match = Regex.Match(text, @"\{\{(content|section|table|figure|table-rows):([^{}]+)\}\}");
-            if (match.Success) lines.Add($"placement {match.Groups[1].Value}:{match.Groups[2].Value} | {HumanLocation(paragraph, templatePath, "body", ordinals[paragraph])}");
+            if (match.Success)
+            {
+                var locator = HumanLocation(paragraph, templatePath, "body", ordinals[paragraph], styles);
+                lines.Add($"placement {match.Groups[1].Value}:{match.Groups[2].Value} source=contextual-example | {FormatDocxLocation(locator, workspaceRoot)}");
+            }
         }
         foreach (var table in body.Descendants<Table>().Where(t => t.Ancestors<Table>().FirstOrDefault() is null))
         {
@@ -90,36 +101,38 @@ public static class WordAuthoring
                 if (!marker.Success) continue;
                 var markerParagraph = rows[rowIndex].Descendants<Paragraph>().FirstOrDefault();
                 var locator = markerParagraph is not null && ordinals.TryGetValue(markerParagraph, out var ordinal)
-                    ? HumanLocation(markerParagraph, templatePath, "prepared table", ordinal)
-                    : $"{templatePath}\nprepared table > row {rowIndex + 1}\nnear: \"{BoundExcerpt(LogicalText(rows[rowIndex]))}\"";
+                    ? FormatDocxLocation(HumanLocation(markerParagraph, templatePath, "prepared table", ordinal, styles), workspaceRoot)
+                    : $"{DisplayPath(templatePath, workspaceRoot)}\nprepared table > row {rowIndex + 1}\nnear: \"{BoundExcerpt(LogicalText(rows[rowIndex]))}\"";
                 var prototypeRow = rowIndex + 2 <= rows.Length ? (rowIndex + 2).ToString() : "missing";
                 lines.Add($"prepared-table {marker.Groups[1].Value} marker-row={rowIndex + 1} prototype-row={prototypeRow} | {locator}");
             }
         }
+        foreach (var paragraph in paragraphs.Where(paragraph => TagLike.Matches(ParagraphText(paragraph)).Cast<Match>().Any(match => match.Value.StartsWith("{{value:", StringComparison.Ordinal))))
+        {
+            var location = HumanLocation(paragraph, templatePath, StoryFor(paragraph, "body"), ordinals[paragraph], styles);
+            lines.Add($"role valueReplacement source=contextual-example | {FormatDocxLocation(location, workspaceRoot)}");
+        }
         foreach (var prototype in metadata.Prototypes.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
             var role = metadata.PrototypeBindings.FirstOrDefault(pair => pair.Value == prototype.Key).Key ?? "unbound";
-            lines.Add($"prototype {prototype.Key} role={role} | near: {BoundExcerpt(ParagraphText(prototype.Value.Paragraph))}");
+            var prototypeParagraph = paragraphs.FirstOrDefault(paragraph => ParagraphText(paragraph) == ParagraphText(prototype.Value.Paragraph));
+            var prototypeLocation = prototypeParagraph is null
+                ? $"prototype \"{prototype.Key}\"\nnear: \"{BoundExcerpt(ParagraphText(prototype.Value.Paragraph))}\""
+                : FormatDocxLocation(HumanLocation(prototypeParagraph, templatePath, $"prototype \"{prototype.Key}\"", ordinals[prototypeParagraph], styles), workspaceRoot);
+            lines.Add($"prototype {prototype.Key} role={role} | {prototypeLocation}");
         }
-        var roles = metadata.Styles.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray();
-        foreach (var (role, selector) in roles)
+        var presentation = ResolvePresentation(metadata, styles, numbering, templatePath, yolo: false);
+        foreach (var resolution in presentation.Roles.Values.OrderBy(r => r.Role, StringComparer.Ordinal))
         {
-            var expected = role == "generatedTable" ? StyleValues.Table : role == "codeInline" ? StyleValues.Character : StyleValues.Paragraph;
-            var all = styles?.Elements<Style>().ToArray() ?? Array.Empty<Style>();
-            var match = all.FirstOrDefault(s => string.Equals(s.StyleId?.Value, selector, StringComparison.Ordinal));
-            if (match is null)
-            {
-                var candidates = all.Where(s => string.Equals(s.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) || (s.Aliases?.Val?.Value ?? "").Split(',').Any(a => string.Equals(a.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
-                if (candidates.Length == 1) match = candidates[0];
-            }
-            var hasListNumbering = role is "unordered" or "ordered" ? match is not null && ResolveNumberingIdForRole(all, match.StyleId?.Value, numbering, role == "ordered" ? NumberFormatValues.Decimal : NumberFormatValues.Bullet) : true;
-            var roleResolved = match is not null && match.Type?.Value == expected && hasListNumbering;
-            var resolved = roleResolved ? $"{match!.StyleName?.Val?.Value ?? match.StyleId?.Value} (id={match.StyleId?.Value}, {StyleTypeName(match.Type?.Value)})" : "unresolved";
-            var candidate = FindRoleCandidate(all, role, expected, numbering);
-            var fallback = !roleResolved ? $"; yolo candidate: {DescribeCandidate(candidate) ?? (role is "unordered" or "ordered" ? $"builtin:{(role == "ordered" ? "ordered" : "unordered")}-list-v1" : "builtin:plain-v1")}" : "";
-            lines.Add($"role {role}: configured={selector}; strict={resolved}{fallback}");
+            var resolved = resolution.StrictResolved
+                ? $"{resolution.SourceKind?.ToString().ToLowerInvariant()} {resolution.DisplayName ?? resolution.SourceId ?? ""}".TrimEnd()
+                : "unresolved";
+            var preview = !resolution.StrictResolved
+                ? $"; yolo candidate: {resolution.YoloRelatedCandidate ?? resolution.YoloBuiltinFallback ?? "builtin:plain-v1"}"
+                : "";
+            lines.Add($"role {resolution.Role}: configured={metadata.Styles.GetValueOrDefault(resolution.Role, "-")}; strict={resolved}{preview}");
         }
-        foreach (var diagnostic in diagnostics) lines.Add($"warning {diagnostic.Code}: {diagnostic.Message}");
+        foreach (var diagnostic in diagnostics.Concat(presentation.Diagnostics)) lines.Add($"warning {diagnostic.Code}: {diagnostic.Message}");
         return lines;
     }
 
@@ -142,15 +155,22 @@ public static class WordAuthoring
         var styles = main.StyleDefinitionsPart?.Styles;
         var numbering = main.NumberingDefinitionsPart?.Numbering;
         if (yolo) metadata = RecoverListPrototypes(metadata, styles, numbering, diagnostics, templatePath);
-        metadata = ResolveSelectors(metadata, styles, numbering, diagnostics, templatePath, yolo);
+        var presentation = ResolvePresentation(metadata, styles, numbering, templatePath, yolo);
+        metadata = presentation.Metadata;
+        diagnostics.AddRange(presentation.Diagnostics);
         AnalyzePreparedTables(main.Document.Body, templatePath, model, prepared, diagnostics);
-        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "body", main.Document.Body, yolo);
-        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "header", null, yolo);
-        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "footer", null, yolo);
-        if (main.FootnotesPart?.Footnotes is not null) AnalyzeParagraphs(main.FootnotesPart.Footnotes.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "footnote", null, yolo);
-        if (main.EndnotesPart?.Endnotes is not null) AnalyzeParagraphs(main.EndnotesPart.Endnotes.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "endnote", null, yolo);
-        if (main.WordprocessingCommentsPart?.Comments is not null) AnalyzeParagraphs(main.WordprocessingCommentsPart.Comments.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, placements, prepared, diagnostics, values, "comment", null, yolo);
-        metadata = ResolveUsedCodeInlineStyle(metadata, model, placements, prepared, styles, diagnostics, templatePath, yolo);
+        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "body", main.Document.Body, yolo);
+        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "header", null, yolo);
+        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "footer", null, yolo);
+        if (main.FootnotesPart?.Footnotes is not null) AnalyzeParagraphs(main.FootnotesPart.Footnotes.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "footnote", null, yolo);
+        if (main.EndnotesPart?.Endnotes is not null) AnalyzeParagraphs(main.EndnotesPart.Endnotes.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "endnote", null, yolo);
+        if (main.WordprocessingCommentsPart?.Comments is not null) AnalyzeParagraphs(main.WordprocessingCommentsPart.Comments.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "comment", null, yolo);
+        metadata = ResolveUsedCodeInlineStyle(metadata, model, placements, prepared, styles, numbering, diagnostics, templatePath, yolo, out var codeResolution);
+        if (codeResolution is not null)
+        {
+            var combined = new Dictionary<string, PresentationResolution>(presentation.Roles, StringComparer.Ordinal) { ["codeInline"] = codeResolution };
+            presentation = presentation with { Metadata = metadata, Roles = combined };
+        }
         foreach (var duplicate in placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).GroupBy(p => (p.Kind, p.Id)).Where(g => g.Count() > 1))
             diagnostics.Add(new("YADG-PLACEMENT-002", $"Structured object '{duplicate.Key.Id}' has more than one direct placement in this template.", true, templatePath));
         foreach (var duplicate in prepared.GroupBy(p => p.Id).Where(g => g.Count() > 1))
@@ -184,7 +204,14 @@ public static class WordAuthoring
             if (prepared.Count > 0) { usedRoles.Add("generatedTable"); if (prepared.Any(p => !string.IsNullOrWhiteSpace(model.FindTable(p.Id)?.Caption))) usedRoles.Add("caption"); }
             diagnostics.RemoveAll(d => d.IsDegradation && !IsUsedRoleDegradation(d, usedRoles));
         }
-        return new(placements, diagnostics, metadata, prepared);
+        var presentations = new Dictionary<string, PresentationResolution>(presentation.Roles, StringComparer.Ordinal);
+        foreach (var placement in placements.Where(item => item.Kind == PlacementKind.Section))
+            presentations[$"contextualParagraph:{placement.Id}:{placement.SectionReference?.Selection}"] = new($"contextualParagraph:{placement.Id}", true, PresentationSourceKind.ContextualExample, placement.Id, null, PresentationCapability.ContextualFormatting, true, null, null, Array.Empty<Diagnostic>());
+        foreach (var binding in prepared)
+            presentations[$"preparedTableRow:{binding.Id}"] = new($"preparedTableRow:{binding.Id}", true, PresentationSourceKind.Prototype, $"table-row:{binding.Id}", null, PresentationCapability.PreparedRow, true, null, null, Array.Empty<Diagnostic>());
+        if (main.Document.Body.Descendants<Paragraph>().Any(paragraph => TagLike.Matches(ParagraphText(paragraph)).Cast<Match>().Any(match => match.Value.StartsWith("{{value:", StringComparison.Ordinal))))
+            presentations["valueReplacement"] = new("valueReplacement", true, PresentationSourceKind.ContextualExample, "first-tag-character-run", null, PresentationCapability.ContextualFormatting, true, null, null, Array.Empty<Diagnostic>());
+        return new(placements, diagnostics, metadata, prepared) { Presentation = presentations };
     }
 
     private static bool HasInlineCode(YadgBlock block) => block switch
@@ -279,20 +306,21 @@ public static class WordAuthoring
         document.MainDocumentPart!.Document.Save();
     }
 
-    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, List<TemplatePlacement> placements, List<PreparedTableBinding> prepared, List<Diagnostic> diagnostics, IReadOnlyDictionary<string, string> values, string location, Body? body = null, bool yolo = false)
+    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, List<TemplatePlacement> placements, List<PreparedTableBinding> prepared, List<Diagnostic> diagnostics, IReadOnlyDictionary<string, string> values, string location, Body? body = null, bool yolo = false)
     {
         var paragraphIndex = 0;
         foreach (var paragraph in paragraphs)
         {
             paragraphIndex++;
-            var structuralLocation = HumanLocation(paragraph, templatePath, location, paragraphIndex);
+            var story = StoryFor(paragraph, location);
+            var structuralLocation = HumanLocation(paragraph, templatePath, story, paragraphIndex, styles);
             if (metadata.ControlParagraphs.Contains(paragraph)) continue;
             if (prepared.Any(p => paragraph.Ancestors<TableRow>().Contains(p.MarkerRow) || paragraph.Ancestors<TableRow>().Contains(p.PrototypeRow))) continue;
             var logical = ParagraphText(paragraph);
             var matches = TagLike.Matches(logical).Cast<Match>().ToArray();
             if (matches.Length == 0) continue;
             var valueMatches = matches.Where(m => m.Value.StartsWith("{{value:", StringComparison.Ordinal)).ToArray();
-            var valueLocationAllowed = IsSupportedValueLocation(location);
+            var valueLocationAllowed = IsSupportedValueLocation(story);
             if (valueMatches.Length > 0)
             {
                 if (!valueLocationAllowed) diagnostics.Add(new("YADG-VALUE-LOCATION", "Workspace value tags are not supported in this Word location.", true, structuralLocation));
@@ -321,17 +349,17 @@ public static class WordAuthoring
                     var kind = direct.Groups[1].Value == "table" ? PlacementKind.Table : PlacementKind.Figure; var id = direct.Groups[2].Value;
                     if (kind == PlacementKind.Table && model.FindTable(id) is null) { diagnostics.Add(new("YADG-REF-003", $"Tag '{match.Value}' does not resolve to a table.", true, structuralLocation)); continue; }
                     if (kind == PlacementKind.Figure && model.FindFigure(id) is null) { diagnostics.Add(new("YADG-REF-003", $"Tag '{match.Value}' does not resolve to a figure.", true, structuralLocation)); continue; }
-                    if (kind == PlacementKind.Table) ValidateTable(model.FindTable(id)!, styles, metadata, structuralLocation, diagnostics);
-                    else ValidateFigure(model.FindFigure(id)!, styles, metadata, paragraph, structuralLocation, diagnostics, yolo);
+                    if (kind == PlacementKind.Table) ValidateTable(model.FindTable(id)!, styles, metadata, presentation, structuralLocation, diagnostics, yolo);
+                    else ValidateFigure(model.FindFigure(id)!, styles, metadata, presentation, paragraph, structuralLocation, diagnostics, yolo);
                     placements.Add(new(paragraph, kind, id)); continue;
                 }
                 if (SectionReference.TryParseTag(match.Value, out var sectionReference, out _))
                 {
                     var resolved = MarkdownDocumentParser.Resolve(model, sectionReference!, templatePath);
-                    if (resolved.Diagnostic is not null) { diagnostics.Add(resolved.Diagnostic with { Location = structuralLocation }); continue; }
+                    if (resolved.Diagnostic is not null) { diagnostics.Add(resolved.Diagnostic with { Location = structuralLocation.FilePath, StructuredLocation = structuralLocation }); continue; }
                     var context = body is not null && paragraph.Parent is Body ? ResolveTemplateContext(body, paragraph, styles) : 0;
                     var rootLevel = model.FindSection(sectionReference!.Id)!.Heading.Level;
-                    ValidateBlocks(resolved.Blocks!, styles, numbering, metadata, paragraph, structuralLocation, diagnostics, context, sectionReference.Selection, rootLevel, yolo);
+                    ValidateBlocks(resolved.Blocks!, styles, numbering, metadata, presentation, paragraph, structuralLocation, diagnostics, context, sectionReference.Selection, rootLevel, yolo);
                     placements.Add(new(paragraph, PlacementKind.Section, sectionReference.Id, sectionReference, context, rootLevel));
                 }
                 else diagnostics.Add(new("YADG-TAG-001", $"Malformed or unsupported tag '{match.Value}'.", true, structuralLocation));
@@ -339,25 +367,38 @@ public static class WordAuthoring
         }
     }
 
-    private static string HumanLocation(Paragraph paragraph, string templatePath, string story, int ordinal)
+    private static string StoryFor(Paragraph paragraph, string fallback)
+        => paragraph.Ancestors().Any(element => element.LocalName == "txbxContent") ? $"{fallback}/text box" : fallback;
+
+    private static DocxLocation HumanLocation(Paragraph paragraph, string templatePath, string story, int ordinal, Styles? styles)
     {
         var near = BoundExcerpt(ParagraphText(paragraph));
-        var context = "";
+        var headings = new List<string>();
         if (story == "body" && paragraph.Parent is Body body)
         {
-            var headings = new List<string>();
             foreach (var prior in body.Elements<Paragraph>().TakeWhile(p => p != paragraph))
             {
-                var style = prior.ParagraphProperties?.GetFirstChild<ParagraphStyleId>()?.Val?.Value ?? "";
-                if (!Regex.IsMatch(style, "^Heading[1-9]$", RegexOptions.IgnoreCase)) continue;
+                var level = EffectiveOutlineLevel(prior, styles);
+                if (level is not (>= 1 and <= 9)) continue;
                 var text = ParagraphText(prior); if (string.IsNullOrWhiteSpace(text)) continue;
-                var level = int.Parse(style[^1..]);
-                while (headings.Count >= level) headings.RemoveAt(headings.Count - 1);
+                while (headings.Count >= level.Value) headings.RemoveAt(headings.Count - 1);
                 headings.Add($"\"{BoundExcerpt(text, 80)}\"");
             }
-            if (headings.Count > 0) context = " > " + string.Join(" > ", headings);
         }
-        return $"{templatePath}\n{story}{context} > paragraph {ordinal}\nnear: \"{near}\"";
+        var textBox = paragraph.Ancestors().FirstOrDefault(element => element.LocalName == "txbxContent");
+        var effectiveStory = textBox is null ? story : $"{story}/text box";
+        var paraId = paragraph.GetAttributes().FirstOrDefault(attribute => attribute.LocalName == "paraId" && attribute.NamespaceUri == "http://schemas.microsoft.com/office/word/2010/wordml").Value;
+        return new(templatePath, effectiveStory, headings, ordinal, near, paragraph.Ancestors().FirstOrDefault(element => element is Header or Footer)?.LocalName, string.IsNullOrEmpty(paraId) ? null : paraId);
+    }
+
+    private static string FormatDocxLocation(DocxLocation location, string? workspaceRoot) => location.Format(DisplayPath(location.FilePath, workspaceRoot));
+
+    private static string DisplayPath(string path, string? workspaceRoot)
+    {
+        if (workspaceRoot is null) return path;
+        var root = Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var fullPath = Path.GetFullPath(path);
+        return fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(workspaceRoot, fullPath).Replace('\\', '/') : path;
     }
 
     private static string BoundExcerpt(string text, int limit = 120)
@@ -395,7 +436,7 @@ public static class WordAuthoring
     }
 
     private static bool IsSupportedValueLocation(string location)
-        => location is "body" or "header" or "footer" or "footnote" or "endnote" or "comment";
+        => location is "body" or "header" or "footer" or "footnote" or "endnote" or "comment" || location.EndsWith("/text box", StringComparison.Ordinal);
 
     private static string ParagraphText(Paragraph paragraph)
         => string.Concat(paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).Select(t => t.Text));
@@ -449,7 +490,7 @@ public static class WordAuthoring
         }
     }
 
-    private static void ValidateBlocks(IEnumerable<YadgBlock> blocks, Styles? styles, Numbering? numbering, TemplateMetadata metadata, Paragraph anchor, string location, List<Diagnostic> diagnostics, int contextLevel = 0, SectionSelection selection = SectionSelection.Section, int rootLevel = 0, bool yolo = false)
+    private static void ValidateBlocks(IEnumerable<YadgBlock> blocks, Styles? styles, Numbering? numbering, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, Paragraph anchor, DocxLocation location, List<Diagnostic> diagnostics, int contextLevel = 0, SectionSelection selection = SectionSelection.Section, int rootLevel = 0, bool yolo = false)
     {
         foreach (var block in blocks)
         {
@@ -458,19 +499,18 @@ public static class WordAuthoring
                 case YadgHeading heading:
                     var effective = EffectiveHeadingLevel(heading.Level, contextLevel, selection, rootLevel);
                     if (effective > 9) diagnostics.Add(new("YADG-WORD-HEADING-OVERFLOW", $"Markdown heading level {heading.Level} rebases to unsupported effective Word heading level {effective}.", true, location));
-                    else if (StyleFor(metadata, $"heading{effective}", $"Heading{effective}").StartsWith("builtin:", StringComparison.Ordinal)) { }
-                    else if (!HasStyle(styles, StyleFor(metadata, $"heading{effective}", $"Heading{effective}")) && !yolo) diagnostics.Add(new("YADG-WORD-STYLE", $"Missing required Word style '{StyleFor(metadata, $"heading{effective}", $"Heading{effective}")}'; run yadg inspect styles to discover available styles.", true, location));
-                    else if (!HasStyle(styles, StyleFor(metadata, $"heading{effective}", $"Heading{effective}")) && yolo) diagnostics.Add(new("YADG-YOLO-HEADING-001", $"Heading style for effective level {effective} is unavailable; fallback: plain paragraph with outline level {effective}.", false, location) { IsDegradation = true });
+                    else if (presentation.TryGetValue($"heading{effective}", out var headingResolution) && !headingResolution.StrictResolved && !yolo) diagnostics.Add(new("YADG-WORD-STYLE", $"Heading role 'heading{effective}' has no compatible template paragraph style.", true, location));
                     break;
-                case YadgList list: ValidateList(list, styles, numbering, metadata, location, diagnostics, yolo); break;
-                case YadgTable table: ValidateTable(table, styles, metadata, location, diagnostics); break;
-                case YadgFigure figure: ValidateFigure(figure, styles, metadata, anchor, location, diagnostics, yolo); break;
+                case YadgList list: ValidateList(list, styles, numbering, metadata, presentation, location, diagnostics, yolo); break;
+                case YadgTable table: ValidateTable(table, styles, metadata, presentation, location, diagnostics, yolo); break;
+                case YadgFigure figure: ValidateFigure(figure, styles, metadata, presentation, anchor, location, diagnostics, yolo); break;
             }
         }
     }
 
-    private static TemplateMetadata ResolveUsedCodeInlineStyle(TemplateMetadata metadata, YadgDocument model, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, Styles? styles, List<Diagnostic> diagnostics, string location, bool yolo = false)
+    private static TemplateMetadata ResolveUsedCodeInlineStyle(TemplateMetadata metadata, YadgDocument model, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, Styles? styles, Numbering? numbering, List<Diagnostic> diagnostics, string location, bool yolo, out PresentationResolution? resolution)
     {
+        resolution = null;
         IEnumerable<YadgBlock> selectedBlocks()
         {
             foreach (var placement in placements)
@@ -494,47 +534,35 @@ public static class WordAuthoring
         };
         IEnumerable<YadgInline> descendants(IEnumerable<YadgInline> inlines) => inlines.SelectMany(inline => inline switch { YadgEmphasis e => new[] { inline }.Concat(descendants(e.Inlines)), YadgStrong s => new[] { inline }.Concat(descendants(s.Inlines)), _ => new[] { inline } });
         if (!selectedBlocks().SelectMany(allInlines).SelectMany(inline => descendants(new[] { inline })).Any(inline => inline is YadgCode)) return metadata;
-        if (!metadata.Styles.TryGetValue("codeInline", out var selector))
-        {
-            if (yolo) { diagnostics.Add(new("YADG-YOLO-CODE-001", "Styled inline code has no configured character style; fallback: preserve code text as plain text.", false, location) { IsDegradation = true }); return metadata with { Styles = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = "builtin:plain-v1" } }; }
-            diagnostics.Add(new("YADG-WORD-STYLE", "Styled inline code requires a character style role 'codeInline'. Configure it in template front matter and inspect available styles with yadg inspect styles.", true, location));
-            return metadata;
-        }
-        if (styles is null) { diagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' cannot resolve because the template has no style definitions. Run yadg inspect styles.", true, location)); return metadata; }
-        var all = styles.Elements<Style>().ToArray();
-        var selected = all.FirstOrDefault(s => string.Equals(s.StyleId?.Value, selector, StringComparison.Ordinal));
-        if (selected is null)
-        {
-            var candidates = all.Where(s => string.Equals(s.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) || (s.Aliases?.Val?.Value ?? "").Split(',').Any(a => string.Equals(a.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
-            if (candidates.Length > 1) { diagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' is ambiguous: {string.Join(", ", candidates.Select(s => $"{s.StyleName?.Val?.Value ?? s.StyleId?.Value} (id={s.StyleId?.Value})"))}. Run yadg inspect styles.", true, location)); return metadata; }
-            if (candidates.Length == 1) selected = candidates[0];
-        }
-        if (selected is null && yolo)
-        {
-            var related = FindRoleCandidate(styles?.Elements<Style>().ToArray() ?? Array.Empty<Style>(), "codeInline", StyleValues.Character, null);
-            if (related is not null) { diagnostics.Add(new("YADG-YOLO-CODE-001", $"Configured inline-code style '{selector}' is unavailable; fallback: related character style '{related.StyleName?.Val?.Value ?? related.StyleId?.Value}'.", false, location) { IsDegradation = true }); return metadata with { Styles = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = related.StyleId?.Value ?? selector } }; }
+        var selector = metadata.Styles.GetValueOrDefault("codeInline", "__missing_codeInline__");
+        var stylesMap = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = selector };
+        var resolved = ResolvePresentation(metadata with { Styles = stylesMap }, styles, numbering, location, yolo);
+        diagnostics.AddRange(resolved.Diagnostics);
+        resolution = resolved.Roles["codeInline"];
+        if (!resolution.StrictResolved && !yolo && !resolved.Diagnostics.Any(d => d.IsError))
+            diagnostics.Add(new("YADG-WORD-STYLE", selector == "__missing_codeInline__" ? "Styled inline code requires a character style role 'codeInline'. Configure it in template front matter and inspect available styles with yadg inspect styles." : $"Style selector '{selector}' does not resolve to a usable character style. Run yadg inspect styles.", true, location));
+        else if (!resolution.StrictResolved && resolution.YoloBuiltinFallback is not null && !resolved.Diagnostics.Any(d => d.Code == "YADG-YOLO-CODE-001"))
             diagnostics.Add(new("YADG-YOLO-CODE-001", $"Configured inline-code style '{selector}' is unavailable; fallback: ordinary text.", false, location) { IsDegradation = true });
-            return metadata with { Styles = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = "builtin:plain-v1" } };
-        }
-        if (selected is null) { diagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' does not resolve. Run yadg inspect styles.", true, location)); return metadata; }
-        if (selected.Type?.Value != StyleValues.Character) { diagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' resolves to {StyleTypeName(selected.Type?.Value)}; role 'codeInline' requires character. Run yadg inspect styles.", true, location)); return metadata; }
-        var normalized = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = selected.StyleId?.Value ?? selector };
-        return metadata with { Styles = normalized };
+        return resolved.Metadata;
     }
 
-    private static void ValidateList(YadgList list, Styles? styles, Numbering? numbering, TemplateMetadata metadata, string location, List<Diagnostic> diagnostics, bool yolo = false)
+    private static void ValidateList(YadgList list, Styles? styles, Numbering? numbering, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, DocxLocation location, List<Diagnostic> diagnostics, bool yolo = false)
     {
-        if (StyleFor(metadata, list.Ordered ? "ordered" : "unordered", "").StartsWith("builtin:", StringComparison.Ordinal)) return;
-            if (metadata.PrototypeBindings.TryGetValue(list.Ordered ? "orderedListItem" : "unorderedListItem", out var prototypeId))
+        var role = list.Ordered ? "ordered" : "unordered";
+        presentation.TryGetValue(role, out var resolution);
+        if (resolution?.SourceKind == PresentationSourceKind.BuiltinFallback && yolo) return;
+        if (resolution?.SourceKind == PresentationSourceKind.Prototype && resolution.StrictResolved)
         {
+            var prototypeId = resolution.SourceId!;
             if (!metadata.ListItemPrototypes.TryGetValue(prototypeId, out var prototype)) { diagnostics.Add(new("YADG-WORD-LIST", $"Configured list prototype '{prototypeId}' is missing.", true, location)); return; }
-            if (ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is not int prototypeNum || numbering?.Elements<NumberingInstance>().All(n => n.NumberID?.Value != prototypeNum) != false) diagnostics.Add(new("YADG-WORD-LIST", $"List prototype '{prototypeId}' has no valid effective list numbering.", true, location));
+            if (ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is not int prototypeNum || ListCapability(styles, numbering, prototypeNum, ParagraphLevel(prototype.Paragraph)) != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet)) diagnostics.Add(new("YADG-WORD-LIST", $"List prototype '{prototypeId}' has no valid effective {(list.Ordered ? "ordered" : "bullet")} numbering.", true, location));
             return;
         }
-        var style = StyleFor(metadata, list.Ordered ? "ordered" : "unordered", list.Ordered ? "ListNumber" : "ListBullet");
+        var style = StyleFor(metadata, role, list.Ordered ? "ListNumber" : "ListBullet");
         if (!HasStyle(styles, style)) { if (yolo) diagnostics.Add(new("YADG-YOLO-LIST-001", $"List style '{style}' is unavailable; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.", false, location) { IsDegradation = true }); else diagnostics.Add(new("YADG-WORD-LIST", $"Missing required list style '{style}'. Run yadg inspect styles to discover available styles.", true, location)); return; }
         var numId = ResolveNumberingId(styles!, style, numbering);
-        if (numId is null || numbering is null || !numbering.Descendants<NumberingInstance>().Any(n => n.NumberID?.Value == numId)) { if (yolo) diagnostics.Add(new("YADG-YOLO-LIST-002", $"List style '{style}' has no usable numbering; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.", false, location) { IsDegradation = true }); else diagnostics.Add(new("YADG-WORD-LIST", $"List style '{style}' does not resolve to a valid numbering definition. Run yadg inspect styles or bind an unorderedListItem/orderedListItem prototype.", true, location)); }
+        var capability = numId is int resolvedNum ? GetStyleListCapability(new Styles(styles!.Elements<Style>().Select(s => (Style)s.CloneNode(true))), numbering, style) : ListNumberingCapability.None;
+        if (capability != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet)) { if (yolo) diagnostics.Add(new("YADG-YOLO-LIST-002", $"List style '{style}' has no usable {(list.Ordered ? "ordered" : "bullet")} numbering; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.", false, location) { IsDegradation = true }); else diagnostics.Add(new("YADG-WORD-LIST", $"List style '{style}' does not resolve to valid {(list.Ordered ? "ordered" : "bullet")} numbering. Run yadg inspect styles or bind an unorderedListItem/orderedListItem prototype.", true, location)); }
     }
 
     private static int? ResolveParagraphNumberingId(Paragraph paragraph, Styles? styles, Numbering? numbering = null)
@@ -577,52 +605,167 @@ public static class WordAuthoring
         return abstractIds.Length == 1 ? abstractIds[0] : null;
     }
 
-    private static TemplateMetadata ResolveSelectors(TemplateMetadata metadata, Styles? styles, Numbering? numbering, List<Diagnostic> diagnostics, string location, bool yolo = false)
+    private static PresentationResolutionSet ResolvePresentation(TemplateMetadata metadata, Styles? styles, Numbering? numbering, string location, bool yolo)
     {
-        if (styles is null && !yolo) return metadata;
-        var roles = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var pair in metadata.Styles)
+        var available = styles?.Elements<Style>().ToArray() ?? Array.Empty<Style>();
+        var resolvedStyles = new Dictionary<string, string>(StringComparer.Ordinal);
+        var resolutions = new Dictionary<string, PresentationResolution>(StringComparer.Ordinal);
+        var diagnostics = new List<Diagnostic>();
+        foreach (var (role, selector) in metadata.Styles.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
-            if (pair.Key == "codeInline") { roles[pair.Key] = pair.Value; continue; }
-            if (pair.Key == "unordered" && metadata.PrototypeBindings.ContainsKey("unorderedListItem") || pair.Key == "ordered" && metadata.PrototypeBindings.ContainsKey("orderedListItem")) { roles[pair.Key] = pair.Value; continue; }
-            var expected = pair.Key is "generatedTable" ? StyleValues.Table : pair.Key is "codeInline" ? StyleValues.Character : StyleValues.Paragraph;
-            var all = styles?.Elements<Style>().ToArray() ?? Array.Empty<Style>();
-            var exactId = all.FirstOrDefault(s => string.Equals(s.StyleId?.Value, pair.Value, StringComparison.Ordinal));
-            Style? selected = exactId;
-            if (selected is null)
+            var expectedType = role == "generatedTable" ? StyleValues.Table : role == "codeInline" ? StyleValues.Character : StyleValues.Paragraph;
+            var capability = role switch
             {
-                var candidates = all.Where(s => string.Equals(s.StyleName?.Val?.Value, pair.Value, StringComparison.OrdinalIgnoreCase) || (s.Aliases?.Val?.Value ?? "").Split(',').Any(a => string.Equals(a.Trim(), pair.Value, StringComparison.OrdinalIgnoreCase))).ToArray();
-                if (candidates.Length > 1 && !yolo) diagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{pair.Value}' is ambiguous: {string.Join(", ", candidates.Select(s => $"{s.StyleName?.Val?.Value ?? s.StyleId?.Value} (id={s.StyleId?.Value})"))}. Run yadg inspect styles.", true, location));
-                else if (candidates.Length == 1) selected = candidates[0];
-            }
-            if (selected is null || selected.Type?.Value != expected)
+                "unordered" => PresentationCapability.BulletNumbering,
+                "ordered" => PresentationCapability.OrderedNumbering,
+                "generatedTable" => PresentationCapability.Table,
+                "codeInline" => PresentationCapability.Character,
+                _ when role.StartsWith("heading", StringComparison.Ordinal) => PresentationCapability.OutlineLevel,
+                "caption" => PresentationCapability.SequenceField,
+                _ => PresentationCapability.Paragraph
+            };
+            var prototypeRole = role switch { "unordered" => "unorderedListItem", "ordered" => "orderedListItem", "caption" => "figureCaption", _ => null };
+            if (role == "caption" && !metadata.PrototypeBindings.ContainsKey("figureCaption")) prototypeRole = "tableCaption";
+            if (prototypeRole is not null && metadata.PrototypeBindings.TryGetValue(prototypeRole, out var prototypeId) && metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
             {
-                if (yolo)
+                var prototypeValid = role is "unordered" or "ordered"
+                    ? Regex.Matches(ParagraphText(prototype.Paragraph), Regex.Escape("{{item}}")).Count == 1 && ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int id && numbering?.Elements<NumberingInstance>().Any(instance => instance.NumberID?.Value == id) == true && ListCapability(styles, numbering, id, ParagraphLevel(prototype.Paragraph)) == (role == "unordered" ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered)
+                    : role == "caption" && prototype.SequenceFields == 1 && prototype.CaptionPlaceholders == 1;
+                if (prototypeValid)
                 {
-                    var related = FindRoleCandidate(all, pair.Key, expected, numbering);
-                    if (related is not null) { roles[pair.Key] = related.StyleId?.Value ?? pair.Value; diagnostics.Add(new("YADG-YOLO-STYLE-001", $"Configured role '{pair.Key}' selector '{pair.Value}' is unavailable or incompatible; fallback: related template style '{related.StyleName?.Val?.Value ?? related.StyleId?.Value}'.", false, location) { IsDegradation = true }); }
-                    else if (pair.Key is "unordered" or "ordered") { roles[pair.Key] = $"builtin:{pair.Key}-list-v1"; diagnostics.Add(new("YADG-YOLO-LIST-001", $"No compatible template list resource resolves role '{pair.Key}'; fallback: builtin:{pair.Key}-list-v1.", false, location) { IsDegradation = true }); }
-                    else if (pair.Key.StartsWith("heading", StringComparison.Ordinal)) { roles[pair.Key] = "builtin:plain-v1"; diagnostics.Add(new("YADG-YOLO-STYLE-001", $"Heading role '{pair.Key}' is unavailable; fallback: builtin:plain-v1 with direct outline level.", false, location) { IsDegradation = true }); }
-                    else if (pair.Key == "generatedTable") { roles[pair.Key] = "builtin:plain-v1"; diagnostics.Add(new("YADG-YOLO-TABLE-001", "No table style is available; fallback: generated table without a style reference.", false, location) { IsDegradation = true }); }
-                    else if (pair.Key == "caption") { roles[pair.Key] = "builtin:plain-v1"; diagnostics.Add(new("YADG-YOLO-CAPTION-001", "Caption style is unavailable; fallback: plain caption paragraph.", false, location) { IsDegradation = true }); }
-                    else { roles[pair.Key] = pair.Value; }
+                    resolutions[role] = new(role, true, PresentationSourceKind.Prototype, prototypeId, null, capability, true, null, null, Array.Empty<Diagnostic>());
+                    resolvedStyles[role] = selector;
                     continue;
                 }
-                if (selected is not null) diagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{pair.Value}' resolves to {StyleTypeName(selected.Type?.Value)}; role '{pair.Key}' requires {StyleTypeName(expected)}. Run yadg inspect styles.", true, location));
-                else roles[pair.Key] = pair.Value;
-                continue;
             }
-            var selectedId = selected.StyleId?.Value ?? pair.Value;
-            if (yolo && (pair.Key is "unordered" or "ordered") && !ResolveNumberingIdForRole(all, selectedId, numbering, pair.Key == "ordered" ? NumberFormatValues.Decimal : NumberFormatValues.Bullet))
+            var selected = ResolveExactStyle(available, selector);
+            var strictSource = selected is not null && selected.Type?.Value == expectedType && RoleCapabilitySatisfied(role, selected, available, numbering, capability);
+            if ((role is "unordered" or "ordered") && metadata.PrototypeBindings.ContainsKey(role == "unordered" ? "unorderedListItem" : "orderedListItem"))
+                strictSource = false;
+            var related = strictSource ? null : FindRoleCandidate(available, role, expectedType, numbering);
+            var builtin = role switch
             {
-                var related = FindRoleCandidate(all.Where(s => s.StyleId?.Value != selectedId).ToArray(), pair.Key, expected, numbering);
-                if (related is not null) { roles[pair.Key] = related.StyleId?.Value ?? pair.Value; diagnostics.Add(new("YADG-YOLO-LIST-003", $"List style '{selectedId}' has no compatible numbering; fallback: related template style '{related.StyleName?.Val?.Value ?? related.StyleId?.Value}'.", false, location) { IsDegradation = true }); }
-                else { roles[pair.Key] = $"builtin:{pair.Key}-list-v1"; diagnostics.Add(new("YADG-YOLO-LIST-002", $"List style '{selectedId}' has no compatible numbering; fallback: builtin:{pair.Key}-list-v1.", false, location) { IsDegradation = true }); }
-                continue;
+                "unordered" or "ordered" => $"builtin:{role}-list-v1",
+                "generatedTable" => "builtin:plain-v1",
+                "caption" => "builtin:plain-v1",
+                "codeInline" => "builtin:plain-v1",
+                _ when role.StartsWith("heading", StringComparison.Ordinal) => "builtin:plain-v1",
+                _ => null
+            };
+            var chosen = selected;
+            var sourceKind = strictSource ? (selector == StyleFor(metadata, role, selector) ? PresentationSourceKind.ConfiguredResource : PresentationSourceKind.CompatibilityDefault) : (PresentationSourceKind?)null;
+            string? sourceId = strictSource ? selected?.StyleId?.Value : null;
+            string? displayName = strictSource ? selected?.StyleName?.Val?.Value : null;
+            var roleDiagnostics = new List<Diagnostic>();
+            if (selected is null && !yolo)
+            {
+                var selectorMatches = available.Where(style => string.Equals(style.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) || (style.Aliases?.Val?.Value ?? "").Split(',').Any(alias => string.Equals(alias.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
+                if (selectorMatches.Length > 1)
+                    roleDiagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' is ambiguous: {string.Join(", ", selectorMatches.Select(style => $"{style.StyleName?.Val?.Value ?? style.StyleId?.Value} (id={style.StyleId?.Value})"))}. Run yadg inspect styles.", true, location));
             }
-            roles[pair.Key] = selectedId;
+            if (selected is not null && selected.Type?.Value != expectedType && !yolo)
+                roleDiagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' resolves to {StyleTypeName(selected.Type?.Value)}; role '{role}' requires {StyleTypeName(expectedType)}. Run yadg inspect styles.", true, location));
+            if (!strictSource && yolo)
+            {
+                if (related is not null)
+                {
+                    chosen = related; sourceKind = PresentationSourceKind.RelatedTemplateResource; sourceId = related.StyleId?.Value; displayName = related.StyleName?.Val?.Value;
+                    var code = role is "unordered" or "ordered" ? "YADG-YOLO-LIST-003" : role == "codeInline" ? "YADG-YOLO-CODE-001" : "YADG-YOLO-STYLE-001";
+                    roleDiagnostics.Add(new(code, $"Configured role '{role}' selector '{selector}' is unavailable or lacks its required capability; fallback: related template style '{displayName ?? sourceId}'.", false, location) { IsDegradation = true });
+                }
+                else if (builtin is not null)
+                {
+                    chosen = null; sourceKind = role is "caption" or "generatedTable" or "codeInline" or "heading1" or "heading2" or "heading3" or "heading4" or "heading5" or "heading6" or "heading7" or "heading8" or "heading9" ? PresentationSourceKind.PlainRepresentation : PresentationSourceKind.BuiltinFallback;
+                    sourceId = builtin; displayName = null;
+                    var code = role is "unordered" or "ordered" ? "YADG-YOLO-LIST-002" : role == "generatedTable" ? "YADG-YOLO-TABLE-001" : role == "caption" ? "YADG-YOLO-CAPTION-001" : role == "codeInline" ? "YADG-YOLO-CODE-001" : "YADG-YOLO-STYLE-001";
+                    var fallback = role == "codeInline" ? "ordinary text" : builtin;
+                    roleDiagnostics.Add(new(code, $"Configured role '{role}' selector '{selector}' is unavailable or lacks its required capability; fallback: {fallback}.", false, location) { IsDegradation = true });
+                }
+            }
+            if (chosen is not null && (selected is not null && selected.Type?.Value == expectedType || yolo && related?.StyleId?.Value == chosen.StyleId?.Value)) resolvedStyles[role] = chosen.StyleId?.Value ?? selector;
+            else if (sourceId is not null && sourceId.StartsWith("builtin:", StringComparison.Ordinal)) resolvedStyles[role] = sourceId;
+            else resolvedStyles[role] = selector;
+            diagnostics.AddRange(roleDiagnostics);
+            resolutions[role] = new(role, strictSource, sourceKind, sourceId, displayName, capability, strictSource || sourceKind is PresentationSourceKind.RelatedTemplateResource or PresentationSourceKind.BuiltinFallback or PresentationSourceKind.PlainRepresentation, related is null ? null : DescribeCandidate(related), builtin, roleDiagnostics);
         }
-        return metadata with { Styles = roles };
+        foreach (var binding in metadata.PrototypeBindings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            var role = binding.Key switch { "unorderedListItem" => "unordered", "orderedListItem" => "ordered", "figureCaption" => "figureCaption", "tableCaption" => "tableCaption", _ => binding.Key };
+            if (resolutions.ContainsKey(role)) continue;
+            var exists = metadata.Prototypes.TryGetValue(binding.Value, out var prototype);
+            var valid = exists && (binding.Key is "unorderedListItem" or "orderedListItem"
+                ? Regex.Matches(ParagraphText(prototype!.Paragraph), Regex.Escape("{{item}}")).Count == 1 && ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int id && numbering?.Elements<NumberingInstance>().Any(instance => instance.NumberID?.Value == id) == true && ListCapability(styles, numbering, id, ParagraphLevel(prototype.Paragraph)) == (binding.Key == "unorderedListItem" ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered)
+                : prototype!.SequenceFields == 1 && prototype.CaptionPlaceholders == 1);
+            resolutions[role] = new(role, valid, exists ? PresentationSourceKind.Prototype : null, binding.Value, null, binding.Key is "unorderedListItem" ? PresentationCapability.BulletNumbering : binding.Key is "orderedListItem" ? PresentationCapability.OrderedNumbering : PresentationCapability.SequenceField, valid, null, null, Array.Empty<Diagnostic>());
+        }
+        return new(metadata with { Styles = resolvedStyles }, resolutions, diagnostics);
+    }
+
+    private static Style? ResolveExactStyle(Style[] styles, string selector)
+    {
+        var byId = styles.FirstOrDefault(style => string.Equals(style.StyleId?.Value, selector, StringComparison.Ordinal));
+        if (byId is not null) return byId;
+        var matches = styles.Where(style => string.Equals(style.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) || (style.Aliases?.Val?.Value ?? "").Split(',').Any(alias => string.Equals(alias.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    private static bool RoleCapabilitySatisfied(string role, Style style, Style[] styles, Numbering? numbering, PresentationCapability capability)
+    {
+        if (capability == PresentationCapability.BulletNumbering) return GetStyleListCapability(new Styles(styles.Select(s => (Style)s.CloneNode(true))), numbering, style.StyleId?.Value) == ListNumberingCapability.Bullet;
+        if (capability == PresentationCapability.OrderedNumbering) return GetStyleListCapability(new Styles(styles.Select(s => (Style)s.CloneNode(true))), numbering, style.StyleId?.Value) == ListNumberingCapability.Ordered;
+        // A selected paragraph style is a valid heading presentation even when its
+        // outline metadata is absent. Outline metadata is used for context discovery,
+        // while strict style ownership remains compatible with existing templates.
+        return true;
+    }
+
+    private static int? GetEffectiveStyleOutline(Style[] styles, Style style)
+    {
+        var current = style; var seen = new HashSet<string>(StringComparer.Ordinal);
+        while (current.StyleId?.Value is string id && seen.Add(id))
+        {
+            if (current.StyleParagraphProperties?.OutlineLevel?.Val?.Value is int level) return level;
+            var basedOn = current.BasedOn?.Val?.Value;
+            if (string.IsNullOrEmpty(basedOn)) break;
+            current = styles.FirstOrDefault(candidate => candidate.StyleId?.Value == basedOn)!;
+            if (current is null) break;
+        }
+        return null;
+    }
+
+    private static int ParagraphLevel(Paragraph paragraph) => paragraph.ParagraphProperties?.NumberingProperties?.NumberingLevelReference?.Val?.Value ?? 0;
+
+    private static ListNumberingCapability GetStyleListCapability(Styles styles, Numbering? numbering, string? styleId)
+    {
+        if (string.IsNullOrWhiteSpace(styleId) || numbering is null) return ListNumberingCapability.None;
+        var numberId = ResolveNumberingId(styles, styleId, numbering);
+        if (numberId is null) return ListNumberingCapability.None;
+        var chain = new HashSet<string>(StringComparer.Ordinal); var current = styleId;
+        while (!string.IsNullOrEmpty(current) && chain.Add(current)) current = styles.Elements<Style>().FirstOrDefault(item => item.StyleId?.Value == current)?.BasedOn?.Val?.Value ?? string.Empty;
+        var instance = numbering.Elements<NumberingInstance>().FirstOrDefault(item => item.NumberID?.Value == numberId);
+        var abstractId = instance?.AbstractNumId?.Val?.Value;
+        var abstractNumbering = numbering.Elements<AbstractNum>().FirstOrDefault(item => item.AbstractNumberId?.Value == abstractId);
+        if (abstractNumbering is null) return ListNumberingCapability.None;
+        var effective = abstractNumbering.Elements<Level>().FirstOrDefault(level => level.ParagraphStyleIdInLevel?.Val?.Value is string associated && chain.Contains(associated)) ?? abstractNumbering.Elements<Level>().FirstOrDefault(level => (level.LevelIndex?.Value ?? 0) == 0);
+        if (effective is null) return ListNumberingCapability.None;
+        return ClassifyNumberFormat(effective.NumberingFormat?.Val?.Value);
+    }
+
+    private static ListNumberingCapability ListCapability(Styles? styles, Numbering? numbering, int numberId, int levelIndex)
+    {
+        if (numbering is null) return ListNumberingCapability.None;
+        var instance = numbering.Elements<NumberingInstance>().FirstOrDefault(item => item.NumberID?.Value == numberId);
+        var abstractId = instance?.AbstractNumId?.Val?.Value;
+        var abstractNumbering = numbering.Elements<AbstractNum>().FirstOrDefault(item => item.AbstractNumberId?.Value == abstractId);
+        var overrideLevel = instance?.Elements<LevelOverride>().FirstOrDefault(item => (item.LevelIndex?.Value ?? 0) == levelIndex)?.GetFirstChild<Level>();
+        var level = overrideLevel ?? abstractNumbering?.Elements<Level>().FirstOrDefault(item => (item.LevelIndex?.Value ?? 0) == levelIndex);
+        return ClassifyNumberFormat(level?.NumberingFormat?.Val?.Value);
+    }
+
+    private static ListNumberingCapability ClassifyNumberFormat(NumberFormatValues? format)
+    {
+        if (format is null || format == NumberFormatValues.None) return ListNumberingCapability.None;
+        return format == NumberFormatValues.Bullet ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered;
     }
 
     private static Style? FindRoleCandidate(Style[] styles, string role, StyleValues expected, Numbering? numbering)
@@ -630,7 +773,9 @@ public static class WordAuthoring
         IEnumerable<Style> eligible = styles.Where(s => s.Type?.Value == expected);
         if (role is "unordered" or "ordered")
         {
-            eligible = eligible.Where(s => ResolveNumberingIdForRole(styles, s.StyleId?.Value, numbering, role == "ordered" ? NumberFormatValues.Decimal : NumberFormatValues.Bullet));
+            var allStyles = new Styles(styles.Select(s => (Style)s.CloneNode(true)));
+            var required = role == "ordered" ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet;
+            eligible = eligible.Where(s => GetStyleListCapability(allStyles, numbering, s.StyleId?.Value) == required);
         }
         else if (role == "codeInline") eligible = eligible.Where(s => { var hint = (s.StyleName?.Val?.Value ?? "") + " " + (s.Aliases?.Val?.Value ?? "") + " " + (s.StyleId?.Value ?? ""); return hint.Contains("code", StringComparison.OrdinalIgnoreCase) || hint.Contains("source", StringComparison.OrdinalIgnoreCase) || hint.Contains("mono", StringComparison.OrdinalIgnoreCase); });
         else if (role.StartsWith("heading", StringComparison.Ordinal))
@@ -664,25 +809,27 @@ public static class WordAuthoring
         return own.Contains(cue, StringComparison.OrdinalIgnoreCase) ? 1 : 2;
     }
 
-    private static bool ResolveNumberingIdForRole(Style[] styles, string? styleId, Numbering? numbering, NumberFormatValues format)
-    {
-        if (styleId is null || numbering is null) return false;
-        var id = ResolveNumberingId(new Styles(styles.Select(s => (Style)s.CloneNode(true))), styleId, numbering);
-        if (id is null) return false;
-        var instance = numbering.Elements<NumberingInstance>().FirstOrDefault(n => n.NumberID?.Value == id);
-        var abstractNum = numbering.Elements<AbstractNum>().FirstOrDefault(a => a.AbstractNumberId?.Value == instance?.AbstractNumId?.Val?.Value);
-        return abstractNum?.Descendants<Level>().Any(l => l.NumberingFormat?.Val?.Value == format) == true;
-    }
-
     private static string StyleTypeName(StyleValues? type) => type == StyleValues.Paragraph ? "paragraph" : type == StyleValues.Character ? "character" : type == StyleValues.Table ? "table" : type == StyleValues.Numbering ? "numbering" : "unknown";
 
-    private static void ValidateTable(YadgTable table, Styles? styles, TemplateMetadata metadata, string location, List<Diagnostic> diagnostics)
-    { if (!StyleFor(metadata, "generatedTable", "TableGrid").StartsWith("builtin:", StringComparison.Ordinal) && !HasStyle(styles, StyleFor(metadata, "generatedTable", "TableGrid"))) diagnostics.Add(new("YADG-WORD-TABLE", $"Missing required Word table style '{StyleFor(metadata, "generatedTable", "TableGrid")}'; run yadg inspect styles to discover available styles.", true, location)); if (!string.IsNullOrWhiteSpace(table.Caption) && !metadata.PrototypeBindings.ContainsKey("tableCaption") && !HasStyle(styles, StyleFor(metadata, "caption", "Caption"))) diagnostics.Add(new("YADG-WORD-STYLE", "Missing required Word style for table caption. Run yadg inspect styles to discover available styles.", true, location)); }
+    private static void ValidateTable(YadgTable table, Styles? styles, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, DocxLocation location, List<Diagnostic> diagnostics, bool yolo)
+    {
+        if (presentation.TryGetValue("generatedTable", out var tableResolution) && !tableResolution.StrictResolved && !yolo)
+            diagnostics.Add(new("YADG-WORD-TABLE", $"Generated-table role '{StyleFor(metadata, "generatedTable", "TableGrid")}' is unavailable or not a concrete table style; run yadg inspect styles.", true, location));
+        if (string.IsNullOrWhiteSpace(table.Caption)) return;
+        var captionRole = metadata.PrototypeBindings.ContainsKey("tableCaption") ? "tableCaption" : "caption";
+        if (presentation.TryGetValue(captionRole, out var captionResolution) && !captionResolution.StrictResolved && !yolo)
+            diagnostics.Add(new("YADG-WORD-STYLE", "Table caption presentation is unresolved; run yadg inspect template and yadg inspect styles.", true, location));
+    }
 
-    private static void ValidateFigure(YadgFigure figure, Styles? styles, TemplateMetadata metadata, Paragraph anchor, string location, List<Diagnostic> diagnostics, bool yolo = false)
+    private static void ValidateFigure(YadgFigure figure, Styles? styles, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, Paragraph anchor, DocxLocation location, List<Diagnostic> diagnostics, bool yolo = false)
     {
         if (figure.Asset is null) { if (!yolo) diagnostics.Add(new("YADG-FIGURE-008", $"Figure '{figure.Id}' has no validated image asset.", true, location)); return; }
-        if (!string.IsNullOrEmpty(figure.AltText) && !metadata.PrototypeBindings.ContainsKey("figureCaption") && !HasStyle(styles, StyleFor(metadata, "caption", "Caption"))) diagnostics.Add(new("YADG-WORD-STYLE", "Missing required Word style for caption.", true, location));
+        if (!string.IsNullOrEmpty(figure.AltText))
+        {
+            var captionRole = metadata.PrototypeBindings.ContainsKey("figureCaption") ? "figureCaption" : "caption";
+            if (presentation.TryGetValue(captionRole, out var captionResolution) && !captionResolution.StrictResolved && !yolo)
+                diagnostics.Add(new("YADG-WORD-STYLE", "Figure caption presentation is unresolved; run yadg inspect template and yadg inspect styles.", true, location));
+        }
         if (EffectiveWidth(anchor) <= 0) diagnostics.Add(new("YADG-FIGURE-009", $"Cannot determine effective text width for figure '{figure.Id}'.", true, location));
     }
 

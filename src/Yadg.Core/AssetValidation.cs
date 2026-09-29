@@ -32,9 +32,7 @@ public static class AssetValidation
         if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
             return (null, new("YADG-FIGURE-004", $"Figure asset must remain within the workspace: '{figure.AssetPath}'.", true, figure.SourcePath));
         if (!File.Exists(fullPath))
-            return (null, new("YADG-FIGURE-005", $"Figure asset must be an existing regular file: '{figure.AssetPath}'.", true, figure.SourcePath));
-        if (File.GetAttributes(fullPath).HasFlag(FileAttributes.ReparsePoint))
-            return (null, new("YADG-FIGURE-004", $"Figure asset must not be a symbolic link or reparse point: '{figure.AssetPath}'.", true, figure.SourcePath));
+            return (null, new("YADG-FIGURE-005", $"Figure asset must be an existing file: '{figure.AssetPath}'.", true, figure.SourcePath));
         var extension = Path.GetExtension(fullPath).ToLowerInvariant();
         if (extension is not ".png" and not ".jpg" and not ".jpeg")
             return (null, new("YADG-FIGURE-006", $"Unsupported figure image format '{extension}'. Only PNG and JPEG are supported.", true, figure.SourcePath));
