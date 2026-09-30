@@ -5,8 +5,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+$props = [xml](Get-Content -LiteralPath (Join-Path $repo 'Directory.Build.props') -Raw)
+$version = [string]$props.Project.PropertyGroup.VersionPrefix
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Central VersionPrefix must be a stable semantic version; found '$version'." }
 if ([string]::IsNullOrWhiteSpace($Source)) { throw '-Source must be an explicit non-empty NuGet source.' }
-if ([string]::IsNullOrWhiteSpace($PackagePath)) { $PackagePath = Join-Path $repo 'artifacts/package/Yadg.1.0.0.nupkg' }
+if ([string]::IsNullOrWhiteSpace($PackagePath)) { $PackagePath = Join-Path $repo "artifacts/package/Yadg.$version.nupkg" }
 $package = [System.IO.Path]::GetFullPath($PackagePath)
 if (-not (Test-Path -LiteralPath $package -PathType Leaf)) { throw "Package does not exist: $package" }
 
@@ -18,7 +21,7 @@ try {
     $reader = New-Object System.IO.StreamReader($nuspecEntry.Open())
     try { [xml]$nuspec = $reader.ReadToEnd() } finally { $reader.Dispose() }
     $metadata = $nuspec.package.metadata
-    if ([string]$metadata.id -ne 'Yadg' -or [string]$metadata.version -ne '1.0.0') { throw "Expected package Yadg 1.0.0, found $($metadata.id) $($metadata.version)." }
+    if ([string]$metadata.id -ne 'Yadg' -or [string]$metadata.version -ne $version) { throw "Expected package Yadg $version, found $($metadata.id) $($metadata.version)." }
 }
 finally { $archive.Dispose() }
 
@@ -26,4 +29,4 @@ $nugetArgs = @('nuget', 'push', $package, '--source', $Source)
 if (-not [string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) { $nugetArgs += @('--api-key', $env:NUGET_API_KEY) }
 & dotnet @nugetArgs
 if ($LASTEXITCODE -ne 0) { throw "NuGet push failed with exit code $LASTEXITCODE." }
-Write-Output "Pushed Yadg 1.0.0 to explicit source '$Source'."
+Write-Output "Pushed Yadg $version to explicit source '$Source'."
