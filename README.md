@@ -134,7 +134,6 @@ See Section [@introduction].
 | Word | Finalizes Word fields |
 {#component-table}
 
-![System context](images/system-context.png){#system-context}
 ```
 
 Workspace value syntax in supported visible DOCX template text is:

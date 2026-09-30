@@ -49,12 +49,15 @@ if ($Milestone -eq 'M0013') {
     if (-not (Test-Path $evidencePath)) { Write-Error "M0013 release evidence is missing: $evidencePath"; exit 2 }
     if (-not (Test-Path $package)) { Write-Error "M0013 release candidate package is missing: $package"; exit 2 }
     $evidence = Get-Content $evidencePath -Raw | ConvertFrom-Json
+    $currentRevision = (& git -C $root rev-parse HEAD).Trim()
+    if ([string]$evidence.repositoryRevision -ne $currentRevision) { Write-Error 'M0013 release evidence revision does not match current repository HEAD.'; exit 2 }
     $actual = (Get-FileHash $package -Algorithm SHA256).Hash.ToUpperInvariant()
     if ([string]$evidence.packageSha256 -ne $actual -or [string]$evidence.releaseVersion -ne $version -or [string]$evidence.packageId -ne 'Yadg') { Write-Error 'M0013 evidence does not bind the current package ID/version/hash.'; exit 2 }
     $match = [regex]::Match($text, '(?m)^packageSha256:\s*([0-9A-Fa-f]+)\s*$')
     if (-not $match.Success -or $match.Groups[1].Value.ToUpperInvariant() -ne $actual) { Write-Error 'M0013 approval package hash does not match the current package.'; exit 2 }
     $revisionMatch = [regex]::Match($text, '(?m)^repositoryRevision:\s*(\S+)\s*$')
     if (-not $revisionMatch.Success -or $revisionMatch.Groups[1].Value -ne [string]$evidence.repositoryRevision) { Write-Error 'M0013 approval revision does not match release evidence.'; exit 2 }
+    if ($revisionMatch.Groups[1].Value -ne $currentRevision) { Write-Error 'M0013 human review revision does not match current repository HEAD.'; exit 2 }
     if ([string]$evidence.externalPublication -notmatch '^none') { Write-Error 'M0013 evidence does not confirm external publication exclusion.'; exit 2 }
 }
 Write-Output "$reviewId`: approved"

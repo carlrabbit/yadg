@@ -37,6 +37,12 @@ try {
     foreach ($required in @('yadg.dll','Yadg.Core.dll','Yadg.Word.dll','Yadg.Renderer.dll','Yadg.WordRenderer.dll')) {
         if (-not ($entries | Where-Object { $_ -like "tools/*/$required" })) { throw "Required package assembly is missing: $required" }
     }
+    $payloadFrameworks = @($entries | ForEach-Object {
+        if ($_ -match '^tools/([^/]+)/') { $Matches[1] }
+    } | Sort-Object -Unique)
+    if ($payloadFrameworks.Count -ne 1 -or $payloadFrameworks[0] -ne 'net10.0') {
+        throw "Packed .NET tool payload must target only net10.0; found: $($payloadFrameworks -join ', ')"
+    }
     $office = $entries | Where-Object { $_ -match '(?i)(^|/)(Interop\.Microsoft\.Office|Microsoft\.Office|office.*interop|interop.*office).*\.dll$' }
     if ($office) { throw "Package must not contain Office interop assemblies: $($office -join ', ')" }
     $bad = $entries | Where-Object { $_ -match '(^|/)(test|tests|fixtures|review|execution|\.git|obj|bin)(/|$)' -or $_ -match '(?i)(api[_-]?key|password|secret|credential)' }
@@ -108,10 +114,12 @@ try {
     # Validate the complete documented workspace YAML shape and representative README
     # Markdown grammar through the installed product, without rewriting authored docs.
     @('---','yadg:','  version: 1','','values:','  document-version: "1.1"','  story-value: "Packaged consumer value"','','markdown:','  thematicBreak: ignore','  codeInline: ignore','','publish:','  path: ./Published','','producers:','  mermaid:','    executable: mmdc','    arguments: []','---') | Set-Content -LiteralPath (Join-Path $workspace 'YADG.md')
-    @('# Introduction {#introduction}','','This document describes the reporting process.','','## Architecture {#architecture}','','The process has two steps.','','Inline `code` uses the documented ignore policy.') | Set-Content -LiteralPath (Join-Path $workspace 'content.md')
-    & $yadg check --workspace $workspace; if ($LASTEXITCODE -ne 0) { throw 'Documented README YAML/Markdown example did not validate through the installed command.' }
-    & $yadg build --workspace $workspace; if ($LASTEXITCODE -ne 0) { throw 'Documented README Markdown example did not build through the installed command.' }
-    $results.documentationExamples = 'README workspace YAML schema and representative heading/paragraph/inline-code Markdown validated by installed check/build; table/list/prototype contracts are covered by M0012 fixtures and source parser audit'
+    @('# Introduction {#introduction}','','This document describes the reporting process.','','## Architecture {#architecture}','','The process has two steps:','','1. Author the source.','2. Finalize the document.','','See Section [@introduction].','','| Component | Purpose |','|---|---|','| YADG | Authors DOCX |','| Word | Finalizes Word fields |','{#component-table}') | Set-Content -LiteralPath (Join-Path $workspace 'content.md')
+    $readmeMarkdownCheck = (& $yadg check --workspace $workspace --yolo 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "README list/table/reference Markdown example failed installed YOLO check: $readmeMarkdownCheck" }
+    $readmeMarkdownBuild = (& $yadg build --workspace $workspace --yolo 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or -not (Get-ChildItem (Join-Path $workspace 'YadgPreWords') -Filter '*.docx' -File)) { throw "README list/table/reference Markdown example failed installed YOLO build: $readmeMarkdownBuild" }
+    $results.documentationExamples = 'Installed tool executed README workspace YAML and its full heading/list/reference/table Markdown sample (figure removed from this example); other template/prototype and guide snippets are structurally covered by M0012 focused tests and source-contract audit'
 
     # The fixture lacks a usable configured ordered-list style. This is a recoverable
     # presentation mismatch with a deterministic built-in numbering fallback.
@@ -145,9 +153,15 @@ try {
     $tier3Path = Join-Path $repo 'artifacts/review/evidence/M0012/tier3-evidence.json'
     if (-not (Test-Path -LiteralPath $tier3Path)) { throw "Fresh M0012 Tier-3 evidence is missing: $tier3Path" }
     $tier3 = Get-Content -LiteralPath $tier3Path -Raw | ConvertFrom-Json
-    New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
     $revision = (& git -C $repo rev-parse HEAD).Trim()
+    if ([string]$tier3.repositoryRevision -ne $revision) {
+        throw "M0012 Tier-3 evidence revision '$($tier3.repositoryRevision)' does not match current candidate HEAD '$revision'."
+    }
     $tree = (& git -C $repo status --short) -join "`n"
+    if (-not [string]::IsNullOrWhiteSpace($tree)) {
+        throw "Cannot generate M0013 release evidence from a dirty working tree:`n$tree"
+    }
+    New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
     $evidence = [ordered]@{
         repositoryRevision = $revision
         workingTreeStatus = $tree
@@ -156,6 +170,7 @@ try {
         packagePath = $package
         packageSha256 = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
         packageInspection = 'passed'
+        packageTargetFramework = $payloadFrameworks[0]
         packageEntries = $entries
         dotnetSdk = (& dotnet --version).Trim()
         windowsVersion = (Get-CimInstance Win32_OperatingSystem).Caption
@@ -163,7 +178,7 @@ try {
         libreOfficeVersion = $lo.VersionInfo.FileVersion
         m0012Tier3 = [ordered]@{ evidencePath='artifacts/review/evidence/M0012/tier3-evidence.json'; repositoryRevision=[string]$tier3.repositoryRevision }
         installedConsumer = $results
-        documentationExampleAudit = 'passed; documented CLI/help surfaces checked from installed command; YAML/Markdown/template examples checked against implementation during release audit'
+        documentationExampleAudit = 'README full workspace YAML and heading/list/reference/table sample executed with installed check/build --yolo; template/prototype and other guide snippets are covered by M0012 focused tests and source-contract audit'
         externalPublication = 'none; no NuGet.org push, GitHub Release, tag, or publication workflow'
     }
     $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'release-evidence.json') -Encoding utf8
