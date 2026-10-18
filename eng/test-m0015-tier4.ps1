@@ -54,7 +54,7 @@ function New-M0015CaptionParagraph([Xml.XmlDocument]$Document, [string]$CaptionT
     $paragraph = $Document.CreateElement('w','p',$wordNs)
     Add-M0015RunText $Document $paragraph $match.Groups['prefix'].Value
     $field = $Document.CreateElement('w','fldSimple',$wordNs)
-    [void]$field.SetAttribute('instr',' SEQ ' + $match.Groups['sequence'].Value + ' \* ARABIC ')
+    $instruction = $Document.CreateAttribute('w','instr',$wordNs); $instruction.Value = ' SEQ ' + $match.Groups['sequence'].Value + ' \* ARABIC '; [void]$field.Attributes.Append($instruction)
     $run = $Document.CreateElement('w','r',$wordNs); $textNode = $Document.CreateElement('w','t',$wordNs); $textNode.InnerText = '1'
     [void]$run.AppendChild($textNode); [void]$field.AppendChild($run); [void]$paragraph.AppendChild($field)
     Add-M0015RunText $Document $paragraph $match.Groups['suffix'].Value
