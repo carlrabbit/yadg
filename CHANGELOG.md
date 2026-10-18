@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### YADG 1.2.0
+
+YADG 1.2 adds built-in source-grid text diagrams and makes the authoring documentation boundary explicit.
+
+#### Added
+
+- built-in `diagram` fenced blocks that convert source-authored Unicode/ASCII character-grid geometry into passive SVG embedded in DOCX;
+- supported orthogonal box drawing, arrows, nested boxes, connector crossings, and conservative overlap/occlusion reconstruction;
+- opt-in `diagrams.autoDetect` for strong diagram geometry inside unlabeled or exact lowercase `text` fenced blocks;
+- anonymous natural rendering for auto-detected diagrams without stable IDs;
+- a dedicated Markdown authoring guide covering both built-in text diagrams and Mermaid;
+- a dedicated DOCX template authoring guide covering placements, styles, prototypes, prepared tables, captions/references, values, and inspection.
+
+#### Changed
+
+- README/getting-started documentation distinguishes the two diagramming choices: built-in source-grid diagrams versus externally produced Mermaid diagrams;
+- historical `docs/user/AUTHORING.md` and `docs/user/TEMPLATES.md` paths become compatibility landing pages pointing to the dedicated authoring guides;
+- release/consumer validation covers built-in text diagrams and real Mermaid production from the installed package.
+
+#### Compatibility and release notes
+
+- workspace schema remains version 1;
+- text-diagram auto-detection is off by default, so existing workspaces keep their previous fenced-block behavior unless they opt in;
+- explicit `diagram` fences are built in and require no external diagram executable;
+- Mermaid remains a separately configured trusted external producer and continues through its PNG figure path;
+- source-file figures remain PNG/JPEG; YADG's internal SVG generation does not enable arbitrary source SVG figures;
+- package/runtime platform policy remains the YADG 1.1 model: framework-dependent `net10.0`, x64, with Windows x64 as the authoritative full-product validation locus.
+
+Do not assign a 1.2.0 release date or publish externally as part of M0015. Publication is a separate explicitly authorized operation.
+
 ## 1.1.0 — 2026-09-30
 
 ### YADG 1.1.0
@@ -10,47 +42,22 @@ YADG 1.1 focuses on authoring ergonomics, template discoverability, and explicit
 
 - `yadg init` to bootstrap a new workspace without overwriting existing owned paths.
 - `yadg check --list` to show discovered Markdown sources, DOCX templates, and referenceable semantic objects.
-- `yadg inspect styles` to discover concrete Word style IDs, UI names, aliases, visibility and relevant numbering capability.
-- `yadg inspect template` to explain placements, prototypes, semantic presentation roles, searchable Word locations, strict resolution, and YOLO fallback candidates.
+- `yadg inspect styles` and `yadg inspect template` for concrete template resource discovery.
 - configurable Markdown policy for thematic breaks and inline code.
 - character-style presentation for inline code.
-- unordered/ordered list-item prototypes using real template paragraphs and numbering.
-- generalized template-presentation resolution: concrete examples/prototypes, contextual template presentation, styles/numbering and compatibility defaults form one semantic model.
-- human-searchable DOCX diagnostics with template context and nearby visible text where available.
-- invocation-local `--yolo` for `check`, `build`, and `render`.
-- visible degradation diagnostics for every successful YOLO recovery.
-- deterministic related-template-resource fallback and conservative built-in real Word list numbering.
-- visible YOLO placeholders for missing figures or failed Mermaid producers.
-- visible preservation of unresolved value/reference identity instead of invented content.
-- Word ↔ LibreOffice renderer fallback under explicit YOLO, with requested/actual renderer provenance.
+- list-item prototypes using real template paragraphs and numbering.
+- generalized template-presentation resolution and human-searchable DOCX diagnostics.
+- invocation-local `--yolo` for `check`, `build`, and `render` with visible degradation reporting.
+- deterministic presentation fallback, visible missing-figure/Mermaid placeholders, unresolved value/reference preservation, and renderer fallback.
 
 #### Changed
 
-- style selectors now resolve exact internal ID first, then exact Word display name, then alias.
-- ordered-list presentation accepts real ordered Word numbering beyond decimal, including valid Roman/alphabetic formats.
-- list/caption/prepared-table prototypes are treated as concrete presentation examples rather than isolated special cases.
-- successful `build` replaces the complete current `YadgPreWords` generated result set.
-- successful `render` replaces the complete current finalized result set; stale finalized DOCX/PDF artifacts do not survive.
-- a successful Word render removes stale PDFs from an earlier LibreOffice render.
-- publishing is downstream-only: it copies finalized `YadgWords/*.docx` without parsing current Markdown/templates or executing producers.
-- recursive Markdown discovery prunes dot directories and YADG input/generated directories.
-- linked child directories are not recursively followed, while ordinary accessible file links are not rejected merely for being links.
-- diagnostics prefer workspace-relative paths and recognizable Word context.
-- authoring/user documentation is expanded around a complete workspace example, templates/prototypes, inspection, and YOLO.
-
-#### Compatibility and release notes
-
-- existing strict 1.0 workspaces remain the compatibility baseline; YOLO is opt-in.
-- workspace schema remains version 1.
-- YADG remains a framework-dependent .NET tool.
-- the 1.1 package targets `net10.0` and x64 while the authoritative full-product validation/support locus remains Windows x64.
-- Microsoft Word rendering still requires installed/activated desktop Word in an interactive logged-on Windows session.
-- YADG continues to use late-bound `Word.Application` and ships no Office interop wrapper binaries.
-- LibreOffice remains the default renderer and continues to produce DOCX plus PDF.
-- PDF publication is not part of 1.1; `publish` delivers finalized DOCX only.
-- external Mermaid producers remain trusted user-configured executables and are not sandboxed by YADG.
-
-The release date is intentionally not assigned here. Convert this prepared entry to `## 1.1.0 — <actual release date>` only during an explicitly authorized publication action.
+- style selectors resolve concrete internal IDs/names/aliases instead of relying on gallery assumptions;
+- ordered-list presentation accepts real non-decimal ordered numbering;
+- successful build/render replace their complete generated result sets;
+- publishing is downstream-only and does not rebuild/revalidate authoring input;
+- recursive Markdown discovery prunes YADG/dot directories and does not follow linked child directories;
+- user documentation was expanded around authoring, template inspection, and YOLO.
 
 ## 1.0.0
 
@@ -61,5 +68,3 @@ Initial YADG 1.0 release:
 - structured tables, prepared table rows, figures, captions, references, and trusted external Mermaid production;
 - LibreOffice and interactive Microsoft Word finalization paths;
 - explicit finalized-DOCX filesystem publishing.
-
-YADG 1.0 is framework-dependent, Windows-only as the supported full-product locus, does not publish PDF, and does not provide unattended/server-side Word automation.

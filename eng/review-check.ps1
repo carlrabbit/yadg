@@ -2,13 +2,13 @@ param([Parameter(Mandatory=$true, Position=0)][string]$Milestone, [Parameter(Val
 $ErrorActionPreference = 'Stop'
 if ($Milestone -eq '--milestone' -and $RemainingArguments.Count -gt 0) { $Milestone = $RemainingArguments[0] }
 $root = Split-Path -Parent $PSScriptRoot
-$reviewId = if ($Milestone -eq 'M0005') { 'HR-M0005-01' } elseif ($Milestone -eq 'M0009') { 'HR-M0009-01' } elseif ($Milestone -eq 'M0010') { 'HR-M0010-01' } elseif ($Milestone -eq 'M0011') { 'HR-M0011-01' } elseif ($Milestone -eq 'M0013') { 'HR-M0013-01' } elseif ($Milestone -eq 'M0014') { 'HR-M0014-01' } else { throw "Unsupported milestone review context '$Milestone'." }
+$reviewId = if ($Milestone -eq 'M0005') { 'HR-M0005-01' } elseif ($Milestone -eq 'M0009') { 'HR-M0009-01' } elseif ($Milestone -eq 'M0010') { 'HR-M0010-01' } elseif ($Milestone -eq 'M0011') { 'HR-M0011-01' } elseif ($Milestone -eq 'M0013') { 'HR-M0013-01' } elseif ($Milestone -eq 'M0014') { 'HR-M0014-01' } elseif ($Milestone -eq 'M0015') { 'HR-M0015-01' } else { throw "Unsupported milestone review context '$Milestone'." }
 $pending = Join-Path $root ".review/pending/$reviewId.md"
 $record = Join-Path $root ".review/records/$reviewId.md"
 if (-not (Test-Path $pending)) { throw "Missing canonical review request: $pending" }
 if (-not (Test-Path $record)) { Write-Error "$reviewId is still pending human review."; exit 2 }
 $text = Get-Content $record -Raw
-$required = if ($Milestone -eq 'M0005') { @('milestone: M0005','reviewId: HR-M0005-01','decision: approved','status: approved','reviewer:','repositoryRevision:','libreOfficeVersion:','evidence:') } elseif ($Milestone -eq 'M0009') { @('milestone: M0009','reviewId: HR-M0009-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','evidence:') } elseif ($Milestone -eq 'M0010') { @('milestone: M0010','reviewId: HR-M0010-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } elseif ($Milestone -in @('M0011','M0014')) { @("milestone: $Milestone","reviewId: HR-$Milestone-01",'decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } else { @('milestone: M0013','reviewId: HR-M0013-01','decision: approved','status: approved','reviewer:','repositoryRevision:','packageSha256:','automatedEvidence: artifacts/release/evidence/M0013/release-evidence.json') }
+$required = if ($Milestone -eq 'M0005') { @('milestone: M0005','reviewId: HR-M0005-01','decision: approved','status: approved','reviewer:','repositoryRevision:','libreOfficeVersion:','evidence:') } elseif ($Milestone -eq 'M0009') { @('milestone: M0009','reviewId: HR-M0009-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','evidence:') } elseif ($Milestone -eq 'M0010') { @('milestone: M0010','reviewId: HR-M0010-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } elseif ($Milestone -in @('M0011','M0014')) { @("milestone: $Milestone","reviewId: HR-$Milestone-01",'decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } elseif ($Milestone -eq 'M0015') { @('milestone: M0015','reviewId: HR-M0015-01','reviewClass: release-readiness','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','packageSha256:','automatedEvidence: artifacts/release/evidence/M0015/release-evidence.json') } else { @('milestone: M0013','reviewId: HR-M0013-01','decision: approved','status: approved','reviewer:','repositoryRevision:','packageSha256:','automatedEvidence: artifacts/release/evidence/M0013/release-evidence.json') }
 foreach ($item in $required) {
     if ($text -notmatch [regex]::Escape($item)) { Write-Error "Review record is missing '$item'."; exit 2 }
 }
@@ -79,5 +79,27 @@ if ($Milestone -eq 'M0013') {
     if (-not $revisionMatch.Success -or $revisionMatch.Groups[1].Value -ne [string]$evidence.repositoryRevision) { Write-Error 'M0013 approval revision does not match release evidence.'; exit 2 }
     if ($revisionMatch.Groups[1].Value -ne $currentRevision) { Write-Error 'M0013 human review revision does not match current repository HEAD.'; exit 2 }
     if ([string]$evidence.externalPublication -notmatch '^none') { Write-Error 'M0013 evidence does not confirm external publication exclusion.'; exit 2 }
+}
+if ($Milestone -eq 'M0015') {
+    $props = [xml](Get-Content (Join-Path $root 'Directory.Build.props') -Raw)
+    $version = [string]$props.Project.PropertyGroup.VersionPrefix
+    if ($version -ne '1.2.0') { Write-Error "M0015 central version is '$version', expected 1.2.0."; exit 2 }
+    $evidencePath = Join-Path $root 'artifacts/release/evidence/M0015/release-evidence.json'
+    $package = Join-Path $root "artifacts/package/Yadg.$version.nupkg"
+    if (-not (Test-Path -LiteralPath $evidencePath) -or -not (Test-Path -LiteralPath $package)) { Write-Error 'M0015 release evidence or exact package is missing.'; exit 2 }
+    $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+    $currentRevision = (& git -C $root rev-parse HEAD).Trim()
+    $currentTree = (& git -C $root status --porcelain --untracked-files=all) -join "`n"
+    if ([string]$evidence.repositoryRevision -ne $currentRevision -or [string]$text -notmatch "(?m)^repositoryRevision:\s*$([regex]::Escape($currentRevision))\s*$") { Write-Error 'M0015 review/evidence revision does not match current HEAD.'; exit 2 }
+    if (-not [string]::IsNullOrWhiteSpace($currentTree) -or -not [string]::IsNullOrWhiteSpace([string]$evidence.workingTreeStatus)) { Write-Error 'M0015 release evidence and current repository tree must be clean.'; exit 2 }
+    $actual = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToUpperInvariant()
+    $hashMatch = [regex]::Match($text, '(?m)^packageSha256:\s*([0-9A-Fa-f]+)\s*$')
+    if ([string]$evidence.releaseVersion -ne $version -or [string]$evidence.packageId -ne 'Yadg' -or [string]$evidence.packageSha256 -ne $actual -or -not $hashMatch.Success -or $hashMatch.Groups[1].Value.ToUpperInvariant() -ne $actual) { Write-Error 'M0015 review/evidence does not bind Yadg 1.2.0 and its current package hash.'; exit 2 }
+    $wordMatch = [regex]::Match($text, '(?m)^wordVersion:\s*(\S+)\s*$')
+    $libreMatch = [regex]::Match($text, '(?m)^libreOfficeVersion:\s*(\S+)\s*$')
+    if (-not $wordMatch.Success -or $wordMatch.Groups[1].Value -ne [string]$evidence.wordVersion -or -not $libreMatch.Success -or $libreMatch.Groups[1].Value -ne [string]$evidence.libreOfficeVersion) { Write-Error 'M0015 review runtime versions do not match automated release evidence.'; exit 2 }
+    if ([string]$evidence.externalPublication -ne 'none') { Write-Error 'M0015 evidence must state externalPublication: none.'; exit 2 }
+    if ([string]$evidence.m0014Tier3.repositoryRevision -ne $currentRevision) { Write-Error 'M0015 evidence does not bind fresh M0014 Tier 3 to the release candidate revision.'; exit 2 }
+    if ([string]$text -notmatch '(?m)^automatedEvidence:\s*artifacts/release/evidence/M0015/release-evidence\.json\s*$') { Write-Error 'M0015 review is not bound to its automated release evidence.'; exit 2 }
 }
 Write-Output "$reviewId`: approved"

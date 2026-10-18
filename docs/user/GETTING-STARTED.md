@@ -13,10 +13,10 @@ YADG            -> authoring, validation, finalization orchestration
 
 ## Requirements
 
-Install YADG 1.1.0 as a .NET tool:
+After YADG 1.2.0 is available from your NuGet source, install it as a .NET tool:
 
 ```powershell
-dotnet tool install --global Yadg --version 1.1.0
+dotnet tool install --global Yadg --version 1.2.0
 yadg --version
 ```
 
@@ -196,7 +196,7 @@ In `YADG.md`:
 yadg:
   version: 1
 values:
-  document-version: "1.1"
+  document-version: "1.2"
 ---
 ```
 
@@ -259,6 +259,26 @@ flowchart LR
 
 YADG executes the configured external command with your user permissions. Review producer configuration before running a workspace.
 
+## Two diagram choices
+
+Use a built-in text-grid diagram when the source characters should set each element's position:
+
+````markdown
+```diagram {#request-flow}
+┌────────┐
+│ Client │
+└───┬────┘
+    ▼
+┌────────┐
+│ YADG   │
+└────────┘
+```
+````
+
+Use Mermaid when its semantic diagram language and automatic layout fit better. Mermaid needs a separately configured trusted producer; YADG does not install it. Both identified diagram types behave as figures in a prepared DOCX template, while text-grid layout is built in and Mermaid is rendered externally.
+
+See [Markdown authoring](MARKDOWN-AUTHORING.md) for full syntax and producer details.
+
 ## Strict versus YOLO
 
 Normal commands are strict:
@@ -298,6 +318,6 @@ Use strict mode for production/CI gates.
 
 ## Next
 
-- [Authoring](AUTHORING.md) — Markdown, IDs, values, producers and workspace behavior
-- [Templates](TEMPLATES.md) — placements, styles, prototypes and presentation
+- [Markdown authoring](MARKDOWN-AUTHORING.md) — source grammar, IDs, values, figures, and diagrams
+- [DOCX template authoring](DOCX-TEMPLATE-AUTHORING.md) — placements, styles, prototypes, and presentation
 - [Troubleshooting](TROUBLESHOOTING.md) — diagnostics and YOLO recovery
