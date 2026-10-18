@@ -363,7 +363,6 @@ try {
     Remove-Item -LiteralPath $consumerTemplate -Force
     New-M0015TemplateFromExamples $fixture $consumerTemplate $templateFrontMatter $templateTags $templatePrototypes
     $documentedPrefix = @('# Architecture {#architecture}','An installed-tool release sample.',$documentedExamples['markdown-table'].Body,$documentedExamples['markdown-figure'].Body)
-    Copy-Item -LiteralPath $imageDirectory -Destination (Join-Path $consumer 'images') -Recurse
     $templateDocument = Join-Path $templateExample 'YadgTemplates/template.docx'
     Remove-Item -LiteralPath $templateDocument -Force
     New-M0015TemplateFromExamples $fixture $templateDocument $templateFrontMatter $templateTags $templatePrototypes
