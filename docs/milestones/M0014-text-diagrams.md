@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Lifecycle state | ready |
+| Lifecycle state | complete |
 | Mode | ai-executed-human-reviewed |
 | Baseline implementation model | GPT-5.6 Luna |
 | Baseline executor readiness | confirmed |
@@ -507,7 +507,34 @@ Implementation populates this section only after final reconciliation/completion
 
 | Obligation / evidence case | Evidence | Validation gate / target | Result |
 |---|---|---|---|
-| pending | pending | pending | pending |
+| AC-01 | Explicit fence syntax, mandatory ID, caption, and invalid forms in `M0014FocusedTests` | VAL-01 focused integration suite | passed |
+| AC-02 | OOXML-free `TextDiagramParser`, junction/arrow/ASCII and standalone-arrow tests | VAL-01 focused integration suite | passed |
+| AC-03 | Nested rectangle geometry tests and finalized nested diagrams | VAL-01, VAL-05 | passed |
+| AC-04 | Positive occlusion, hidden lower-right corner, and ambiguous-gap tests | VAL-01 | passed |
+| AC-05 | Connector boundary-crossing SVG assertion and Tier 3 boundary connector | VAL-01, VAL-05 | passed |
+| AC-06 | Deterministic, finite, passive SVG assertions | VAL-01 | passed |
+| AC-07 | Identified natural/direct placement and suppression structural test | VAL-03 focused integration suite | passed |
+| AC-08 | Generated SVG ImagePart/`svgBlip` and source-file SVG rejection test | VAL-03 focused integration suite | passed |
+| AC-09 | Optional `diagrams.autoDetect` schema/default/invalid-config tests | VAL-02 focused integration suite | passed |
+| AC-10 | Disabled-mode and explicit-diagram behavior tests | VAL-02 focused integration suite | passed |
+| AC-11 | Empty-info/`text` candidate and language-tag exclusion tests | VAL-02 focused integration suite | passed |
+| AC-12 | Unicode/ASCII positive candidates and weak-candidate rejection tests | VAL-02 focused integration suite | passed |
+| AC-13 | Anonymous natural-placement and non-referenceable DOCX structure test | VAL-03 focused integration suite | passed |
+| AC-14 | Identified auto-detected figure placement test | VAL-02, VAL-03 | passed |
+| AC-15 | Existing producer/image regressions in full integration validation | VAL-04 `./eng/validate.ps1` | passed; 82 integration tests |
+| AC-16 | Invalid diagram `check`/`build` diagnostics and no-output-mutation test | VAL-03 focused integration suite | passed |
+| AC-17 | Word and LibreOffice finalized DOCX artifacts, each retaining three SVG parts | VAL-05 `artifacts/review/evidence/M0014/tier3-evidence.json` | passed |
+| DOC-01 | README and direct authoring documentation | VAL-04 repository validation | passed |
+| REV-01 | Human approval “All good”, bound in `.review/records/HR-M0014-01.md` to Tier 3 evidence SHA-256 `D11C652BCF5297C997A515E285316DD0B15F48197CE51E81BA16A8E49E39FC94` | VAL-06 `./eng/review-check.ps1 --milestone M0014` | approved |
+| EC-04a | Lower rectangle reconstructed with its covered lower-right corner | VAL-01 focused integration suite | passed |
+| EC-04b | Uncovered/ambiguous missing-edge geometry rejected | VAL-01 focused integration suite | passed |
+| EC-07a | Natural identified figure placement | VAL-03 focused integration suite | passed |
+| EC-07b | Direct figure placement suppresses natural emission | VAL-03 focused integration suite | passed |
+| EC-12a | Unicode box/arrow auto-detection | VAL-02 focused integration suite | passed |
+| EC-12b | Connected ASCII auto-detection | VAL-02 focused integration suite | passed |
+| EC-12c | Weak text/key-value/arrow candidates rejected | VAL-02 focused integration suite | passed |
+| EC-17a | Word finalized diagram DOCX and runtime result | VAL-05 Tier 3 evidence | passed |
+| EC-17b | LibreOffice finalized diagram DOCX and runtime result | VAL-05 Tier 3 evidence | passed |
 
 ## Baseline-Executability Audit
 
