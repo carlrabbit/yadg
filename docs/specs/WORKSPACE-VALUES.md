@@ -8,6 +8,7 @@ Other root mappings are specialized by:
 
 - `markdown` -> `docs/specs/AUTHORING-EXPERIENCE.md`
 - `producers` -> `docs/specs/CONTENT-PRODUCERS.md`
+- `diagrams` -> `docs/specs/TEXT-DIAGRAMS.md`
 - `publish` -> `docs/specs/PUBLISHING.md`
 
 Document-wide visible-text replacement behavior is specialized by:
@@ -18,7 +19,7 @@ Document-wide visible-text replacement behavior is specialized by:
 
 `YADG.md` remains the workspace marker. It may contain optional YAML front matter followed by human-facing notes that are not document source.
 
-A file without front matter remains valid and defines empty values, no producers, and no publication default.
+A file without front matter remains valid and defines empty values, no producers, diagram auto-detection disabled, and no publication default.
 
 ## Front-matter syntax
 
@@ -46,10 +47,13 @@ yadg
 values
 markdown
 producers
+diagrams
 publish
 ```
 
 `markdown` is an optional schema-v1 mapping specialized by `AUTHORING-EXPERIENCE.md`. It accepts only `thematicBreak: error|ignore` and `codeInline: error|ignore|style`; both default to `error`. Unknown keys and modes are errors.
+
+`diagrams` is an optional schema-v1 mapping specialized by `TEXT-DIAGRAMS.md`; it accepts only boolean `autoDetect`, default `false`.
 
 `yadg` is required whenever front matter is present.
 
@@ -111,7 +115,7 @@ Publication configuration is filesystem destination configuration and defines no
 
 ## Compatibility
 
-Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid. M0012 adds the optional `markdown` mapping without changing the schema version.
+Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid. M0012 adds the optional `markdown` mapping and M0014 adds the optional `diagrams` mapping without changing the schema version. Diagram auto-detection defaults to off.
 
 M0010 changes where existing `{{value:<id>}}` tags are supported; it does not add new workspace value syntax.
 

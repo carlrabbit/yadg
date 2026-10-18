@@ -14,6 +14,7 @@ When a focused specification explicitly states that it supersedes an earlier rul
 - `docs/specs/DOCUMENT-COMPOSITION.md` — template-relative headings, paragraph composition, visible value substitution, and realistic document compatibility.
 - `docs/specs/STRUCTURED-CONTENT.md` — lists, tables, figures, assets, captions, and float-like placement; list-style details are specialized/superseded by `TEMPLATE-STYLES.md`.
 - `docs/specs/PREPARED-TABLES.md` — prepared Word table-row population.
+- `docs/specs/TEXT-DIAGRAMS.md` — built-in character-grid diagrams, vector rendering, containment/occlusion, and opt-in fenced-block auto-detection.
 
 ## Template presentation and Word structures
 
@@ -42,6 +43,8 @@ YADG authors Office-independent DOCX.
 A selected renderer finalizes fields/index/layout-dependent state.
 Publishing copies finalized DOCX explicitly.
 ```
+
+Text diagrams are source-authored geometry. Their generated SVG is a derived authoring product, analogous to other generated figure payloads, and is not source authority.
 
 YADG 1.1 improves authoring/discovery ergonomics without changing that ownership model.
 

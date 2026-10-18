@@ -264,7 +264,42 @@ error
 
 Under YOLO, a missing configured inline-code presentation may resolve to a compatible code/source/monospace character style or ordinary text.
 
-Ordinary fenced code blocks are unsupported except for Mermaid.
+Ordinary fenced code blocks are unsupported except for Mermaid and the text-diagram forms described below.
+
+## Text-grid diagrams
+
+Use an exact lowercase `diagram` fence for a semantic diagram figure. Give it a stable ID and optionally a plain caption:
+
+````markdown
+```diagram {#system-flow caption="System flow"}
+┌──────────┐
+│ Frontend │
+└────┬─────┘
+     ▼
+┌──────────┐
+│ Backend  │
+└──────────┘
+```
+````
+
+The characters and whitespace define the grid. YADG supports orthogonal Unicode box drawing, the arrow glyphs `→ ← ↑ ↓ ► ◄ ▲ ▼`, connected ASCII `- | + > < ^ v`, and text aligned to the grid. Complete boxes and nested boxes are rendered in source geometry. Connectors can cross box boundaries. A partially hidden rectangle edge is reconstructed only when one complete covering rectangle explains every missing cell. The covering box appears above the repaired outline. Uncovered or ambiguous gaps are errors. YADG does not infer node meanings, choose positions, or route connectors.
+
+An identified diagram follows normal figure placement, caption, numbering, bookmark, and reference behavior. You can place it at its natural Markdown position or use `{{figure:system-flow}}` in a DOCX template to move it there. Direct placement suppresses natural emission for that template.
+
+YADG generates passive, self-contained SVG in memory and embeds it in the authored DOCX. It does not write a generated asset or cache. File-backed figures remain PNG/JPEG; this feature does not enable source SVG files.
+
+### Optional auto-detection
+
+Auto-detection is disabled by default. Enable it in root `YADG.md` front matter:
+
+```yaml
+diagrams:
+  autoDetect: true
+```
+
+Only unlabeled fenced blocks and exact lowercase `text` fences are candidates. Auto-detection reuses the diagram parser and requires strong connected geometry, such as a complete box, a substantial connected box-drawing layout, a branching path, or a longer arrow path. The simple `A -> B`, isolated punctuation, aligned prose, and key/value records do not qualify. Other language-tagged fences are not inspected.
+
+An unlabeled detected block has no stable identity. It renders only at its natural source position and cannot have a caption, bookmark, reference, or `check --list` entry. A detected `text` fence may include the normal `{#id caption="..."}` attributes; when it qualifies, it becomes an ordinary identified figure. If a candidate is weak, YADG keeps the existing unsupported-fenced-block behavior.
 
 ## Mermaid producer
 

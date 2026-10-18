@@ -10,6 +10,7 @@ public sealed record WorkspaceValues(IReadOnlyDictionary<string, string> Values)
     public string? PublishPath { get; init; }
     public string ThematicBreakPolicy { get; init; } = "error";
     public string CodeInlinePolicy { get; init; } = "error";
+    public bool DiagramsAutoDetect { get; init; }
     public static WorkspaceValues Empty { get; } = new(new Dictionary<string, string>(StringComparer.Ordinal));
 }
 
@@ -93,11 +94,13 @@ public static class WorkspaceValuesParser
         var publishKeys = new HashSet<string>(StringComparer.Ordinal);
         var mermaidKeys = new HashSet<string>(StringComparer.Ordinal);
         var markdownKeys = new HashSet<string>(StringComparer.Ordinal);
+        var diagramsKeys = new HashSet<string>(StringComparer.Ordinal);
         var producerArguments = new List<string>();
         string? producerExecutable = null;
         string? publishPath = null;
         var thematicBreak = "error";
         var codeInline = "error";
+        var diagramsAutoDetect = false;
         var publishSeen = false;
         var section = "";
         var versionSeen = false;
@@ -130,7 +133,7 @@ public static class WorkspaceValuesParser
             if (indent == 0)
             {
                 if (!rootKeys.Add(key)) Error(diagnostics, "YADG-VALUES-006", $"Duplicate front matter key '{key}'.", location, i);
-                if (key is not "yadg" and not "values" and not "producers" and not "publish" and not "markdown") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
+                if (key is not "yadg" and not "values" and not "producers" and not "publish" and not "markdown" and not "diagrams") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
                 if (rawValue.Length != 0) Error(diagnostics, "YADG-VALUES-005", $"Mapping key '{key}' must not have an inline value.", location, i);
                 if (key == "publish") publishSeen = true;
                 section = key; continue;
@@ -161,6 +164,15 @@ public static class WorkspaceValuesParser
                 if (key == "thematicBreak" && mode is "error" or "ignore") thematicBreak = mode;
                 else if (key == "codeInline" && mode is "error" or "ignore" or "style") codeInline = mode;
                 else Error(diagnostics, "YADG-VALUES-007", key is "thematicBreak" or "codeInline" ? $"Unsupported markdown.{key} mode '{mode}'." : $"Unknown markdown key '{key}'.", location, i);
+                continue;
+            }
+            if (section == "diagrams" && indent == 2)
+            {
+                if (!diagramsKeys.Add(key)) { Error(diagnostics, "YADG-VALUES-006", $"Duplicate diagrams key '{key}'.", location, i); continue; }
+                if (key != "autoDetect") { Error(diagnostics, "YADG-VALUES-007", $"Unknown diagrams key '{key}'.", location, i); continue; }
+                if (rawValue.Equals("true", StringComparison.OrdinalIgnoreCase)) diagramsAutoDetect = true;
+                else if (rawValue.Equals("false", StringComparison.OrdinalIgnoreCase)) diagramsAutoDetect = false;
+                else Error(diagnostics, "YADG-VALUES-007", "diagrams.autoDetect must be a YAML boolean.", location, i);
                 continue;
             }
             if (section == "producers" && indent == 2)
@@ -200,7 +212,7 @@ public static class WorkspaceValuesParser
         if (!rootKeys.Contains("yadg") || !versionSeen) diagnostics.Add(new("YADG-VALUES-008", "Workspace front matter must declare yadg.version: 1.", true, location));
         if (producerKeys.Contains("mermaid") && producerExecutable is null) diagnostics.Add(new("YADG-PRODUCER-003", "Mermaid producer configuration requires executable.", true, location));
         if (publishSeen && publishPath is null) diagnostics.Add(new("YADG-PUBLISH-001", "publish.path must be a non-empty string.", true, location));
-        return new(values) { PublishPath = publishPath, ThematicBreakPolicy = thematicBreak, CodeInlinePolicy = codeInline, Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
+        return new(values) { PublishPath = publishPath, ThematicBreakPolicy = thematicBreak, CodeInlinePolicy = codeInline, DiagramsAutoDetect = diagramsAutoDetect, Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
     }
 
     private static bool TryScalar(string raw, out string value)

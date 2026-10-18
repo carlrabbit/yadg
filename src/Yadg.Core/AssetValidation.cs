@@ -7,7 +7,7 @@ public static class AssetValidation
         var figures = new Dictionary<string, YadgFigure>(StringComparer.Ordinal);
         foreach (var figure in document.Figures.Values)
         {
-            if (figure.GeneratedSource is not null) { figures[figure.Id] = figure; continue; }
+            if (figure.GeneratedSource is not null || figure.GeneratedSvg is not null) { figures[figure.Id] = figure; continue; }
             var result = ReadAsset(figure, workspaceRoot);
             if (result.Asset is null) { diagnostics.Add(yolo && result.Diagnostic!.Code is "YADG-FIGURE-005" or "YADG-FIGURE-007" ? result.Diagnostic with { IsError = false, IsDegradation = true, Code = "YADG-YOLO-FIGURE-001", Message = $"Figure '{figure.Id}' asset is unavailable; fallback: visible figure placeholder." } : result.Diagnostic!); figures[figure.Id] = figure; }
             else figures[figure.Id] = figure with { Asset = result.Asset };

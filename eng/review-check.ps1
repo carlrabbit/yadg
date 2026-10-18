@@ -2,13 +2,13 @@ param([Parameter(Mandatory=$true, Position=0)][string]$Milestone, [Parameter(Val
 $ErrorActionPreference = 'Stop'
 if ($Milestone -eq '--milestone' -and $RemainingArguments.Count -gt 0) { $Milestone = $RemainingArguments[0] }
 $root = Split-Path -Parent $PSScriptRoot
-$reviewId = if ($Milestone -eq 'M0005') { 'HR-M0005-01' } elseif ($Milestone -eq 'M0009') { 'HR-M0009-01' } elseif ($Milestone -eq 'M0010') { 'HR-M0010-01' } elseif ($Milestone -eq 'M0011') { 'HR-M0011-01' } elseif ($Milestone -eq 'M0013') { 'HR-M0013-01' } else { throw "Unsupported milestone review context '$Milestone'." }
+$reviewId = if ($Milestone -eq 'M0005') { 'HR-M0005-01' } elseif ($Milestone -eq 'M0009') { 'HR-M0009-01' } elseif ($Milestone -eq 'M0010') { 'HR-M0010-01' } elseif ($Milestone -eq 'M0011') { 'HR-M0011-01' } elseif ($Milestone -eq 'M0013') { 'HR-M0013-01' } elseif ($Milestone -eq 'M0014') { 'HR-M0014-01' } else { throw "Unsupported milestone review context '$Milestone'." }
 $pending = Join-Path $root ".review/pending/$reviewId.md"
 $record = Join-Path $root ".review/records/$reviewId.md"
 if (-not (Test-Path $pending)) { throw "Missing canonical review request: $pending" }
 if (-not (Test-Path $record)) { Write-Error "$reviewId is still pending human review."; exit 2 }
 $text = Get-Content $record -Raw
-$required = if ($Milestone -eq 'M0005') { @('milestone: M0005','reviewId: HR-M0005-01','decision: approved','status: approved','reviewer:','repositoryRevision:','libreOfficeVersion:','evidence:') } elseif ($Milestone -eq 'M0009') { @('milestone: M0009','reviewId: HR-M0009-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','evidence:') } elseif ($Milestone -eq 'M0010') { @('milestone: M0010','reviewId: HR-M0010-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } elseif ($Milestone -eq 'M0011') { @('milestone: M0011','reviewId: HR-M0011-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } else { @('milestone: M0013','reviewId: HR-M0013-01','decision: approved','status: approved','reviewer:','repositoryRevision:','packageSha256:','automatedEvidence: artifacts/release/evidence/M0013/release-evidence.json') }
+$required = if ($Milestone -eq 'M0005') { @('milestone: M0005','reviewId: HR-M0005-01','decision: approved','status: approved','reviewer:','repositoryRevision:','libreOfficeVersion:','evidence:') } elseif ($Milestone -eq 'M0009') { @('milestone: M0009','reviewId: HR-M0009-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','evidence:') } elseif ($Milestone -eq 'M0010') { @('milestone: M0010','reviewId: HR-M0010-01','decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } elseif ($Milestone -in @('M0011','M0014')) { @("milestone: $Milestone","reviewId: HR-$Milestone-01",'decision: approved','status: approved','reviewer:','repositoryRevision:','wordVersion:','libreOfficeVersion:','evidence:') } else { @('milestone: M0013','reviewId: HR-M0013-01','decision: approved','status: approved','reviewer:','repositoryRevision:','packageSha256:','automatedEvidence: artifacts/release/evidence/M0013/release-evidence.json') }
 foreach ($item in $required) {
     if ($text -notmatch [regex]::Escape($item)) { Write-Error "Review record is missing '$item'."; exit 2 }
 }
@@ -25,6 +25,26 @@ if ($Milestone -eq 'M0010') {
     foreach ($artifact in @('word-origin-word.docx','libreoffice-origin-libreoffice.docx')) {
         if (-not (Test-Path (Join-Path $evidenceRoot $artifact))) { Write-Error "M0010 review artifact is missing: $artifact"; exit 2 }
     }
+}
+if ($Milestone -eq 'M0014') {
+    $evidenceRoot = Join-Path $root 'artifacts/review/evidence/M0014'
+    $evidencePath = Join-Path $evidenceRoot 'tier3-evidence.json'
+    if (-not (Test-Path -LiteralPath $evidencePath)) { Write-Error 'M0014 Tier 3 evidence is missing.'; exit 2 }
+    foreach ($artifact in @('word-diagram.docx','libreoffice-diagram.docx')) {
+        if (-not (Test-Path (Join-Path $evidenceRoot $artifact))) { Write-Error "M0014 review artifact is missing: $artifact"; exit 2 }
+    }
+    $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+    $hash = (Get-FileHash -LiteralPath $evidencePath -Algorithm SHA256).Hash.ToUpperInvariant()
+    if ($text -notmatch "(?m)^evidence:\s*SHA256:$hash\s*$") { Write-Error 'M0014 approval is not bound to current Tier 3 evidence.'; exit 2 }
+    $revisionMatch = [regex]::Match($text, '(?m)^repositoryRevision:\s*(\S+)\s*$')
+    if (-not $revisionMatch.Success -or $revisionMatch.Groups[1].Value -ne [string]$evidence.repositoryRevision) { Write-Error 'M0014 review revision does not match Tier 3 evidence.'; exit 2 }
+    foreach ($run in $evidence.runs) {
+        $artifactPath = Join-Path $root ([string]$run.finalized)
+        if (-not (Test-Path -LiteralPath $artifactPath)) { Write-Error "M0014 finalized evidence artifact is missing: $artifactPath"; exit 2 }
+        if ((Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash -ne [string]$run.finalizedSha256) { Write-Error "M0014 finalized artifact hash does not match evidence: $artifactPath"; exit 2 }
+        if ([string]$run.result -ne 'passed' -or [int]$run.svgPartCount -lt 3) { Write-Error 'M0014 Tier 3 evidence is incomplete.'; exit 2 }
+    }
+    if (@($evidence.runs | Where-Object { $_.renderer -eq 'word' -and $_.result -eq 'passed' }).Count -ne 1 -or @($evidence.runs | Where-Object { $_.renderer -eq 'libreoffice' -and $_.result -eq 'passed' }).Count -ne 1) { Write-Error 'M0014 Tier 3 evidence must include successful Word and LibreOffice runs.'; exit 2 }
 }
 if ($Milestone -eq 'M0011') {
     $evidencePath = Join-Path $root 'artifacts/release/evidence/M0011/release-evidence.json'

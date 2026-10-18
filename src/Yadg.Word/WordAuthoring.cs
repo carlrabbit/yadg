@@ -823,7 +823,7 @@ public static class WordAuthoring
 
     private static void ValidateFigure(YadgFigure figure, Styles? styles, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, Paragraph anchor, DocxLocation location, List<Diagnostic> diagnostics, bool yolo = false)
     {
-        if (figure.Asset is null) { if (!yolo) diagnostics.Add(new("YADG-FIGURE-008", $"Figure '{figure.Id}' has no validated image asset.", true, location)); return; }
+        if (figure.Asset is null && figure.GeneratedSvg is null) { if (!yolo) diagnostics.Add(new("YADG-FIGURE-008", $"Figure '{figure.Id}' has no validated image asset.", true, location)); return; }
         if (!string.IsNullOrEmpty(figure.AltText))
         {
             var captionRole = metadata.PrototypeBindings.ContainsKey("figureCaption") ? "figureCaption" : "caption";
@@ -971,9 +971,12 @@ public static class WordAuthoring
                 if (!string.IsNullOrWhiteSpace(table.Caption)) yield return CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targets);
                 break;
             case YadgFigure figure:
-                if (figure.Asset is null && yolo) yield return new Paragraph(new Run(new Text($"[YADG figure \"{figure.Id}\" unavailable: {BoundExcerpt(figure.AssetPath, 90)}{(string.IsNullOrWhiteSpace(figure.AltText) ? "" : " — " + BoundExcerpt(figure.AltText, 90))}]")));
+                if (figure.Asset is null && figure.GeneratedSvg is null && yolo) yield return new Paragraph(new Run(new Text($"[YADG figure \"{figure.Id}\" unavailable: {BoundExcerpt(figure.AssetPath, 90)}{(string.IsNullOrWhiteSpace(figure.AltText) ? "" : " — " + BoundExcerpt(figure.AltText, 90))}]")));
                 else yield return CreateFigureParagraph(figure, anchor, document);
                 if (!string.IsNullOrEmpty(figure.AltText)) yield return CreateCaption(figure.Id, figure.AltText, "figureCaption", metadata, targets);
+                break;
+            case YadgDiagram diagram:
+                yield return CreateSvgParagraph(diagram.SvgContent, "anonymous-diagram", anchor, document);
                 break;
         }
     }
@@ -1083,10 +1086,39 @@ public static class WordAuthoring
 
     private static Paragraph CreateFigureParagraph(YadgFigure figure, Paragraph anchor, WordprocessingDocument document)
     {
+        if (figure.GeneratedSvg is not null) return CreateSvgParagraph(figure.GeneratedSvg, figure.Id, anchor, document);
         var asset = figure.Asset!; var main = document.MainDocumentPart!; var partType = asset.Format == "PNG" ? ImagePartType.Png : ImagePartType.Jpeg; var part = main.AddImagePart(partType);
         using (var stream = File.OpenRead(asset.FullPath)) part.FeedData(stream);
         var relation = main.GetIdOfPart(part); var width = Math.Min((long)asset.WidthPixels * 9525, EffectiveWidth(anchor)); var height = Math.Max(1, (long)asset.HeightPixels * 9525 * width / ((long)asset.WidthPixels * 9525));
         var drawing = new Drawing(new DW.Inline(new DW.Extent { Cx = width, Cy = height }, new DW.DocProperties { Id = 1U, Name = figure.Id }, new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }), new A.Graphic(new A.GraphicData(new PIC.Picture(new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = figure.AssetPath }, new PIC.NonVisualPictureDrawingProperties()), new PIC.BlipFill(new A.Blip { Embed = relation }, new A.Stretch(new A.FillRectangle())), new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = width, Cy = height }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }))) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })));
+        return new Paragraph(new Run(drawing));
+    }
+
+    private static Paragraph CreateSvgParagraph(string svg, string name, Paragraph anchor, WordprocessingDocument document)
+    {
+        var root = System.Xml.Linq.XDocument.Parse(svg).Root ?? throw new InvalidDataException("Generated diagram SVG has no root element.");
+        var sourceWidth = double.Parse(root.Attribute("width")!.Value, System.Globalization.CultureInfo.InvariantCulture);
+        var sourceHeight = double.Parse(root.Attribute("height")!.Value, System.Globalization.CultureInfo.InvariantCulture);
+        var main = document.MainDocumentPart!;
+        var part = main.AddImagePart(ImagePartType.Svg);
+        using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(svg))) part.FeedData(stream);
+        var relation = main.GetIdOfPart(part);
+        var width = Math.Min((long)Math.Round(sourceWidth * 9525), EffectiveWidth(anchor));
+        var height = Math.Max(1, (long)Math.Round(sourceHeight * 9525 * width / (sourceWidth * 9525)));
+        var blip = new A.Blip { Embed = relation };
+        var extension = new OpenXmlUnknownElement("a:extLst", "http://schemas.openxmlformats.org/drawingml/2006/main");
+        var ext = new OpenXmlUnknownElement("a:ext", "http://schemas.openxmlformats.org/drawingml/2006/main");
+        ext.SetAttribute(new OpenXmlAttribute("uri", string.Empty, "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"));
+        var svgBlip = new OpenXmlUnknownElement("asvg:svgBlip", "http://schemas.microsoft.com/office/drawing/2016/SVG/main");
+        svgBlip.SetAttribute(new OpenXmlAttribute("r:embed", "http://schemas.openxmlformats.org/officeDocument/2006/relationships", relation));
+        ext.Append(svgBlip);
+        extension.Append(ext);
+        blip.Append(extension);
+        var picture = new PIC.Picture(
+            new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = name }, new PIC.NonVisualPictureDrawingProperties()),
+            new PIC.BlipFill(blip, new A.Stretch(new A.FillRectangle())),
+            new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = width, Cy = height }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
+        var drawing = new Drawing(new DW.Inline(new DW.Extent { Cx = width, Cy = height }, new DW.DocProperties { Id = 1U, Name = name }, new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }), new A.Graphic(new A.GraphicData(picture) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })));
         return new Paragraph(new Run(drawing));
     }
 
