@@ -365,7 +365,13 @@ try {
     Copy-Item -LiteralPath (Join-Path $consumer 'YADG.md') -Destination (Join-Path $templateExample 'YADG.md')
     Set-Content -LiteralPath (Join-Path $templateExample 'content.md') -Value $templateSource -Encoding utf8
     Copy-Item -LiteralPath $imageDirectory -Destination (Join-Path $templateExample 'images') -Recurse
-    $check = (& $yadg check --workspace $consumer 2>&1 | Out-String)
+    foreach ($exampleId in @('explicit-text-diagram','standalone-arrow-diagram','nested-box-diagram','corner-occlusion-diagram','autodetect-identified-positive','mermaid-source-fence')) {
+        Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value ('# Documented example {#documented-example}' + "`n`n" + $documentedExamples[$exampleId].Body) -Encoding utf8
+        $exampleCheck = (& $yadg check --workspace $consumer --yolo 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0) { throw "Installed tool rejected canonical Markdown example '$exampleId': $exampleCheck" }
+    }
+    Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value $source -Encoding utf8
+    $check = (& $yadg check --workspace $consumer --yolo 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Installed strict check failed for diagram examples: $check" }
     $list = (& $yadg check --workspace $consumer --list 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0 -or $list -notmatch 'detected-flow\s+figure') { throw "Installed check --list did not list identified text diagram as a figure: $list" }
