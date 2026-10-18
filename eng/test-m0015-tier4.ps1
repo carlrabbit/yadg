@@ -33,7 +33,7 @@ function New-M0015Paragraph([Xml.XmlDocument]$Document, [string]$Text) {
     $paragraph = $Document.CreateElement('w','p',$wordNs)
     $run = $Document.CreateElement('w','r',$wordNs)
     $textNode = $Document.CreateElement('w','t',$wordNs); $textNode.InnerText = $Text
-    if ($Text.StartsWith(' ') -or $Text.EndsWith(' ')) { [void]$textNode.SetAttribute('space','http://www.w3.org/XML/1998/namespace','preserve') }
+    if ($Text.StartsWith(' ') -or $Text.EndsWith(' ')) { [void]$textNode.SetAttribute('xml:space','preserve') }
     [void]$run.AppendChild($textNode); [void]$paragraph.AppendChild($run)
     return $paragraph
 }
@@ -43,7 +43,7 @@ function Add-M0015RunText([Xml.XmlDocument]$Document, [Xml.XmlElement]$Paragraph
     $wordNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
     $run = $Document.CreateElement('w','r',$wordNs)
     $textNode = $Document.CreateElement('w','t',$wordNs); $textNode.InnerText = $Text
-    if ($Text.StartsWith(' ') -or $Text.EndsWith(' ')) { [void]$textNode.SetAttribute('space','http://www.w3.org/XML/1998/namespace','preserve') }
+    if ($Text.StartsWith(' ') -or $Text.EndsWith(' ')) { [void]$textNode.SetAttribute('xml:space','preserve') }
     [void]$run.AppendChild($textNode); [void]$Paragraph.AppendChild($run)
 }
 
@@ -354,7 +354,7 @@ try {
     $templateSource = $templateSourcePieces -join "`n`n"
     $imageDirectory = Join-Path $consumer 'images'; New-Item -ItemType Directory -Force -Path $imageDirectory | Out-Null
     $pixelPng = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMn8AAAAASUVORK5CYII=')
-    [IO.File]::WriteAllBytes((Join-Path $imageDirectory 'system-context.png'),$pixelPng)
+    [IO.File]::WriteAllBytes((Join-Path $imageDirectory 'context.png'),$pixelPng)
     $templateYamlBody = @($documentedExamples['template-frontmatter-schema'].Body -split '\r?\n')
     $templateFrontMatter = @('---') + $templateYamlBody + @('---')
     $templateTags = @($documentedExamples['template-visible-tags'].Body -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
