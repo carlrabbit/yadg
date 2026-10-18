@@ -121,11 +121,11 @@ styles:
     1: "Heading 1"
     2: "Heading 2"
   lists:
-    unordered: "Corporate Bullet"
-    ordered: "Corporate Number"
-  generatedTable: "Table Grid"
-  caption: "Caption"
-  codeInline: "Code"
+    unordered: "ListBullet"
+    ordered: "ListNumber"
+  generatedTable: "Normal Table"
+  caption: "Normal"
+  codeInline: "Code Character"
 
 prototypes:
   figureCaption: figure-caption

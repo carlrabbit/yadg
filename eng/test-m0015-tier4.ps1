@@ -91,7 +91,26 @@ function New-M0015TemplateFromExamples([string]$Fixture, [string]$Destination, [
                             $paragraph = New-M0015Paragraph $xml $line
                             [void]$body.InsertBefore($paragraph,$closing); $anchor = $paragraph
                         }
+                        $anchor = $closing
+                        $insertPrototypes = @()
                         foreach ($prototype in $PrototypeExamples) {
+                            if ($prototype.Id -match 'list-prototype$') {
+                                $prototypeLines = @($prototype.Body -split '\r?\n' | Where-Object { $_ -ne '' })
+                                $prototypeId = [regex]::Match($prototypeLines[0],'\{\{yadg:prototype:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}').Groups['id'].Value
+                                $startText = '{{yadg:prototype:' + $prototypeId + '}}'
+                                $endText = '{{/yadg:prototype:' + $prototypeId + '}}'
+                                $bodyParagraphs = @($body.SelectNodes('./w:p',$ns)); $found = $false
+                                for ($p = 0; $p -lt $bodyParagraphs.Count - 2; $p++) {
+                                    $texts = @($bodyParagraphs[$p..($p + 2)] | ForEach-Object { [string]::Join('',@($_.SelectNodes('./w:r/w:t',$ns) | ForEach-Object InnerText)) })
+                                    if ($texts[0] -ceq $startText -and $texts[1] -ceq '{{item}}' -and $texts[2] -ceq $endText) {
+                                        if ($null -eq $bodyParagraphs[$p + 1].SelectSingleNode('./w:pPr/w:numPr',$ns)) { throw "Existing documented list prototype '$prototypeId' has no concrete Word numbering." }
+                                        $found = $true; break
+                                    }
+                                }
+                                if (-not $found) { throw "Application-produced fixture does not contain documented list prototype '$prototypeId' with its item placeholder and Word numbering." }
+                            } else { $insertPrototypes += $prototype }
+                        }
+                        foreach ($prototype in $insertPrototypes) {
                             $bodyLines = @($prototype.Body -split '\r?\n' | Where-Object { $_ -ne '' })
                             if ($bodyLines.Count -ne 3) { throw "Documented template prototype '$($prototype.Id)' must contain start, body, and end lines." }
                             $startMarker = $bodyLines[0].Trim(); $endMarker = $bodyLines[2].Trim()
@@ -116,7 +135,7 @@ function New-M0015TemplateFromExamples([string]$Fixture, [string]$Destination, [
                             $tagMap[$kind] = $tag
                         }
                         foreach ($requiredKind in @('section','content','table','figure','value')) { if (-not $tagMap.ContainsKey($requiredKind)) { throw "Documented template tag example is missing '$requiredKind'." } }
-                        $replacement = @{'{{section:architecture}}'=$tagMap.section; '{{content:architecture}}'=$tagMap.content; '{{value:story-value}}'=$tagMap.value}
+                        $replacement = @{'{{section:architecture}}'=$tagMap.section; '{{content:architecture}}'=$tagMap.content; '{{content:introduction}}'=$tagMap.content; '{{value:story-value}}'=$tagMap.value}
                         foreach ($paragraph in @($body.SelectNodes('./w:p',$ns))) {
                             $paragraphText = [string]::Join('',@($paragraph.SelectNodes('./w:r/w:t',$ns) | ForEach-Object InnerText))
                             if ($replacement.ContainsKey($paragraphText)) {
@@ -125,7 +144,7 @@ function New-M0015TemplateFromExamples([string]$Fixture, [string]$Destination, [
                                 $textNodes[0].InnerText = $replacement[$paragraphText]
                             }
                         }
-                        foreach ($kind in @('table','figure','value')) { $paragraph = New-M0015Paragraph $xml $tagMap[$kind]; [void]$body.InsertAfter($paragraph,$anchor); $anchor=$paragraph }
+                        foreach ($kind in @('section','table','figure','value')) { $paragraph = New-M0015Paragraph $xml $tagMap[$kind]; [void]$body.InsertAfter($paragraph,$anchor); $anchor=$paragraph }
                         $memory = [IO.MemoryStream]::new()
                         try { $xml.Save($memory); $memory.Position=0; $memory.CopyTo($outStream) } finally { $memory.Dispose() }
                     } else { $inStream.CopyTo($outStream) }
@@ -146,6 +165,8 @@ $markdownGuidePath = Join-Path $repo 'docs/user/MARKDOWN-AUTHORING.md'
 $templateGuidePath = Join-Path $repo 'docs/user/DOCX-TEMPLATE-AUTHORING.md'
 $documentedExampleSpecs = @(
     @{id='workspace-schema-v1'; path=$markdownGuidePath; language='yaml'},
+    @{id='markdown-unordered-list'; path=$markdownGuidePath; language='markdown'},
+    @{id='markdown-ordered-list'; path=$markdownGuidePath; language='markdown'},
     @{id='markdown-table'; path=$markdownGuidePath; language='markdown'},
     @{id='markdown-figure'; path=$markdownGuidePath; language='markdown'},
     @{id='explicit-text-diagram'; path=$markdownGuidePath; language='markdown'},
@@ -330,6 +351,8 @@ try {
 
     $fixture = Join-Path $repo 'tests/fixtures/m0010/word-origin.docx'
     if (-not (Test-Path -LiteralPath $fixture)) { throw "Application-produced Word template fixture is missing: $fixture" }
+$templateFixture = Join-Path $repo 'tests/fixtures/m0012/list-prototypes.docx'
+if (-not (Test-Path -LiteralPath $templateFixture)) { throw "Application-produced Word list-prototype fixture is missing: $templateFixture" }
     foreach ($workspace in @($consumer,$templateExample,$yolo,$weak,$autoOff)) { New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'YadgTemplates') | Out-Null; Copy-Item -LiteralPath $fixture -Destination (Join-Path $workspace 'YadgTemplates/template.docx') }
     $schemaFrontMatter = Get-M0015FrontMatterLines $documentedExamples['workspace-schema-v1']
     $autoDetectFrontMatter = Get-M0015FrontMatterLines $documentedExamples['autodetect-schema-v1']
@@ -346,7 +369,7 @@ try {
     if ($mermaidArguments.Count) { $producerLines += @($mermaidArguments | ForEach-Object { '      - "' + $_.Replace('"','\"') + '"' }) }
     $mainYaml = @('---') + @($schemaFrontMatter[1..($schemaFrontMatter.Count - 2)]) + @('values:','  document-version: "1.2"','  story-value: "M0015 installed consumer value"') + @($autoDetectLines[$diagramRootIndex..($autoDetectLines.Count - 1)]) + @('publish:','  path: ./Published') + $producerLines + @('---')
     $mainYaml | Set-Content -LiteralPath (Join-Path $consumer 'YADG.md') -Encoding utf8
-    $sourcePieces = @('# Architecture {#architecture}','An installed-tool release sample.')
+    $sourcePieces = @('# Architecture {#architecture}','An installed-tool release sample.',$documentedExamples['markdown-unordered-list'].Body,$documentedExamples['markdown-ordered-list'].Body)
     foreach ($exampleId in @('explicit-text-diagram','standalone-arrow-diagram','nested-box-diagram','corner-occlusion-diagram','autodetect-identified-positive','mermaid-source-fence')) { $sourcePieces += $documentedExamples[$exampleId].Body }
     $source = $sourcePieces -join "`n`n"
     Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value $source -Encoding utf8
@@ -357,15 +380,17 @@ try {
     [IO.File]::WriteAllBytes((Join-Path $imageDirectory 'context.png'),$pixelPng)
     $templateYamlBody = @($documentedExamples['template-frontmatter-schema'].Body -split '\r?\n')
     $templateFrontMatter = @('---') + $templateYamlBody + @('---')
+    $bindingLines = @($documentedExamples['template-list-prototype-binding'].Body -split '\r?\n' | Where-Object { $_ -ne '' })
+    foreach ($bindingLine in $bindingLines) { if (-not ($templateYamlBody -ccontains $bindingLine)) { throw "Documented template prototype binding '$bindingLine' is not present in the executed front-matter example." } }
     $templateTags = @($documentedExamples['template-visible-tags'].Body -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $templatePrototypes = @($documentedExamples['template-list-prototype'],$documentedExamples['template-ordered-list-prototype'],$documentedExamples['template-caption-prototype'],$documentedExamples['template-table-caption-prototype'])
     $consumerTemplate = Join-Path $consumer 'YadgTemplates/template.docx'
     Remove-Item -LiteralPath $consumerTemplate -Force
-    New-M0015TemplateFromExamples $fixture $consumerTemplate $templateFrontMatter $templateTags $templatePrototypes
-    $documentedPrefix = @('# Architecture {#architecture}','An installed-tool release sample.',$documentedExamples['markdown-table'].Body,$documentedExamples['markdown-figure'].Body)
+    New-M0015TemplateFromExamples $templateFixture $consumerTemplate $templateFrontMatter $templateTags $templatePrototypes
+    $documentedPrefix = @('# Architecture {#architecture}','An installed-tool release sample.',$documentedExamples['markdown-unordered-list'].Body,$documentedExamples['markdown-ordered-list'].Body,$documentedExamples['markdown-table'].Body,$documentedExamples['markdown-figure'].Body)
     $templateDocument = Join-Path $templateExample 'YadgTemplates/template.docx'
     Remove-Item -LiteralPath $templateDocument -Force
-    New-M0015TemplateFromExamples $fixture $templateDocument $templateFrontMatter $templateTags $templatePrototypes
+    New-M0015TemplateFromExamples $templateFixture $templateDocument $templateFrontMatter $templateTags $templatePrototypes
     Copy-Item -LiteralPath (Join-Path $consumer 'YADG.md') -Destination (Join-Path $templateExample 'YADG.md')
     Set-Content -LiteralPath (Join-Path $templateExample 'content.md') -Value $templateSource -Encoding utf8
     Copy-Item -LiteralPath $imageDirectory -Destination (Join-Path $templateExample 'images') -Recurse

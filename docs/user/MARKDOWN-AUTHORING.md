@@ -118,15 +118,17 @@ The reference emits only the numeric Word result when the target has the require
 
 Flat lists are supported.
 
-```markdown
+<!-- M0015-example: markdown-unordered-list -->
+````markdown
 - First
 - Second with **emphasis**
-```
+````
 
-```markdown
+<!-- M0015-example: markdown-ordered-list -->
+````markdown
 1. First
 2. Second
-```
+````
 
 Nested lists, task lists, block content in list items, and multi-paragraph list items are not supported.
 
