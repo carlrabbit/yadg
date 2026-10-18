@@ -17,7 +17,7 @@ yadg --version
 
 The authoritative full-product release target is Windows x64.
 
-Authoring uses .NET and Open XML. Microsoft Word rendering requires activated desktop Word in an interactive logged-on Windows session. LibreOffice rendering requires Writer. Mermaid diagrams require a separately configured trusted Mermaid producer.
+Authoring uses .NET and Open XML. Microsoft Word rendering requires activated desktop Word in an interactive logged-on Windows session. LibreOffice rendering requires Writer. Text-grid diagrams are built in; Mermaid diagrams require a separately configured trusted Mermaid producer.
 
 The package targets `net10.0`; this does not imply that every renderer is supported on every .NET platform. A Word-render request on a non-Windows runtime must fail actionably rather than crashing.
 
@@ -418,15 +418,45 @@ YADG supports the authoring subset documented in [Authoring](docs/user/AUTHORING
 - PNG/JPEG figures;
 - semantic references;
 - workspace values;
+- text-grid diagrams generated from source-authored character layouts;
 - Mermaid figures through an external producer.
 
 Important current limitations include:
 
 - no nested lists;
-- no ordinary fenced-code-block rendering other than Mermaid;
+- no ordinary fenced-code-block rendering other than Mermaid and the explicit/opt-in text-diagram forms;
 - thematic breaks are either errors or explicitly ignored;
 - inline code is either an error, ordinary text, or mapped to a configured character style;
 - remote/data-URI figures are unsupported.
+
+### Text-grid diagrams
+
+Write a diagram as a fenced block with the exact lowercase `diagram` language, a stable figure ID, and an optional caption:
+
+````markdown
+```diagram {#service-flow caption="Service flow"}
+┌──────────┐
+│ Gateway  │
+└────┬─────┘
+     ▼
+┌──────────┐
+│ Worker   │
+└──────────┘
+```
+````
+
+The source characters set the layout. YADG supports orthogonal Unicode box-drawing and arrow glyphs, connected ASCII `- | + > < ^ v`, and ordinary text placed on the grid. It does not arrange nodes or route edges. Complete and nested rectangles are supported. A hidden rectangle edge is repaired only when one complete covering box explains the gap; uncovered or ambiguous gaps fail validation. Connectors can cross box boundaries.
+
+Identified diagrams are ordinary semantic figures: they support captions, references, and natural or direct `{{figure:id}}` placement. The generated SVG is embedded in DOCX and is not saved as a workspace asset. Source file figures remain PNG/JPEG.
+
+Auto-detection is off by default. Opt in through `YADG.md`:
+
+```yaml
+diagrams:
+  autoDetect: true
+```
+
+When enabled, only unlabeled fenced blocks and exact lowercase `text` fences are considered. Detection uses the diagram parser and requires strong connected geometry. Weak punctuation, aligned prose, key/value text, and simple `A -> B` examples remain unsupported code blocks. An unlabeled detected diagram is anonymous and can render only at its source position; it has no caption, stable ID, or references. A detected `text` fence with `{#id caption="..."}` becomes a normal identified figure.
 
 ## Rendering requirements
 

@@ -12,10 +12,12 @@ public static class MarkdownDocumentParser
     private static readonly Regex TableId = new("^\\s*\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\\\"(?<caption>[^\\\"]*)\\\")?\\}\\s*$", RegexOptions.Compiled);
     private static readonly Regex FigureLine = new("^\\s*!\\[(?<alt>.*?)\\]\\((?<path>[^\\s\\)]+)(?:\\s+\"(?<title>[^\"]*)\")?\\)\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)\\}\\s*$", RegexOptions.Compiled);
     private static readonly Regex MermaidInfo = new("^mermaid\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
+    private static readonly Regex DiagramInfo = new("^diagram\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
+    private static readonly Regex TextDiagramInfo = new("^text\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
     private static readonly Regex MermaidOpening = new("^\\s*`{3,}\\s*(?<info>mermaid.*)$", RegexOptions.Compiled);
     private sealed record RawTable(string? Id, string? Caption, string[] Header, string[][] Rows);
 
-    public static ParseResult Parse(string markdown, string location = "<input>", string thematicBreakPolicy = "error", string codeInlinePolicy = "error")
+    public static ParseResult Parse(string markdown, string location = "<input>", string thematicBreakPolicy = "error", string codeInlinePolicy = "error", bool diagramsAutoDetect = false)
     {
         var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().UsePipeTables().Build();
         var ast = Markdown.Parse(markdown, pipeline);
@@ -36,7 +38,7 @@ public static class MarkdownDocumentParser
         var headingOrdinal = 0; var tableOrdinal = 0; var figureOrdinal = 0; var mermaidOrdinal = 0;
         foreach (var block in ast)
         {
-            var converted = ConvertBlock(block, diagnostics, location, headingMetadata, ref headingOrdinal, rawTables, ref tableOrdinal, figureMetadata, ref figureOrdinal, mermaidMetadata, ref mermaidOrdinal, thematicBreakPolicy, codeInlinePolicy, lines);
+            var converted = ConvertBlock(block, diagnostics, location, headingMetadata, ref headingOrdinal, rawTables, ref tableOrdinal, figureMetadata, ref figureOrdinal, mermaidMetadata, ref mermaidOrdinal, thematicBreakPolicy, codeInlinePolicy, diagramsAutoDetect, lines);
             if (converted is not null) blocks.Add(converted);
         }
         if (figureMetadata.Any(f => f.HasTitle)) diagnostics.Add(new("YADG-FIGURE-001", "Markdown image titles are unsupported for M0003 figures.", true, location));
@@ -86,7 +88,7 @@ public static class MarkdownDocumentParser
         if (!target.TryAdd(id, value)) diagnostics.Add(new("YADG-REF-002", $"Duplicate stable ID '{id}'.", true, location));
     }
 
-    private static YadgBlock? ConvertBlock(Block block, List<Diagnostic> diagnostics, string location, IReadOnlyList<(string Text, string? Id)> headings, ref int headingOrdinal, IReadOnlyList<RawTable> rawTables, ref int tableOrdinal, IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures, ref int figureOrdinal, IReadOnlyList<(string? Id, string? Caption)> mermaidMetadata, ref int mermaidOrdinal, string thematicBreakPolicy, string codeInlinePolicy, string[] sourceLines)
+    private static YadgBlock? ConvertBlock(Block block, List<Diagnostic> diagnostics, string location, IReadOnlyList<(string Text, string? Id)> headings, ref int headingOrdinal, IReadOnlyList<RawTable> rawTables, ref int tableOrdinal, IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures, ref int figureOrdinal, IReadOnlyList<(string? Id, string? Caption)> mermaidMetadata, ref int mermaidOrdinal, string thematicBreakPolicy, string codeInlinePolicy, bool diagramsAutoDetect, string[] sourceLines)
     {
         if (block is ThematicBreakBlock)
         {
@@ -126,6 +128,56 @@ public static class MarkdownDocumentParser
         }
         if (block is FencedCodeBlock fenced)
         {
+            var openingLine = block.Line >= 0 && block.Line < sourceLines.Length ? sourceLines[block.Line] : string.Empty;
+            var opening = Regex.Match(openingLine, @"^\s*(?:`{3,}|~{3,})(?<info>.*)$");
+            var info = opening.Success ? opening.Groups["info"].Value.Trim() : fenced.Info?.Trim() ?? string.Empty;
+            var token = Regex.Match(info, @"^(?<language>[^\s]+)(?:\s+(?<arguments>.*))?$");
+            var language = token.Success ? token.Groups["language"].Value : string.Empty;
+            var arguments = token.Success && token.Groups["arguments"].Success ? token.Groups["arguments"].Value.Trim() : string.Empty;
+            var isExplicitDiagram = language == "diagram";
+            if (isExplicitDiagram)
+            {
+                var diagramMetadata = DiagramInfo.Match(info);
+                if (!diagramMetadata.Success)
+                {
+                    diagnostics.Add(Positioned("YADG-DIAGRAM-001", "Diagram fence requires exactly a stable ID and optional caption=\"...\" attribute.", block, location));
+                    return null;
+                }
+                var parsed = TextDiagramParser.Parse(fenced.Lines.ToString());
+                if (!parsed.Success)
+                {
+                    diagnostics.Add(Positioned("YADG-DIAGRAM-002", parsed.Error ?? "Diagram geometry is invalid.", block, location));
+                    return null;
+                }
+                if (parsed.Model!.HasInvalidOcclusion)
+                {
+                    diagnostics.Add(Positioned("YADG-DIAGRAM-003", "Diagram contains an uncovered or ambiguous missing rectangle edge.", block, location));
+                    return null;
+                }
+                if (parsed.Model.Cells.Count == 0)
+                {
+                    diagnostics.Add(Positioned("YADG-DIAGRAM-002", "Diagram source contains no connected drawing geometry.", block, location));
+                    return null;
+                }
+                return new YadgFigure(diagramMetadata.Groups["id"].Value, diagramMetadata.Groups["caption"].Value, "<generated-diagram.svg>", location) { GeneratedSvg = parsed.Model.Svg };
+            }
+            if (diagramsAutoDetect && (language.Length == 0 || language == "text") && (language.Length == 0 ? arguments.Length == 0 : arguments.Length == 0 || TextDiagramInfo.IsMatch(info)))
+            {
+                string? id = null; string? caption = null;
+                if (language == "text" && arguments.Length > 0)
+                {
+                    var candidateMetadata = TextDiagramInfo.Match(info);
+                    if (candidateMetadata.Success) { id = candidateMetadata.Groups["id"].Value; caption = candidateMetadata.Groups["caption"].Success ? candidateMetadata.Groups["caption"].Value : null; }
+                    else goto NotDiagramCandidate;
+                }
+                var parsed = TextDiagramParser.Parse(fenced.Lines.ToString());
+                if (parsed.Success && parsed.Model!.HasStrongGeometry)
+                {
+                    if (id is not null) return new YadgFigure(id, caption ?? string.Empty, "<generated-diagram.svg>", location) { GeneratedSvg = parsed.Model.Svg };
+                    return new YadgDiagram(parsed.Model.Svg, location);
+                }
+            }
+            NotDiagramCandidate:
             if (!string.Equals(fenced.Info, "mermaid", StringComparison.Ordinal) || mermaidOrdinal >= mermaidMetadata.Count || mermaidMetadata[mermaidOrdinal].Id is null)
             {
                 diagnostics.Add(Positioned("YADG-MD-UNSUPPORTED", "Only Mermaid fenced blocks with a stable ID are supported.", block, location));

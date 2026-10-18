@@ -15,5 +15,6 @@
 | M0011 | V1.0 release readiness | complete | Prepare and validate the YADG 1.0.0 .NET tool release line and its public documentation/release engineering. YADG 1.0.0 is released. |
 | M0012 | V1.1 authoring ergonomics and template introspection | complete | Improve workspace bootstrap, Markdown policy, diagnostics/discovery, template presentation introspection, explicit YOLO resilience, renderer fallback, and generated-artifact lifecycle behavior. |
 | M0013 | V1.1 release readiness | complete | Prepare the YADG 1.1.0 package, verify the complete installed CLI/authoring/YOLO surface, validate real Word/LibreOffice consumption, and bind release evidence plus human release review. |
+| M0014 | Text diagrams | complete | Add built-in character-grid diagrams with vector rendering, conservative box layering/occlusion, and opt-in auto-detection for unlabeled/`text` fences. |
 
 Milestone implementation starts from the active milestone document and its explicitly listed authority.

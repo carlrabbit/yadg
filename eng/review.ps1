@@ -1,6 +1,6 @@
 param(
     [ValidateSet('list','show','record')][string]$Command = 'list',
-    [ValidateSet('M0005','M0009','M0010','M0011')][string]$Milestone = 'M0005',
+    [ValidateSet('M0005','M0009','M0010','M0011','M0014')][string]$Milestone = 'M0005',
     [ValidateSet('approved','changes-requested','rejected')][string]$Decision,
     [string]$Reviewer,
     [string]$RepositoryRevision,
@@ -10,7 +10,7 @@ param(
     [string]$PackageHash
 )
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot; $id = if ($Milestone -eq 'M0005') { 'HR-M0005-01' } elseif ($Milestone -eq 'M0009') { 'HR-M0009-01' } elseif ($Milestone -eq 'M0010') { 'HR-M0010-01' } else { 'HR-M0011-01' }; $pending = Join-Path $root ".review/pending/$id.md"; $record = Join-Path $root ".review/records/$id.md"
+$root = Split-Path -Parent $PSScriptRoot; $id = if ($Milestone -eq 'M0005') { 'HR-M0005-01' } elseif ($Milestone -eq 'M0009') { 'HR-M0009-01' } elseif ($Milestone -eq 'M0010') { 'HR-M0010-01' } elseif ($Milestone -eq 'M0014') { 'HR-M0014-01' } else { 'HR-M0011-01' }; $pending = Join-Path $root ".review/pending/$id.md"; $record = Join-Path $root ".review/records/$id.md"
 switch ($Command) {
     'list' {
         if (Test-Path $pending) { Get-Item $pending | Select-Object FullName,Length,LastWriteTime }
@@ -25,8 +25,8 @@ switch ($Command) {
         if ([string]::IsNullOrWhiteSpace($Decision) -or [string]::IsNullOrWhiteSpace($Reviewer)) { throw 'record requires -Decision and -Reviewer.' }
         if ($Milestone -ne 'M0011' -and [string]::IsNullOrWhiteSpace($EvidenceHash)) { throw 'record requires -EvidenceHash.' }
         if ($Milestone -eq 'M0005' -and [string]::IsNullOrWhiteSpace($LibreOfficeVersion)) { throw 'M0005 record requires -LibreOfficeVersion.' }
-        if ($Milestone -in @('M0009','M0010') -and [string]::IsNullOrWhiteSpace($WordVersion)) { throw "$Milestone record requires -WordVersion." }
-        if ($Milestone -eq 'M0010' -and [string]::IsNullOrWhiteSpace($LibreOfficeVersion)) { throw 'M0010 record requires -LibreOfficeVersion.' }
+        if ($Milestone -in @('M0009','M0010','M0014') -and [string]::IsNullOrWhiteSpace($WordVersion)) { throw "$Milestone record requires -WordVersion." }
+        if ($Milestone -in @('M0010','M0014') -and [string]::IsNullOrWhiteSpace($LibreOfficeVersion)) { throw "$Milestone record requires -LibreOfficeVersion." }
         if ($Milestone -eq 'M0011') {
             $evidencePath = Join-Path $root 'artifacts/release/evidence/M0011/release-evidence.json'
             $packagePath = Join-Path $root 'artifacts/package/Yadg.1.0.0.nupkg'
