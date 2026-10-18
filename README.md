@@ -1,51 +1,21 @@
 # YADG
 
-YADG is a template-first document authoring tool for maintaining Word documents from source-controlled Markdown.
+YADG is a template-first document authoring tool. Maintain semantic content in Markdown, configure workspace values and producer behavior in `YADG.md`, and keep layout and Word-native structure in prepared DOCX templates.
 
-Markdown owns maintainable content. `YADG.md` owns workspace values, Markdown policy, producer configuration, and optional publication configuration. Prepared DOCX templates own presentation, layout, numbering, fields, and other Word-native structure.
-
-YADG authors DOCX without Microsoft Office, can finalize documents through Microsoft Word or LibreOffice, and can explicitly publish finalized DOCX files to a filesystem destination.
+YADG authors DOCX without Office, can finalize documents through Microsoft Word or LibreOffice, and explicitly publishes finalized DOCX files to a filesystem destination.
 
 ## Install
 
-YADG 1.1.0 is distributed as a framework-dependent .NET 10 tool:
+The YADG 1.2.0 candidate is a framework-dependent .NET 10 tool. After it is available from your NuGet source, install it with:
 
 ```powershell
-dotnet tool install --global Yadg --version 1.1.0
+dotnet tool install --global Yadg --version 1.2.0
 yadg --version
 ```
 
-The authoritative full-product release target is Windows x64.
+The authoritative full-product validation target is Windows x64. Word rendering requires activated desktop Word in an interactive logged-on session. LibreOffice rendering requires Writer. The package targets `net10.0`; this does not promise every renderer on every .NET platform.
 
-Authoring uses .NET and Open XML. Microsoft Word rendering requires activated desktop Word in an interactive logged-on Windows session. LibreOffice rendering requires Writer. Text-grid diagrams are built in; Mermaid diagrams require a separately configured trusted Mermaid producer.
-
-The package targets `net10.0`; this does not imply that every renderer is supported on every .NET platform. A Word-render request on a non-Windows runtime must fail actionably rather than crashing.
-
-## The basic model
-
-A workspace looks like this:
-
-```text
-MyReport/
-├── YADG.md
-├── content.md
-└── YadgTemplates/
-    └── report.docx
-```
-
-YADG creates generated directories as needed:
-
-```text
-YadgPreWords/   authored intermediate DOCX
-YadgWords/      finalized DOCX
-YadgPdfs/       LibreOffice PDF output
-```
-
-`YadgPreWords`, `YadgWords`, and `YadgPdfs` are YADG-owned result sets. Successful build/render operations replace their current generated contents. Keep unrelated persistent files elsewhere.
-
-## Quick start
-
-Create a workspace:
+## Start a workspace
 
 ```powershell
 mkdir MyReport
@@ -53,23 +23,7 @@ cd MyReport
 yadg init
 ```
 
-`init` creates:
-
-```text
-YADG.md
-content.md
-YadgTemplates/
-```
-
-It does not overwrite those paths if they already exist.
-
-The starter `content.md` contains an `introduction` section. Add a prepared DOCX file such as `YadgTemplates/report.docx` containing the visible text tag:
-
-```text
-{{content:introduction}}
-```
-
-Then run:
+Add a prepared Word template at `YadgTemplates/report.docx` with the visible tag `{{content:introduction}}`, then author Markdown in `content.md`. YADG uses visible text tags rather than Word content controls.
 
 ```powershell
 yadg check --list
@@ -78,423 +32,47 @@ yadg render --renderer word
 yadg publish --publish-path ./Published
 ```
 
-Or finalize through LibreOffice:
+LibreOffice is the default renderer and can be selected explicitly with `yadg render --renderer libreoffice`. LibreOffice also produces PDF output. Publishing copies finalized DOCX only; it does not build, render, parse Markdown, or run content producers.
 
-```powershell
-yadg render --renderer libreoffice
-```
+Successful build and render replace their YADG-owned generated result sets (`YadgPreWords`, `YadgWords`, and `YadgPdfs`). Keep unrelated files elsewhere.
 
-## A small complete authoring example
+## Choose a diagramming path
 
-After `yadg init`, extend `YADG.md`:
-
-```yaml
----
-yadg:
-  version: 1
-
-values:
-  document-version: "1.1"
-
-markdown:
-  thematicBreak: ignore
-  codeInline: ignore
-
-publish:
-  path: ./Published
-
-producers:
-  mermaid:
-    executable: mmdc
-    arguments: []
----
-```
-
-`values` are optional source-controlled scalar values. `publish.path` is optional. Configure a Mermaid producer only if the workspace contains Mermaid diagrams.
-
-Now author `content.md`:
-
-```markdown
-# Introduction {#introduction}
-
-This document describes the reporting process.
-
-## Architecture {#architecture}
-
-The process has two steps:
-
-1. Author the source.
-2. Finalize the document.
-
-See Section [@introduction].
-
-| Component | Purpose |
-|---|---|
-| YADG | Authors DOCX |
-| Word | Finalizes Word fields |
-{#component-table}
-
-```
-
-Workspace value syntax in supported visible DOCX template text is:
-
-```text
-{{value:document-version}}
-```
-
-Semantic references use:
-
-```text
-[@stable-id]
-```
-
-YADG emits the numeric Word result only when the target has the required numbering/reference structure. Write the surrounding label yourself, for example:
-
-```markdown
-See Section [@architecture].
-```
-
-A prepared Word template may contain:
-
-```text
-Document version: {{value:document-version}}
-
-{{section:introduction}}
-```
-
-`{{value:document-version}}` is substituted in supported visible template text.
-
-`{{section:introduction}}` inserts the selected heading plus its body. Alternatively:
-
-```text
-{{content:introduction}}
-```
-
-inserts only the body below that heading.
-
-Template placement and Word presentation remain template-owned.
-
-## Template configuration
-
-YADG template front matter is visible text inside the DOCX, delimited by marker paragraphs:
-
-```text
-{{yadg:frontmatter}}
-```
-
-then YAML such as:
-
-```yaml
-version: 1
-styles:
-  headings:
-    1: "Heading 1"
-  lists:
-    unordered: "Corporate Bullet"
-    ordered: "Corporate Number"
-  generatedTable: "Table Grid"
-  caption: "Caption"
-  codeInline: "Code"
-prototypes:
-  unorderedListItem: bullet-item
-  orderedListItem: number-item
-```
-
-and:
-
-```text
-{{/yadg:frontmatter}}
-```
-
-Style selectors may use an exact internal style ID, Word display name, or alias. Use YADG itself to discover what the template actually contains:
-
-```powershell
-yadg inspect styles
-yadg inspect template
-```
-
-`inspect styles` lists concrete serialized Word styles, names, IDs, aliases, visibility and relevant capabilities.
-
-`inspect template` explains the semantic presentation roles YADG sees: placements, prototypes, resolved presentation sources, human-searchable Word locations, and YOLO fallback candidates.
-
-### Template examples and prototypes
-
-YADG prefers concrete template examples where presentation cannot be reconstructed reliably from metadata.
-
-For example, a list-item prototype is a real bulleted/numbered Word paragraph placed between:
-
-```text
-{{yadg:prototype:bullet-item}}
-```
-
-and:
-
-```text
-{{/yadg:prototype:bullet-item}}
-```
-
-The single prototype paragraph contains exactly one logical:
-
-```text
-{{item}}
-```
-
-and owns its real Word numbering and formatting.
-
-Caption prototypes and prepared-table prototype rows use the same general idea: the template supplies the concrete Word structure YADG should clone or preserve.
-
-See [Templates](docs/user/TEMPLATES.md) for the complete authoring-oriented explanation.
-
-## Commands
-
-### `yadg init`
-
-Bootstrap a new workspace:
-
-```powershell
-yadg init
-yadg init --workspace C:\work\MyReport
-```
-
-It never overwrites existing owned starter paths.
-
-### `yadg check`
-
-Validate without producing normal outputs:
-
-```powershell
-yadg check
-yadg check --list
-yadg check --yolo
-```
-
-`--list` prints discovered Markdown sources, top-level DOCX templates, and referenceable semantic objects.
-
-Diagnostics use workspace-relative source paths. Markdown/YAML diagnostics include line/column when available. DOCX diagnostics use recognizable Word context and nearby searchable text where possible.
-
-### `yadg inspect`
-
-Inspect template resources without needing the whole authoring workspace to be valid:
-
-```powershell
-yadg inspect styles
-yadg inspect styles --template report.docx
-
-yadg inspect template
-yadg inspect template --template report.docx
-```
-
-Use `inspect styles` when you need concrete Word style IDs/names/aliases.
-
-Use `inspect template` when you need to understand what YADG will actually use for a semantic presentation role.
-
-### `yadg build`
-
-Create authored intermediate DOCX files:
-
-```powershell
-yadg build
-yadg build --yolo
-```
-
-Successful build replaces the current top-level `YadgPreWords/*.docx` generated set.
-
-### `yadg render`
-
-Finalize authored DOCX:
-
-```powershell
-yadg render
-yadg render --renderer libreoffice
-yadg render --renderer libreoffice --renderer-path "C:\Program Files\LibreOffice\program\soffice.com"
-yadg render --renderer word
-yadg render --renderer word --yolo
-```
-
-Default renderer:
-
-```text
-libreoffice
-```
-
-Both renderers produce finalized DOCX in `YadgWords/`.
-
-LibreOffice additionally produces PDF in `YadgPdfs/`.
-
-A successful render replaces the complete generated finalized result set. A Word render clears stale LibreOffice PDFs rather than leaving them to look current.
-
-### `yadg publish`
-
-Copy finalized DOCX to an explicit filesystem destination:
-
-```powershell
-yadg publish --publish-path ./Published
-```
-
-or configure:
-
-```yaml
-publish:
-  path: ./Published
-```
-
-and run:
-
-```powershell
-yadg publish
-```
-
-CLI `--publish-path` wins over configured `publish.path`.
-
-Publishing reads finalized top-level `YadgWords/*.docx`. It does not build, render, parse Markdown, validate templates, or execute Mermaid.
-
-## YOLO mode
-
-Strict mode is the default.
-
-Strict commands answer:
-
-> Is this workspace/template/runtime production-correct?
-
-YOLO is opt-in for `check`, `build`, and `render`:
-
-```powershell
-yadg check --yolo
-yadg build --yolo
-yadg render --renderer word --yolo
-```
-
-YOLO answers:
-
-> What is the best useful artifact YADG can truthfully produce from what I have now?
-
-YOLO does not hide errors. A recovered problem is reported as a visible `degradation` together with the fallback YADG selected.
-
-A presentation failure might conceptually look like:
-
-```text
-degradation ... requested list presentation "ListBullet" is unavailable;
-fallback: template style "Corporate Bullet"
-```
-
-If no compatible template list resource exists, YOLO can use conservative built-in real Word numbering:
-
-```text
-builtin:unordered-list-v1
-builtin:ordered-list-v1
-```
-
-Other defined recoveries include:
-
-- preserve inline code as ordinary text;
-- omit a thematic break;
-- preserve unresolved `{{value:id}}` visibly;
-- preserve unresolved semantic reference identity visibly;
-- show an obvious placeholder for a missing figure or failed Mermaid producer;
-- skip an isolated unusable template when another useful template can still build.
-
-Renderer YOLO can substitute the other supported renderer. For example:
-
-```powershell
-yadg render --renderer word --yolo
-```
-
-may finish through LibreOffice if Word is unavailable and LibreOffice succeeds.
-
-The command reports requested and actual renderer. It never pretends LibreOffice output was finalized by Word.
-
-YOLO still fails rather than guessing through problems such as duplicate/ambiguous semantic IDs, malformed required configuration, lexically escaping asset paths, corrupt DOCX handling, no useful output, or both renderers failing.
-
-Production/CI checks should normally use strict mode.
-
-## Markdown support
-
-YADG supports the authoring subset documented in [Authoring](docs/user/AUTHORING.md), including:
-
-- headings and paragraphs;
-- emphasis/strong text;
-- flat ordered/unordered lists;
-- pipe tables;
-- PNG/JPEG figures;
-- semantic references;
-- workspace values;
-- text-grid diagrams generated from source-authored character layouts;
-- Mermaid figures through an external producer.
-
-Important current limitations include:
-
-- no nested lists;
-- no ordinary fenced-code-block rendering other than Mermaid and the explicit/opt-in text-diagram forms;
-- thematic breaks are either errors or explicitly ignored;
-- inline code is either an error, ordinary text, or mapped to a configured character style;
-- remote/data-URI figures are unsupported.
-
-### Text-grid diagrams
-
-Write a diagram as a fenced block with the exact lowercase `diagram` language, a stable figure ID, and an optional caption:
+Built-in text diagrams preserve source-grid geometry and generate internal SVG without an external tool:
 
 ````markdown
-```diagram {#service-flow caption="Service flow"}
+```diagram {#service-flow}
 ┌──────────┐
-│ Gateway  │
+│ Frontend │
 └────┬─────┘
      ▼
 ┌──────────┐
-│ Worker   │
+│ Backend  │
 └──────────┘
 ```
 ````
 
-The source characters set the layout. YADG supports orthogonal Unicode box-drawing and arrow glyphs, connected ASCII `- | + > < ^ v`, and ordinary text placed on the grid. It does not arrange nodes or route edges. Complete and nested rectangles are supported. A hidden rectangle edge is repaired only when one complete covering box explains the gap; uncovered or ambiguous gaps fail validation. Connectors can cross box boundaries.
+Mermaid describes diagram semantics and uses a separately configured trusted producer that returns PNG. YADG does not install Mermaid tooling automatically. Both identified forms use ordinary figure placement in the DOCX template; their source and rendering paths differ.
 
-Identified diagrams are ordinary semantic figures: they support captions, references, and natural or direct `{{figure:id}}` placement. The generated SVG is embedded in DOCX and is not saved as a workspace asset. Source file figures remain PNG/JPEG.
+## Strict and YOLO
 
-Auto-detection is off by default. Opt in through `YADG.md`:
+Strict mode is the default and checks whether the requested operation is production-correct. `check`, `build`, and `render` also accept invocation-local `--yolo` for truthful best-effort output:
 
-```yaml
-diagrams:
-  autoDetect: true
+```powershell
+yadg check --yolo
+yadg build --yolo
+yadg render --renderer word --yolo
 ```
 
-When enabled, only unlabeled fenced blocks and exact lowercase `text` fences are considered. Detection uses the diagram parser and requires strong connected geometry. Weak punctuation, aligned prose, key/value text, and simple `A -> B` examples remain unsupported code blocks. An unlabeled detected diagram is anonymous and can render only at its source position; it has no caption, stable ID, or references. A detected `text` fence with `{#id caption="..."}` becomes a normal identified figure.
+YOLO reports each recovery as a visible degradation and still fails when it cannot produce a useful artifact without guessing semantic meaning.
 
-## Rendering requirements
+## Guides
 
-### Microsoft Word
+- [Getting started](https://github.com/carlrabbit/yadg/blob/main/docs/user/GETTING-STARTED.md) — guided workspace tutorial.
+- [Markdown authoring](https://github.com/carlrabbit/yadg/blob/main/docs/user/MARKDOWN-AUTHORING.md) — source grammar, figures, text diagrams, Mermaid, IDs, and references.
+- [DOCX template authoring](https://github.com/carlrabbit/yadg/blob/main/docs/user/DOCX-TEMPLATE-AUTHORING.md) — visible tags, front matter, styles, prototypes, and template presentation.
+- [Troubleshooting](https://github.com/carlrabbit/yadg/blob/main/docs/user/TROUBLESHOOTING.md) — diagnostics, producer failures, renderers, and YOLO behavior.
 
-Word rendering requires:
+The historical [AUTHORING.md](https://github.com/carlrabbit/yadg/blob/main/docs/user/AUTHORING.md) and [TEMPLATES.md](https://github.com/carlrabbit/yadg/blob/main/docs/user/TEMPLATES.md) paths remain as maintained links to the canonical guides.
 
-- Windows;
-- installed and activated desktop Microsoft Word;
-- `Word.Application` registered;
-- an interactive logged-on user session.
-
-YADG uses late-bound COM and does not ship Office interop DLLs.
-
-It does not claim support for unattended service/server Word automation.
-
-### LibreOffice
-
-LibreOffice rendering requires a compatible Writer installation.
-
-Use `--renderer-path` when `soffice` is not discoverable through the normal runtime path.
-
-## Workspace trust
-
-YADG is a local user-scope tool and treats the selected workspace as trusted input.
-
-Ordinary file links are not rejected merely because they are links. Recursive source discovery does not follow linked child directories, avoiding loops and duplicate traversal.
-
-Explicit figure paths must remain lexically inside the workspace. Remote URLs and data URIs are unsupported.
-
-External producers run with the user's permissions. Treat producer configuration as executable project tooling.
-
-## More documentation
-
-- [Getting started](docs/user/GETTING-STARTED.md)
-- [Authoring](docs/user/AUTHORING.md)
-- [Templates and presentation](docs/user/TEMPLATES.md)
-- [Troubleshooting and YOLO](docs/user/TROUBLESHOOTING.md)
-- [Product specifications](docs/SPECS.md)
-
-YADG itself is licensed under MIT. Microsoft Word, LibreOffice, Mermaid tooling, .NET dependencies, and other third-party software remain subject to their own licenses and terms.
+YADG is licensed under MIT. Microsoft Word, LibreOffice, Mermaid tooling, .NET dependencies, and other third-party software remain subject to their own licenses and terms.

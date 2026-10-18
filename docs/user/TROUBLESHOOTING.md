@@ -44,6 +44,18 @@ For deeper inspection:
 yadg inspect template
 ```
 
+## Diagnose a render stall
+
+Run render with invocation-local phase timing:
+
+```powershell
+yadg render --verbose
+```
+
+Verbose diagnostics go to stderr and report renderer phases and elapsed time. LibreOffice also reports UNO connection, document load, field/index updates, saves, export, and cleanup. If the existing 30-second LibreOffice operation bound expires, the diagnostic includes the input document, elapsed time, timeout, and current/last observed phase. Use that phase to locate where the operation stopped progressing before investigating the relevant runtime or document operation.
+
+The trace is only printed for that invocation; YADG does not create a persistent log or increase the timeout automatically. Without `--verbose`, render output is unchanged.
+
 ## A style name does not resolve
 
 Run:
@@ -214,6 +226,14 @@ Check:
 YADG does not install Mermaid tooling automatically.
 
 Under YOLO, a failed producer can become an obvious placeholder figure.
+
+## Text diagram is rejected or not detected
+
+For an explicit diagram, confirm the fence uses exact lowercase `diagram`, includes a stable ID, and uses supported connected grid characters. Whitespace sets source-grid positions. Malformed syntax or ambiguous/missing box geometry is a source-authoring error; fix the grid rather than relying on YADG to invent hidden edges.
+
+Auto-detection is intentionally conservative. It only considers unlabeled and exact lowercase `text` fences when `diagrams.autoDetect: true`. A false negative for a weak candidate is expected behavior; use an explicit `diagram` fence when the content is meant to be a diagram. A rejected weak block retains the ordinary unsupported-fence diagnostic.
+
+Built-in text diagrams do not use the Mermaid producer. Mermaid failures instead come from the configured external command, its arguments, runtime availability, Mermaid syntax, or its PNG output.
 
 ## Word render failure
 

@@ -2,17 +2,17 @@
 
 ## Status
 
-Authoritative for YADG 1.1 release engineering after M0013.
+Authoritative for YADG 1.2 release engineering after M0015.
 
 Historical release milestones remain historical evidence; this document describes the current release target and reusable packaging contract.
 
 ## Current release target
 
 ```text
-YADG 1.1.0
+YADG 1.2.0
 ```
 
-M0013 produces a validated release candidate and does not publish externally.
+M0015 produces a validated release candidate and does not publish externally.
 
 ## Distribution
 
@@ -22,7 +22,7 @@ Package type:      .NET tool
 Command:           yadg
 Target framework:  net10.0
 Platform target:   x64
-Version:           1.1.0
+Version:           1.2.0
 ```
 
 The package is framework-dependent.
@@ -59,14 +59,14 @@ Do not rely on an uncaught `PlatformNotSupportedException` as the platform contr
 
 YOLO may attempt the alternate renderer after the normal Word platform failure according to the existing resilience specification.
 
-M0013 does not certify full non-Windows product support.
+M0015 does not certify full non-Windows product support.
 
 ## Central version authority
 
 Use the central MSBuild product version:
 
 ```text
-VersionPrefix = 1.1.0
+VersionPrefix = 1.2.0
 VersionSuffix = empty
 ```
 
@@ -140,7 +140,7 @@ dotnet pack src/Yadg.Cli/Yadg.Cli.csproj --configuration Release --no-build --ou
 Default package output:
 
 ```text
-artifacts/package/Yadg.1.1.0.nupkg
+artifacts/package/Yadg.1.2.0.nupkg
 ```
 
 `eng/pack.ps1` must:
@@ -211,7 +211,7 @@ No credential is committed.
 
 Before push, inspect the nuspec and require the expected package ID/current central version.
 
-M0013 validates this script only against a local/non-external NuGet destination.
+M0015 validates this script only against a local/non-external NuGet destination.
 
 ## Tier 2
 
@@ -225,10 +225,10 @@ This remains the ordinary source-tree validation layer.
 
 ## Tier 3
 
-Current authoritative real Office integration for the 1.1 feature line:
+Current authoritative real Office integration for the 1.2 feature line:
 
 ```powershell
-./eng/test-m0012-tier3.ps1
+./eng/test-m0014-tier3.ps1
 ```
 
 Required locus:
@@ -247,10 +247,10 @@ Tier-3 evidence must belong to the same repository revision used for the release
 Canonical command:
 
 ```powershell
-./eng/test-m0013-tier4.ps1
+./eng/test-m0015-tier4.ps1
 ```
 
-Install the freshly packed `Yadg 1.1.0` into an isolated tool directory and invoke the installed command.
+Install the freshly packed `Yadg 1.2.0` into an isolated tool directory and invoke the installed command.
 
 Validate:
 
@@ -261,16 +261,19 @@ Validate:
 5. root and command-specific help;
 6. `init`;
 7. strict `check --list`;
-8. `inspect styles`;
-9. `inspect template`;
-10. strict `build`;
-11. representative YOLO `check/build` recovery;
-12. real Microsoft Word render;
-13. real LibreOffice render;
-14. representative YOLO renderer fallback;
-15. downstream-only `publish`;
-16. no dependency on repository `bin/obj`;
-17. exact release evidence.
+8. `inspect styles` and `inspect template`;
+9. strict installed-package authoring;
+10. representative strict/YOLO authoring recovery;
+11. an identified built-in text diagram with nested/occluded geometry and a standalone arrow;
+12. auto-detection positive case, weak negative case, and default-off behavior;
+13. a real configured Mermaid producer through the installed package;
+14. real Microsoft Word and LibreOffice rendering of output containing a built-in text diagram;
+15. representative YOLO renderer fallback;
+16. downstream-only publish;
+17. default render output remains unchanged and installed LibreOffice `render --verbose` reports ordered phase timings;
+18. documented command/YAML/Markdown/template/link and compatibility-page audit;
+19. no dependency on repository `bin/obj`;
+20. exact revision/package-bound release evidence declaring no external publication.
 
 Tier 4 proves the installed consumer surface. It does not replace Tier 3.
 
@@ -304,7 +307,7 @@ README/examples must agree with actual help.
 
 ## Documentation release surface
 
-The M0013 planning package supplies the intended documentation content.
+The M0015 planning package supplies the intended documentation content.
 
 Release implementation verifies rather than rewrites it.
 
@@ -321,7 +324,7 @@ Only narrow factual corrections discovered by validation are allowed without ret
 
 ## Changelog
 
-Before external publication, keep the prepared 1.1 content under:
+Before external publication, keep the prepared 1.2 content under:
 
 ```text
 ## [Unreleased]
@@ -332,7 +335,7 @@ Do not fabricate a release date.
 An explicitly authorized publication operation later converts it to:
 
 ```text
-## 1.1.0 — <actual release date>
+## 1.2.0 — <actual release date>
 ```
 
 ## Release evidence
@@ -340,7 +343,7 @@ An explicitly authorized publication operation later converts it to:
 Write ignored evidence under:
 
 ```text
-artifacts/release/evidence/M0013/
+artifacts/release/evidence/M0015/
 ```
 
 Record at least:
@@ -355,7 +358,7 @@ Record at least:
 - Windows version;
 - Word version;
 - LibreOffice version;
-- M0012 Tier-3 evidence reference/revision;
+- M0014 Tier-3 evidence reference/revision;
 - isolated tool-install result;
 - installed version/help;
 - bootstrap/strict authoring/inspection/build;
@@ -364,21 +367,22 @@ Record at least:
 - YOLO renderer fallback;
 - publish;
 - documentation/example audit;
+- verbose renderer phase timing, quiet-output compatibility, timeout-path diagnostics, and the unchanged 30-second LibreOffice operation bound;
 - external publication = none.
 
 If production code/package/docs change, regenerate affected evidence.
 
 ## Human release review
 
-M0013 owns:
+M0015 owns:
 
 ```text
-HR-M0013-01
+HR-M0015-01
 ```
 
 The human judges:
 
-- documentation usability/accuracy for 1.1;
+- documentation usability/accuracy for 1.2;
 - prepared changelog/release description;
 - acceptability of the exact validated RC.
 
@@ -387,12 +391,12 @@ Hashes, revisions, runtime versions and automated pass/fail data are bound autom
 Canonical gate:
 
 ```powershell
-./eng/review-check.ps1 --milestone M0013
+./eng/review-check.ps1 --milestone M0015
 ```
 
 ## External publication
 
-Excluded from M0013:
+Excluded from M0015:
 
 - NuGet.org push;
 - GitHub Release;
