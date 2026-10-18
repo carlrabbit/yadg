@@ -68,11 +68,11 @@ YOLO reports each recovery as a visible degradation and still fails when it cann
 
 ## Guides
 
-- [Getting started](docs/user/GETTING-STARTED.md) — guided workspace tutorial.
-- [Markdown authoring](docs/user/MARKDOWN-AUTHORING.md) — source grammar, figures, text diagrams, Mermaid, IDs, and references.
-- [DOCX template authoring](docs/user/DOCX-TEMPLATE-AUTHORING.md) — visible tags, front matter, styles, prototypes, and template presentation.
-- [Troubleshooting](docs/user/TROUBLESHOOTING.md) — diagnostics, producer failures, renderers, and YOLO behavior.
+- [Getting started](https://github.com/carlrabbit/yadg/blob/main/docs/user/GETTING-STARTED.md) — guided workspace tutorial.
+- [Markdown authoring](https://github.com/carlrabbit/yadg/blob/main/docs/user/MARKDOWN-AUTHORING.md) — source grammar, figures, text diagrams, Mermaid, IDs, and references.
+- [DOCX template authoring](https://github.com/carlrabbit/yadg/blob/main/docs/user/DOCX-TEMPLATE-AUTHORING.md) — visible tags, front matter, styles, prototypes, and template presentation.
+- [Troubleshooting](https://github.com/carlrabbit/yadg/blob/main/docs/user/TROUBLESHOOTING.md) — diagnostics, producer failures, renderers, and YOLO behavior.
 
-The historical [AUTHORING.md](docs/user/AUTHORING.md) and [TEMPLATES.md](docs/user/TEMPLATES.md) paths remain as maintained links to the canonical guides.
+The historical [AUTHORING.md](https://github.com/carlrabbit/yadg/blob/main/docs/user/AUTHORING.md) and [TEMPLATES.md](https://github.com/carlrabbit/yadg/blob/main/docs/user/TEMPLATES.md) paths remain as maintained links to the canonical guides.
 
 YADG is licensed under MIT. Microsoft Word, LibreOffice, Mermaid tooling, .NET dependencies, and other third-party software remain subject to their own licenses and terms.

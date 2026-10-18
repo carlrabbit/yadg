@@ -53,9 +53,10 @@ Table:
 
 Figure:
 
-```markdown
+<!-- M0015-example: markdown-figure -->
+````markdown
 ![System context](images/context.png){#system-context}
-```
+````
 
 Explicit text diagram:
 
@@ -135,13 +136,14 @@ List presentation is controlled by the DOCX template through styles, numbering, 
 
 Pipe tables require stable IDs:
 
-```markdown
+<!-- M0015-example: markdown-table -->
+````markdown
 | System | Protocol |
 |---|---|
 | Alpha | HTTPS |
 | Beta | SFTP |
-{#interfaces}
-```
+{#interfaces caption="Interfaces"}
+````
 
 Templates may allow YADG to generate the table or may provide a prepared table-row prototype. The Markdown table remains the semantic data source in either case.
 
@@ -176,6 +178,7 @@ The workspace schema remains version 1.
 
 Configure unsupported-construct behavior in `YADG.md`:
 
+<!-- M0015-example: workspace-schema-v1 -->
 ```yaml
 ---
 yadg:
@@ -183,7 +186,7 @@ yadg:
 
 markdown:
   thematicBreak: ignore
-  codeInline: style
+  codeInline: ignore
 ---
 ```
 
@@ -238,6 +241,7 @@ They are not aliases for the same renderer.
 
 Use exact lowercase `diagram`, a stable ID, and optionally a plain caption:
 
+<!-- M0015-example: explicit-text-diagram -->
 ````markdown
 ```diagram {#service-flow caption="Service flow"}
 ┌──────────┐
@@ -271,6 +275,7 @@ Ordinary text remains text positioned on the grid.
 
 Unicode arrows can be useful even when not joined directly to another line cell. Explicit diagrams can therefore express vertical flows such as:
 
+<!-- M0015-example: standalone-arrow-diagram -->
 ````markdown
 ```diagram {#pipeline}
 Input
@@ -287,6 +292,7 @@ A lone arrow by itself is not enough to qualify an auto-detected block.
 
 Containment is visual rather than semantic:
 
+<!-- M0015-example: nested-box-diagram -->
 ````markdown
 ```diagram {#nested}
 ┌────────────────┐
@@ -304,6 +310,7 @@ A higher rectangle may visually cover part of a lower rectangle. YADG reconstruc
 
 The hidden part may include a corner:
 
+<!-- M0015-example: corner-occlusion-diagram -->
 ````markdown
 ```diagram {#overlap}
 ┌────────┐
@@ -338,6 +345,7 @@ Auto-detection is disabled by default.
 
 Enable it in root `YADG.md` front matter:
 
+<!-- M0015-example: autodetect-schema-v1 -->
 ```yaml
 ---
 yadg:
@@ -359,9 +367,12 @@ Detection reuses the real diagram parser and requires strong renderable geometry
 
 YADG deliberately prefers false negatives over false positives. Examples such as:
 
+<!-- M0015-example: autodetect-weak-negative -->
+````markdown
 ```text
 A -> B
 ```
+````
 
 ordinary key/value text, aligned prose, or isolated punctuation do not qualify merely because they contain diagram-like characters.
 
@@ -378,6 +389,7 @@ An unlabeled detected diagram has no public semantic ID. It renders naturally at
 
 A successfully detected exact `text` fence can become an identified figure when it carries normal attributes:
 
+<!-- M0015-example: autodetect-identified-positive -->
 ````markdown
 ```text {#detected-flow caption="Detected flow"}
 ┌──────┐
@@ -393,6 +405,7 @@ Mermaid remains an external content-producer feature.
 
 Configure a trusted producer in `YADG.md`, for example:
 
+<!-- M0015-example: mermaid-producer-config -->
 ```yaml
 producers:
   mermaid:
@@ -402,8 +415,9 @@ producers:
 
 Then author:
 
+<!-- M0015-example: mermaid-source-fence -->
 ````markdown
-```mermaid {#system-flow caption="System flow"}
+```mermaid {#mermaid-system-flow caption="System flow"}
 flowchart LR
     A --> B
 ```

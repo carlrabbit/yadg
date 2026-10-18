@@ -32,6 +32,7 @@ YADG uses ordinary visible text tags rather than Word content controls.
 
 Examples:
 
+<!-- M0015-example: template-visible-tags -->
 ```text
 {{section:architecture}}
 {{content:architecture}}
@@ -111,6 +112,7 @@ and:
 
 Example:
 
+<!-- M0015-example: template-frontmatter-schema -->
 ```yaml
 version: 1
 
@@ -235,12 +237,31 @@ The prototype contains exactly one logical:
 
 Bind it:
 
+<!-- M0015-example: template-list-prototype-binding -->
 ```yaml
 prototypes:
   unorderedListItem: bullet-item
 ```
 
+The visible markers and placeholder form the prototype body:
+
+<!-- M0015-example: template-list-prototype -->
+````text
+{{yadg:prototype:bullet-item}}
+{{item}}
+{{/yadg:prototype:bullet-item}}
+````
+
 The prototype owns its Word numbering, indentation, paragraph properties, and run formatting. YADG clones that concrete example for each Markdown item.
+
+For an ordered-list prototype, create a real numbered Word paragraph and use the same placeholder pattern with its configured ID:
+
+<!-- M0015-example: template-ordered-list-prototype -->
+````text
+{{yadg:prototype:number-item}}
+{{item}}
+{{/yadg:prototype:number-item}}
+````
 
 ## Caption prototypes and references
 
@@ -257,6 +278,24 @@ The prototype owns label text, sequence identifier, punctuation, paragraph/run f
 YADG clones the prototype, replaces `{{caption}}`, and establishes the corresponding bookmark/reference mechanics.
 
 Without truthful numeric caption structure, YADG does not invent a number.
+
+Create visible marker paragraphs around one paragraph containing the real Word field and caption placeholder. In Word, insert a `SEQ Figure` field at the bracketed position:
+
+<!-- M0015-example: template-caption-prototype -->
+````text
+{{yadg:prototype:figure-caption}}
+Figure [SEQ Figure field]: {{caption}}
+{{/yadg:prototype:figure-caption}}
+````
+
+The table equivalent uses `{{yadg:prototype:table-caption}}`, a real `SEQ Table` field, and `{{caption}}`.
+
+<!-- M0015-example: template-table-caption-prototype -->
+````text
+{{yadg:prototype:table-caption}}
+Table [SEQ Table field]: {{caption}}
+{{/yadg:prototype:table-caption}}
+````
 
 This applies equally to ordinary image figures, identified built-in text diagrams, and Mermaid figures because all are figure semantics at the template boundary.
 

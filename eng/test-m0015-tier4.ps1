@@ -6,12 +6,171 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+
+function Get-M0015DocumentedExample([string]$Path, [string]$Id) {
+    $lines = [IO.File]::ReadAllLines($Path)
+    $marker = "<!-- M0015-example: $Id -->"
+    $matches = @(); for ($i = 0; $i -lt $lines.Length; $i++) { if ($lines[$i].Trim() -ceq $marker) { $matches += $i } }
+    if ($matches.Count -ne 1) { throw "Expected exactly one documented example marker '$Id' in $Path; found $($matches.Count)." }
+    $start = $matches[0] + 1
+    if ($start -ge $lines.Length -or $lines[$start] -notmatch '^(?<fence>`{3,})(?<language>[A-Za-z0-9_-]+)\s*$') { throw "Documented example '$Id' must be followed immediately by a fenced code block with a language." }
+    $fence = $Matches.fence; $language = $Matches.language
+    $end = -1
+    for ($i = $start + 1; $i -lt $lines.Length; $i++) { if ($lines[$i] -ceq $fence) { $end = $i; break } }
+    if ($end -lt 0) { throw "Documented example '$Id' has no closing $fence fence." }
+    return [pscustomobject]@{ Id=$Id; Path=$Path; Language=$language; Body=($lines[($start + 1)..($end - 1)] -join "`n") }
+}
+
+function Get-M0015FrontMatterLines($Example) {
+    if ($Example.Language -ne 'yaml') { throw "Example '$($Example.Id)' must be a yaml fence." }
+    $lines = @($Example.Body -split '\r?\n')
+    if ($lines.Count -lt 3 -or $lines[0] -cne '---' -or $lines[-1] -cne '---') { throw "Example '$($Example.Id)' must contain a complete front-matter block." }
+    return ,$lines
+}
+
+function New-M0015Paragraph([Xml.XmlDocument]$Document, [string]$Text) {
+    $wordNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    $paragraph = $Document.CreateElement('w','p',$wordNs)
+    $run = $Document.CreateElement('w','r',$wordNs)
+    $textNode = $Document.CreateElement('w','t',$wordNs); $textNode.InnerText = $Text
+    if ($Text.StartsWith(' ') -or $Text.EndsWith(' ')) { [void]$textNode.SetAttribute('space','http://www.w3.org/XML/1998/namespace','preserve') }
+    [void]$run.AppendChild($textNode); [void]$paragraph.AppendChild($run)
+    return $paragraph
+}
+
+function Add-M0015RunText([Xml.XmlDocument]$Document, [Xml.XmlElement]$Paragraph, [string]$Text) {
+    if ($Text.Length -eq 0) { return }
+    $wordNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    $run = $Document.CreateElement('w','r',$wordNs)
+    $textNode = $Document.CreateElement('w','t',$wordNs); $textNode.InnerText = $Text
+    if ($Text.StartsWith(' ') -or $Text.EndsWith(' ')) { [void]$textNode.SetAttribute('space','http://www.w3.org/XML/1998/namespace','preserve') }
+    [void]$run.AppendChild($textNode); [void]$Paragraph.AppendChild($run)
+}
+
+function New-M0015CaptionParagraph([Xml.XmlDocument]$Document, [string]$CaptionText) {
+    $match = [regex]::Match($CaptionText,'^(?<prefix>.*?)\[SEQ (?<sequence>Figure|Table) field\](?<suffix>.*)$')
+    if (-not $match.Success -or ([regex]::Matches($CaptionText,'\{\{caption\}\}')).Count -ne 1) { throw "Documented caption-prototype example is malformed: '$CaptionText'." }
+    $wordNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    $paragraph = $Document.CreateElement('w','p',$wordNs)
+    Add-M0015RunText $Document $paragraph $match.Groups['prefix'].Value
+    $field = $Document.CreateElement('w','fldSimple',$wordNs)
+    [void]$field.SetAttribute('instr',' SEQ ' + $match.Groups['sequence'].Value + ' \* ARABIC ')
+    $run = $Document.CreateElement('w','r',$wordNs); $textNode = $Document.CreateElement('w','t',$wordNs); $textNode.InnerText = '1'
+    [void]$run.AppendChild($textNode); [void]$field.AppendChild($run); [void]$paragraph.AppendChild($field)
+    Add-M0015RunText $Document $paragraph $match.Groups['suffix'].Value
+    return $paragraph
+}
+
+function New-M0015TemplateFromExamples([string]$Fixture, [string]$Destination, [string[]]$FrontMatter, [string[]]$DocumentedTags, [object[]]$PrototypeExamples) {
+    $zipIn = [IO.Compression.ZipFile]::OpenRead($Fixture)
+    $zipOut = [IO.Compression.ZipFile]::Open($Destination,[IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($entry in $zipIn.Entries) {
+            $newEntry = $zipOut.CreateEntry($entry.FullName,[IO.Compression.CompressionLevel]::Optimal)
+            $outStream = $newEntry.Open()
+            try {
+                $inStream = $entry.Open()
+                try {
+                    if ($entry.FullName -ceq 'word/document.xml') {
+                        $sourceReader = [IO.StreamReader]::new($inStream)
+                        try { $xml = [Xml.XmlDocument]::new(); $xml.PreserveWhitespace = $true; $xml.LoadXml($sourceReader.ReadToEnd()) } finally { $sourceReader.Dispose() }
+                        $wordNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+                        $ns = [Xml.XmlNamespaceManager]::new($xml.NameTable); $ns.AddNamespace('w',$wordNs)
+                        $body = $xml.SelectSingleNode('/w:document/w:body',$ns)
+                        $paragraphs = @($body.SelectNodes('./w:p',$ns))
+                        $startIndex = -1; $endIndex = -1
+                        for ($i = 0; $i -lt $paragraphs.Count; $i++) {
+                            $paragraphText = [string]::Join('',@($paragraphs[$i].SelectNodes('./w:r/w:t',$ns) | ForEach-Object InnerText))
+                            if ($paragraphText -ceq '{{yadg:frontmatter}}') { $startIndex = $i }
+                            if ($paragraphText -ceq '{{/yadg:frontmatter}}') { $endIndex = $i; break }
+                        }
+                        if ($startIndex -lt 0 -or $endIndex -le $startIndex) { throw 'Base template has no complete front-matter marker region.' }
+                        for ($i = $endIndex - 1; $i -gt $startIndex; $i--) { [void]$body.RemoveChild($paragraphs[$i]) }
+                        $closing = $paragraphs[$endIndex]; $anchor = $closing
+                        foreach ($line in $FrontMatter[1..($FrontMatter.Count - 2)]) {
+                            $paragraph = New-M0015Paragraph $xml $line
+                            [void]$body.InsertBefore($paragraph,$closing); $anchor = $paragraph
+                        }
+                        foreach ($prototype in $PrototypeExamples) {
+                            $bodyLines = @($prototype.Body -split '\r?\n' | Where-Object { $_ -ne '' })
+                            if ($bodyLines.Count -ne 3) { throw "Documented template prototype '$($prototype.Id)' must contain start, body, and end lines." }
+                            $startMarker = $bodyLines[0].Trim(); $endMarker = $bodyLines[2].Trim()
+                            if ($startMarker -notmatch '^\{\{yadg:prototype:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}$') { throw "Documented template prototype '$($prototype.Id)' has an invalid start marker." }
+                            $prototypeId = $Matches.id
+                            if ($endMarker -cne ('{{/yadg:prototype:' + $prototypeId + '}}')) { throw "Documented template prototype '$($prototype.Id)' has mismatched marker lines." }
+                            $paragraph = New-M0015Paragraph $xml $startMarker; [void]$body.InsertAfter($paragraph,$anchor); $anchor = $paragraph
+                            if ($prototype.Id -match 'caption-prototype$') { $paragraph = New-M0015CaptionParagraph $xml $bodyLines[1] }
+                            else {
+                                if ($bodyLines[1].Trim() -cne '{{item}}') { throw "Documented list prototype '$($prototype.Id)' must contain exactly {{item}}." }
+                                $paragraph = New-M0015Paragraph $xml '{{item}}'
+                            }
+                            [void]$body.InsertAfter($paragraph,$anchor); $anchor = $paragraph
+                            $paragraph = New-M0015Paragraph $xml $endMarker; [void]$body.InsertAfter($paragraph,$anchor); $anchor = $paragraph
+                        }
+                        $tagMap = @{}
+                        foreach ($tagLine in $DocumentedTags) {
+                            $tag = $tagLine.Trim()
+                            if ($tag -notmatch '^\{\{(?<kind>section|content|table|figure|value):(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}$') { throw "Unrecognized documented template tag '$tag'." }
+                            $kind = $Matches.kind
+                            if ($tagMap.ContainsKey($kind)) { throw "Documented tag example repeats kind '$kind'." }
+                            $tagMap[$kind] = $tag
+                        }
+                        foreach ($requiredKind in @('section','content','table','figure','value')) { if (-not $tagMap.ContainsKey($requiredKind)) { throw "Documented template tag example is missing '$requiredKind'." } }
+                        $replacement = @{'{{section:architecture}}'=$tagMap.section; '{{content:architecture}}'=$tagMap.content; '{{value:story-value}}'=$tagMap.value}
+                        foreach ($paragraph in @($body.SelectNodes('./w:p',$ns))) {
+                            $paragraphText = [string]::Join('',@($paragraph.SelectNodes('./w:r/w:t',$ns) | ForEach-Object InnerText))
+                            if ($replacement.ContainsKey($paragraphText)) {
+                                $textNodes = @($paragraph.SelectNodes('./w:r/w:t',$ns))
+                                if ($textNodes.Count -ne 1) { throw "Expected one text run in template marker paragraph '$paragraphText'." }
+                                $textNodes[0].InnerText = $replacement[$paragraphText]
+                            }
+                        }
+                        foreach ($kind in @('table','figure','value')) { $paragraph = New-M0015Paragraph $xml $tagMap[$kind]; [void]$body.InsertAfter($paragraph,$anchor); $anchor=$paragraph }
+                        $memory = [IO.MemoryStream]::new()
+                        try { $xml.Save($memory); $memory.Position=0; $memory.CopyTo($outStream) } finally { $memory.Dispose() }
+                    } else { $inStream.CopyTo($outStream) }
+                } finally { $inStream.Dispose() }
+            } finally { $outStream.Dispose() }
+        }
+    } finally { $zipOut.Dispose(); $zipIn.Dispose() }
+}
+
 $props = [xml](Get-Content -LiteralPath (Join-Path $repo 'Directory.Build.props') -Raw)
 $version = [string]$props.Project.PropertyGroup.VersionPrefix
 if ($version -ne '1.2.0') { throw "M0015 Tier 4 requires central release version 1.2.0; found '$version'." }
 if ([string]::IsNullOrWhiteSpace($PackagePath)) { $PackagePath = Join-Path $repo "artifacts/package/Yadg.$version.nupkg" }
 $package = [IO.Path]::GetFullPath($PackagePath)
 if (-not (Test-Path -LiteralPath $package -PathType Leaf) -or (Split-Path -Leaf $package) -ne "Yadg.$version.nupkg") { throw "Expected freshly packed Yadg.$version.nupkg: $package" }
+
+$markdownGuidePath = Join-Path $repo 'docs/user/MARKDOWN-AUTHORING.md'
+$templateGuidePath = Join-Path $repo 'docs/user/DOCX-TEMPLATE-AUTHORING.md'
+$documentedExampleSpecs = @(
+    @{id='workspace-schema-v1'; path=$markdownGuidePath; language='yaml'},
+    @{id='markdown-table'; path=$markdownGuidePath; language='markdown'},
+    @{id='markdown-figure'; path=$markdownGuidePath; language='markdown'},
+    @{id='explicit-text-diagram'; path=$markdownGuidePath; language='markdown'},
+    @{id='standalone-arrow-diagram'; path=$markdownGuidePath; language='markdown'},
+    @{id='nested-box-diagram'; path=$markdownGuidePath; language='markdown'},
+    @{id='corner-occlusion-diagram'; path=$markdownGuidePath; language='markdown'},
+    @{id='autodetect-schema-v1'; path=$markdownGuidePath; language='yaml'},
+    @{id='autodetect-weak-negative'; path=$markdownGuidePath; language='markdown'},
+    @{id='autodetect-identified-positive'; path=$markdownGuidePath; language='markdown'},
+    @{id='mermaid-producer-config'; path=$markdownGuidePath; language='yaml'},
+    @{id='mermaid-source-fence'; path=$markdownGuidePath; language='markdown'},
+    @{id='template-visible-tags'; path=$templateGuidePath; language='text'},
+    @{id='template-frontmatter-schema'; path=$templateGuidePath; language='yaml'},
+    @{id='template-list-prototype-binding'; path=$templateGuidePath; language='yaml'},
+    @{id='template-list-prototype'; path=$templateGuidePath; language='text'},
+    @{id='template-ordered-list-prototype'; path=$templateGuidePath; language='text'},
+    @{id='template-caption-prototype'; path=$templateGuidePath; language='text'},
+    @{id='template-table-caption-prototype'; path=$templateGuidePath; language='text'}
+)
+$documentedExamples = @{}
+foreach ($spec in $documentedExampleSpecs) {
+    $example = Get-M0015DocumentedExample $spec.path $spec.id
+    if ($example.Language -cne $spec.language -or [string]::IsNullOrWhiteSpace($example.Body)) { throw "Documented example '$($spec.id)' must be a non-empty $($spec.language) fence." }
+    $documentedExamples[$spec.id] = $example
+}
 
 $revision = (& git -C $repo rev-parse HEAD).Trim()
 $tree = (& git -C $repo status --porcelain --untracked-files=all) -join "`n"
@@ -103,7 +262,12 @@ try {
     $readmeEntry = $archive.GetEntry('README.md')
     $reader = [IO.StreamReader]::new($readmeEntry.Open())
     try { $packagedReadme = $reader.ReadToEnd() } finally { $reader.Dispose() }
-    if ($packagedReadme -notmatch 'YADG 1\.2\.0' -or $packagedReadme -notmatch 'MARKDOWN-AUTHORING' -or $packagedReadme -notmatch 'DOCX-TEMPLATE-AUTHORING') { throw 'Packaged README does not identify the candidate and canonical guides.' }
+    if ($packagedReadme -notmatch 'YADG 1\.2\.0') { throw 'Packaged README does not identify the candidate.' }
+    foreach ($guidePath in @('docs/user/MARKDOWN-AUTHORING.md','docs/user/DOCX-TEMPLATE-AUTHORING.md')) {
+        $stableUrl = 'https://github.com/carlrabbit/yadg/blob/main/' + $guidePath
+        if ($packagedReadme -notmatch [regex]::Escape($stableUrl)) { throw "Packaged README lacks usable stable guide link '$stableUrl'." }
+    }
+    if ($packagedReadme -match '\]\(docs/user/') { throw 'Packaged README contains repository-relative guide links that cannot resolve from the tool package.' }
 } finally { $archive.Dispose() }
 
 $wordVersion = $word.VersionInfo.FileVersion
@@ -116,10 +280,11 @@ if ($producerKind.StartsWith('Bun')) {
 }
 
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('yadg-m0015-tier4-' + [guid]::NewGuid().ToString('N'))
-$cliHome = Join-Path $temporary 'cli-home'; $nuget = Join-Path $temporary 'nuget'; $tool = Join-Path $temporary 'tool'; $consumer = Join-Path $temporary 'consumer'; $yolo = Join-Path $temporary 'yolo'; $weak = Join-Path $temporary 'weak'; $autoOff = Join-Path $temporary 'auto-off'; $delivery = Join-Path $temporary 'delivery'; $localFeed = Join-Path $temporary 'local-feed'
+$cliHome = Join-Path $temporary 'cli-home'; $nuget = Join-Path $temporary 'nuget'; $tool = Join-Path $temporary 'tool'; $consumer = Join-Path $temporary 'consumer'; $templateExample = Join-Path $temporary 'template-example'; $yolo = Join-Path $temporary 'yolo'; $weak = Join-Path $temporary 'weak'; $autoOff = Join-Path $temporary 'auto-off'; $delivery = Join-Path $temporary 'delivery'; $localFeed = Join-Path $temporary 'local-feed'
 New-Item -ItemType Directory -Force -Path $cliHome,$nuget,$tool,$consumer,$yolo,$weak,$delivery,$localFeed | Out-Null
 $oldHome = $env:DOTNET_CLI_HOME; $oldNuget = $env:NUGET_PACKAGES
 $results = [ordered]@{}
+$results.packagedReadme = 'passed; exact packaged README contains absolute GitHub links to both canonical authoring guides and no repository-relative docs/user links'
 try {
     $packageDirectory = Split-Path -Parent $package
     $env:DOTNET_CLI_HOME = $cliHome; $env:NUGET_PACKAGES = $nuget
@@ -165,59 +330,41 @@ try {
 
     $fixture = Join-Path $repo 'tests/fixtures/m0010/word-origin.docx'
     if (-not (Test-Path -LiteralPath $fixture)) { throw "Application-produced Word template fixture is missing: $fixture" }
-    foreach ($workspace in @($consumer,$yolo,$weak,$autoOff)) { New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'YadgTemplates') | Out-Null; Copy-Item -LiteralPath $fixture -Destination (Join-Path $workspace 'YadgTemplates/template.docx') }
-    $yaml = @('---','yadg:','  version: 1','values:','  document-version: "1.2"','  story-value: "M0015 installed consumer value"','markdown:','  thematicBreak: ignore','  codeInline: ignore','diagrams:','  autoDetect: true','publish:','  path: ./Published','producers:','  mermaid:',('    executable: ' + $producerExecutable),'    arguments:') + @($mermaidArguments | ForEach-Object { '      - "' + $_.Replace('"','\"') + '"' }) + @('---')
-    Set-Content -LiteralPath (Join-Path $consumer 'YADG.md') -Value $yaml -Encoding utf8
-    $source = @'
-# Architecture {#architecture}
-
-An installed-tool release sample.
-
-![](images/pixel.png){#sample-image}
-
-```diagram {#overlap}
-┌────────┐
-│lower   │
-│        │
-│      ┌─┼───┐
-└──────│     │
-       │     │
-       └─────┘
-```
-
-```diagram {#vertical-flow}
-┌───┐
-│ A │
-└───┘
-  ↓
-  ↓
-```
-
-```
-┌────────────┐
-│ Auto       │
-│ ┌──────┐   │
-│ │Inner │   │
-│ └──────┘   │
-└────────────┘
-```
-
-```text {#detected-flow}
-┌──────┐
-│  A   │
-└──┬───┘
-   ▼
-```
-
-```mermaid {#mermaid-flow}
-flowchart LR
-    A[Source] --> B[DOCX]
-```
-'@
+    foreach ($workspace in @($consumer,$templateExample,$yolo,$weak,$autoOff)) { New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'YadgTemplates') | Out-Null; Copy-Item -LiteralPath $fixture -Destination (Join-Path $workspace 'YadgTemplates/template.docx') }
+    $schemaFrontMatter = Get-M0015FrontMatterLines $documentedExamples['workspace-schema-v1']
+    $autoDetectFrontMatter = Get-M0015FrontMatterLines $documentedExamples['autodetect-schema-v1']
+    $autoDetectLines = @($autoDetectFrontMatter[1..($autoDetectFrontMatter.Count - 2)])
+    $diagramRootIndex = [Array]::IndexOf($autoDetectLines,'diagrams:')
+    if ($diagramRootIndex -lt 0 -or $autoDetectLines[-1] -cne '  autoDetect: true') { throw 'Documented auto-detection YAML example is not the expected schema-v1 mapping.' }
+    $producerLines = @($documentedExamples['mermaid-producer-config'].Body -split '\r?\n')
+    if ([string]::Join("`n",$producerLines) -notmatch '(?m)^producers:\n  mermaid:\n    executable: mmdc\n    arguments: \[\]$') { throw 'Documented Mermaid producer example no longer matches the supported mmdc process contract.' }
+    $producerLines = @($producerLines | ForEach-Object {
+        if ($_ -ceq '    executable: mmdc') { '    executable: ' + $producerExecutable }
+        elseif ($_ -ceq '    arguments: []') { '    arguments:' }
+        else { $_ }
+    })
+    if ($mermaidArguments.Count) { $producerLines += @($mermaidArguments | ForEach-Object { '      - "' + $_.Replace('"','\"') + '"' }) }
+    $mainYaml = @('---') + @($schemaFrontMatter[1..($schemaFrontMatter.Count - 2)]) + @('values:','  document-version: "1.2"','  story-value: "M0015 installed consumer value"') + @($autoDetectLines[$diagramRootIndex..($autoDetectLines.Count - 1)]) + @('publish:','  path: ./Published') + $producerLines + @('---')
+    $mainYaml | Set-Content -LiteralPath (Join-Path $consumer 'YADG.md') -Encoding utf8
+    $sourcePieces = @('# Architecture {#architecture}','An installed-tool release sample.')
+    foreach ($exampleId in @('explicit-text-diagram','standalone-arrow-diagram','nested-box-diagram','corner-occlusion-diagram','autodetect-identified-positive','mermaid-source-fence')) { $sourcePieces += $documentedExamples[$exampleId].Body }
+    $source = $sourcePieces -join "`n`n"
     Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value $source -Encoding utf8
+    $templateSourcePieces = @($sourcePieces[0],$sourcePieces[1],$documentedExamples['markdown-table'].Body,$documentedExamples['markdown-figure'].Body) + @($sourcePieces[2..($sourcePieces.Count - 1)])
+    $templateSource = $templateSourcePieces -join "`n`n"
     $imageDirectory = Join-Path $consumer 'images'; New-Item -ItemType Directory -Force -Path $imageDirectory | Out-Null
     $pixelPng = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMn8AAAAASUVORK5CYII=')
-    [IO.File]::WriteAllBytes((Join-Path $imageDirectory 'pixel.png'),$pixelPng)
+    [IO.File]::WriteAllBytes((Join-Path $imageDirectory 'system-context.png'),$pixelPng)
+    $templateYamlBody = @($documentedExamples['template-frontmatter-schema'].Body -split '\r?\n')
+    $templateFrontMatter = @('---') + $templateYamlBody + @('---')
+    $templateTags = @($documentedExamples['template-visible-tags'].Body -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $templatePrototypes = @($documentedExamples['template-list-prototype'],$documentedExamples['template-ordered-list-prototype'],$documentedExamples['template-caption-prototype'],$documentedExamples['template-table-caption-prototype'])
+    $templateDocument = Join-Path $templateExample 'YadgTemplates/template.docx'
+    Remove-Item -LiteralPath $templateDocument -Force
+    New-M0015TemplateFromExamples $fixture $templateDocument $templateFrontMatter $templateTags $templatePrototypes
+    Copy-Item -LiteralPath (Join-Path $consumer 'YADG.md') -Destination (Join-Path $templateExample 'YADG.md')
+    Set-Content -LiteralPath (Join-Path $templateExample 'content.md') -Value $templateSource -Encoding utf8
+    Copy-Item -LiteralPath $imageDirectory -Destination (Join-Path $templateExample 'images') -Recurse
     $check = (& $yadg check --workspace $consumer 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Installed strict check failed for diagram examples: $check" }
     $list = (& $yadg check --workspace $consumer --list 2>&1 | Out-String)
@@ -245,20 +392,42 @@ flowchart LR
         if (-not ($pngHashes | Where-Object { $_ -ne $sourcePngHash })) { throw 'A PNG distinct from the source-file figure was not embedded; Mermaid output was not established.' }
         $svgText = foreach ($entry in $svgEntries) { $reader = [IO.StreamReader]::new($entry.Open()); try { $reader.ReadToEnd() } finally { $reader.Dispose() } }
         $svgAll = $svgText -join "`n"
-        foreach ($term in @('lower','Auto','Inner','A')) { if ($svgAll -notmatch [regex]::Escape($term)) { throw "Generated SVG content omitted expected grid text '$term'." } }
+        foreach ($term in @('lower','Gateway','Input','Backend','Inner','A')) { if ($svgAll -notmatch [regex]::Escape($term)) { throw "Generated SVG content omitted expected documented grid text '$term'." } }
         if ($svgAll -notmatch '<path' -or $svgAll -match '<script|foreignObject|(?:href|src)\s*=\s*["''](?:https?:|//|data:)') { throw 'Generated text-diagram SVG lacks arrow geometry or includes active/external content.' }
     } finally { $zip.Dispose() }
     $results.strictAuthoring = 'installed strict check/build, check --list, inspect styles/template passed'
-    $results.textDiagrams = [ordered]@{ result='passed'; explicitIdentified='overlap corner and standalone vertical arrow'; autoDetect='anonymous unlabeled and identified lowercase text fence'; svgParts=$svgEntries.Count; svgReferences=([regex]::Matches($documentXml,'svgBlip')).Count }
+    $results.textDiagrams = [ordered]@{ result='passed'; extractedExamples=@('explicit-text-diagram','standalone-arrow-diagram','nested-box-diagram','corner-occlusion-diagram'); autoDetect='documented identified lowercase text fence'; svgParts=$svgEntries.Count; svgReferences=([regex]::Matches($documentXml,'svgBlip')).Count }
     $results.mermaid = [ordered]@{ result='passed'; producer=$producerKind; executable=$MermaidExecutable; arguments=$mermaidArguments; pinnedPackage="$mermaidPackage@$mermaidVersion"; embeddedPngParts=$pngEntries.Count }
 
-    @('---','yadg:','  version: 1','values:','  story-value: "M0015 installed consumer value"','diagrams:','  autoDetect: true','---') | Set-Content -LiteralPath (Join-Path $weak 'YADG.md') -Encoding utf8
-    @('# Weak candidate {#weak}','','```text','ordinary label: value','```') | Set-Content -LiteralPath (Join-Path $weak 'content.md') -Encoding utf8
+    $templateExampleCheck = (& $yadg check --workspace $templateExample --yolo 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "Installed tool rejected the canonical DOCX-template tag/front-matter/prototype examples: $templateExampleCheck" }
+    $templateExampleInspection = (& $yadg inspect template --workspace $templateExample 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "Installed inspect template rejected canonical DOCX-template examples: $templateExampleInspection" }
+    foreach ($expected in @('figure-caption','table-caption','bullet-item','number-item','table:interfaces','figure:system-context','value:document-version')) {
+        if (($templateExampleCheck + $templateExampleInspection) -notmatch [regex]::Escape($expected)) { throw "Installed DOCX-template example audit did not resolve documented tag/prototype '$expected'." }
+    }
+    & $yadg build --workspace $templateExample --yolo
+    if ($LASTEXITCODE -ne 0) { throw 'Installed tool could not build the canonical DOCX-template examples.' }
+    $templateOutput = Get-ChildItem -LiteralPath (Join-Path $templateExample 'YadgPreWords') -Filter '*.docx' -File | Select-Object -First 1
+    if ($null -eq $templateOutput) { throw 'Canonical DOCX-template example build produced no document.' }
+    $templateZip = [IO.Compression.ZipFile]::OpenRead($templateOutput.FullName)
+    try {
+        $templateDocumentEntry = $templateZip.GetEntry('word/document.xml'); $templateReader = [IO.StreamReader]::new($templateDocumentEntry.Open())
+        try { $templateDocumentXml = $templateReader.ReadToEnd() } finally { $templateReader.Dispose() }
+        foreach ($field in @('SEQ Figure','SEQ Table')) { if ($templateDocumentXml -notmatch [regex]::Escape($field)) { throw "Documented caption prototype did not preserve a real $field field in the authored DOCX." } }
+        if ($templateDocumentXml -match '\{\{(?:section|content|table|figure|value):[^{}]+\}\}') { throw 'A documented template placement/value tag remained unresolved in the authored DOCX.' }
+    } finally { $templateZip.Dispose() }
+    $results.documentedTemplateExamples = 'passed; extracted guide tag, front-matter, list/caption prototype examples were applied to a real template, checked, and built; figure/table SEQ fields verified'
+
+    $weakYaml = @($autoDetectFrontMatter[0..($autoDetectFrontMatter.Count - 2)]) + @('values:','  story-value: "M0015 installed consumer value"','---')
+    $weakYaml | Set-Content -LiteralPath (Join-Path $weak 'YADG.md') -Encoding utf8
+    @('# Architecture {#architecture}',$documentedExamples['autodetect-weak-negative'].Body) -join "`n`n" | Set-Content -LiteralPath (Join-Path $weak 'content.md') -Encoding utf8
     $weakResult = (& $yadg check --workspace $weak 2>&1 | Out-String)
     if ($LASTEXITCODE -eq 0 -or $weakResult -notmatch 'YADG-MD-UNSUPPORTED') { throw "Auto-detection converted a weak text fence or returned the wrong diagnostic: $weakResult" }
     $results.autoDetectionNegative = [ordered]@{ result='passed'; expected='YADG-MD-UNSUPPORTED'; observed='weak ordinary text fence remains unsupported' }
-    @('---','yadg:','  version: 1','values:','  story-value: "M0015 installed consumer value"','---') | Set-Content -LiteralPath (Join-Path $autoOff 'YADG.md') -Encoding utf8
-    @('# Auto-detection disabled {#disabled}','','```text','┌────────────┐','│ Auto       │','│ ┌──────┐   │','│ │Inner │   │','│ └──────┘   │','└────────────┘','```') | Set-Content -LiteralPath (Join-Path $autoOff 'content.md') -Encoding utf8
+    $autoOffYaml = @($schemaFrontMatter[0..($schemaFrontMatter.Count - 2)]) + @('values:','  story-value: "M0015 installed consumer value"','---')
+    $autoOffYaml | Set-Content -LiteralPath (Join-Path $autoOff 'YADG.md') -Encoding utf8
+    @('# Architecture {#architecture}',$documentedExamples['autodetect-identified-positive'].Body) -join "`n`n" | Set-Content -LiteralPath (Join-Path $autoOff 'content.md') -Encoding utf8
     $autoOffResult = (& $yadg check --workspace $autoOff 2>&1 | Out-String)
     if ($LASTEXITCODE -eq 0 -or $autoOffResult -notmatch 'YADG-MD-UNSUPPORTED') { throw 'Strong text-fence diagram was accepted while diagrams.autoDetect was absent (default off).' }
     $results.autoDetectionOptIn = 'passed; default-off strong text fence remained unsupported'
@@ -307,7 +476,7 @@ flowchart LR
     foreach ($required in @('stable IDs','Sections and content','Paragraphs and inline content','Flat lists','Pipe tables','PNG','caption','thematicBreak','codeInline','```diagram','character grid','Standalone arrows','Nested boxes','corner','auto-detection','anonymous','```mermaid','Text diagram or Mermaid?','YOLO')) { if ($markdownGuide -notmatch [regex]::Escape($required)) { throw "Markdown authoring guide is missing required source-authoring topic '$required'." } }
     $templateGuide = Get-Content -LiteralPath (Join-Path $repo 'docs/user/DOCX-TEMPLATE-AUTHORING.md') -Raw
     foreach ($required in @('ordinary visible text tags','{{section:architecture}}','{{content:architecture}}','{{table:interfaces}}','{{figure:system-context}}','{{value:document-version}}','front matter','styles:','prototypes:','inspect styles','inspect template','Headings','List-item prototypes','exactly one `SEQ` field','bookmark/reference mechanics','{{table-rows:interfaces}}','{{cell}}','codeInline','TOC','YOLO','near:','both reach template authoring as figure-like content')) { if ($templateGuide -notmatch [regex]::Escape($required)) { throw "DOCX template guide is missing required template-authoring topic '$required'." } }
-    $results.documentation = 'passed; links/compatibility pages and required README/template-guide surface checked; installed source examples parsed and built'
+    $results.documentation = [ordered]@{ result='passed'; canonicalExampleIds=@($documentedExampleSpecs | ForEach-Object id); navigation='repository links, compatibility links, and packaged README guide URLs checked'; exampleExecution='schema-v1/autodetect/Mermaid YAML plus Markdown table, figure, explicit diagram, standalone arrow, nested/corner geometry, positive/negative auto-detection, Mermaid source, and DOCX template tags/frontmatter/prototypes extracted from canonical guides and accepted by installed 1.2 tool' }
 
     Remove-Item -LiteralPath (Join-Path $consumer 'YADG.md'),(Join-Path $consumer 'content.md'),(Join-Path $consumer 'YadgTemplates') -Force -Recurse
     $published = Join-Path $delivery 'consumer'
@@ -329,7 +498,7 @@ flowchart LR
         wordVersion=$wordVersion; libreOfficeVersion=$loVersion
         mermaidProducer=[ordered]@{kind=$producerKind; executable=$MermaidExecutable; version=$mermaidVersionOutput; invocationArguments=$mermaidArguments; package="$mermaidPackage@$mermaidVersion"}
         m0014Tier3=[ordered]@{evidencePath='artifacts/review/evidence/M0014/tier3-evidence.json'; repositoryRevision=[string]$tier3.repositoryRevision}
-        installedConsumer=$results; documentationExampleAudit='passed; installed candidate parsed/built explicit occluded and standalone-arrow diagrams, auto-detection positive and negative cases, and real Mermaid; links and guide contracts passed'
+        installedConsumer=$results; documentationExampleAudit='passed; bounded canonical guide blocks were extracted by stable markers, validated with the installed candidate, and included schema-v1 YAML, Markdown table/figure, explicit text diagrams, standalone arrows, nested/corner geometry, positive/negative auto-detection, real Mermaid config/source, README package navigation, and DOCX tags/frontmatter/prototype authoring.'
         externalPublication='none'
     }
     $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'release-evidence.json') -Encoding utf8
