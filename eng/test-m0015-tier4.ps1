@@ -144,6 +144,7 @@ function New-M0015TemplateFromExamples([string]$Fixture, [string]$Destination, [
                                 $textNodes[0].InnerText = $replacement[$paragraphText]
                             }
                         }
+                        $anchor = $body.SelectSingleNode('./w:p[last()]',$ns)
                         foreach ($kind in @('section','table','figure','value')) { $paragraph = New-M0015Paragraph $xml $tagMap[$kind]; [void]$body.InsertAfter($paragraph,$anchor); $anchor=$paragraph }
                         $memory = [IO.MemoryStream]::new()
                         try { $xml.Save($memory); $memory.Position=0; $memory.CopyTo($outStream) } finally { $memory.Dispose() }
