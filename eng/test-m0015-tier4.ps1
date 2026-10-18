@@ -63,6 +63,11 @@ if ([string]::IsNullOrWhiteSpace($MermaidExecutable)) {
         $producerKind = 'explicit installed real Mermaid executable'
     }
 }
+$producerExecutable = [IO.Path]::GetFileNameWithoutExtension($MermaidExecutable)
+if ([string]::IsNullOrWhiteSpace($producerExecutable)) { throw 'The configured Mermaid producer executable name is empty.' }
+$producerDirectory = Split-Path -Parent $MermaidExecutable
+$oldPath = $env:Path
+$env:Path = "$producerDirectory;$env:Path"
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($package)
@@ -161,21 +166,16 @@ try {
     $fixture = Join-Path $repo 'tests/fixtures/m0010/word-origin.docx'
     if (-not (Test-Path -LiteralPath $fixture)) { throw "Application-produced Word template fixture is missing: $fixture" }
     foreach ($workspace in @($consumer,$yolo,$weak,$autoOff)) { New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'YadgTemplates') | Out-Null; Copy-Item -LiteralPath $fixture -Destination (Join-Path $workspace 'YadgTemplates/template.docx') }
-    $yaml = @('---','yadg:','  version: 1','values:','  document-version: "1.2"','markdown:','  thematicBreak: ignore','  codeInline: ignore','diagrams:','  autoDetect: true','publish:','  path: ./Published','producers:','  mermaid:','    executable: "' + $MermaidExecutable.Replace('\','/') + '"','    arguments:') + @($mermaidArguments | ForEach-Object { '      - "' + $_.Replace('"','\"') + '"' }) + @('---')
+    $yaml = @('---','yadg:','  version: 1','values:','  document-version: "1.2"','  story-value: "M0015 installed consumer value"','markdown:','  thematicBreak: ignore','  codeInline: ignore','diagrams:','  autoDetect: true','publish:','  path: ./Published','producers:','  mermaid:','    executable: "' + $producerExecutable + '"','    arguments:') + @($mermaidArguments | ForEach-Object { '      - "' + $_.Replace('"','\"') + '"' }) + @('---')
     Set-Content -LiteralPath (Join-Path $consumer 'YADG.md') -Value $yaml -Encoding utf8
     $source = @'
 # Architecture {#architecture}
 
 An installed-tool release sample.
 
-| Component | Purpose |
-|---|---|
-| YADG | Authors DOCX |
-{#component-table}
-
 ![](images/pixel.png){#sample-image}
 
-```diagram {#overlap caption="Occluded boxes"}
+```diagram {#overlap}
 ┌────────┐
 │lower   │
 │        │
@@ -202,14 +202,14 @@ An installed-tool release sample.
 └────────────┘
 ```
 
-```text {#detected-flow caption="Detected flow"}
+```text {#detected-flow}
 ┌──────┐
 │  A   │
 └──┬───┘
    ▼
 ```
 
-```mermaid {#mermaid-flow caption="Mermaid flow"}
+```mermaid {#mermaid-flow}
 flowchart LR
     A[Source] --> B[DOCX]
 ```
@@ -252,19 +252,19 @@ flowchart LR
     $results.textDiagrams = [ordered]@{ result='passed'; explicitIdentified='overlap corner and standalone vertical arrow'; autoDetect='anonymous unlabeled and identified lowercase text fence'; svgParts=$svgEntries.Count; svgReferences=([regex]::Matches($documentXml,'svgBlip')).Count }
     $results.mermaid = [ordered]@{ result='passed'; producer=$producerKind; executable=$MermaidExecutable; arguments=$mermaidArguments; pinnedPackage="$mermaidPackage@$mermaidVersion"; embeddedPngParts=$pngEntries.Count }
 
-    @('---','yadg:','  version: 1','diagrams:','  autoDetect: true','---') | Set-Content -LiteralPath (Join-Path $weak 'YADG.md') -Encoding utf8
+    @('---','yadg:','  version: 1','values:','  story-value: "M0015 installed consumer value"','diagrams:','  autoDetect: true','---') | Set-Content -LiteralPath (Join-Path $weak 'YADG.md') -Encoding utf8
     @('# Weak candidate {#weak}','','```text','ordinary label: value','```') | Set-Content -LiteralPath (Join-Path $weak 'content.md') -Encoding utf8
     $weakResult = (& $yadg check --workspace $weak 2>&1 | Out-String)
     if ($LASTEXITCODE -eq 0 -or $weakResult -notmatch 'YADG-MD-UNSUPPORTED') { throw "Auto-detection converted a weak text fence or returned the wrong diagnostic: $weakResult" }
     $results.autoDetectionNegative = [ordered]@{ result='passed'; expected='YADG-MD-UNSUPPORTED'; observed='weak ordinary text fence remains unsupported' }
-    @('---','yadg:','  version: 1','---') | Set-Content -LiteralPath (Join-Path $autoOff 'YADG.md') -Encoding utf8
+    @('---','yadg:','  version: 1','values:','  story-value: "M0015 installed consumer value"','---') | Set-Content -LiteralPath (Join-Path $autoOff 'YADG.md') -Encoding utf8
     @('# Auto-detection disabled {#disabled}','','```text','┌────────────┐','│ Auto       │','│ ┌──────┐   │','│ │Inner │   │','│ └──────┘   │','└────────────┘','```') | Set-Content -LiteralPath (Join-Path $autoOff 'content.md') -Encoding utf8
     $autoOffResult = (& $yadg check --workspace $autoOff 2>&1 | Out-String)
     if ($LASTEXITCODE -eq 0 -or $autoOffResult -notmatch 'YADG-MD-UNSUPPORTED') { throw 'Strong text-fence diagram was accepted while diagrams.autoDetect was absent (default off).' }
     $results.autoDetectionOptIn = 'passed; default-off strong text fence remained unsupported'
 
-    @('---','yadg:','  version: 1','markdown:','  thematicBreak: ignore','  codeInline: ignore','---') | Set-Content -LiteralPath (Join-Path $yolo 'YADG.md') -Encoding utf8
-    @('# Architecture {#architecture}','','1. First item','2. Second item') | Set-Content -LiteralPath (Join-Path $yolo 'content.md') -Encoding utf8
+    @('---','yadg:','  version: 1','values:','  story-value: "M0015 installed consumer value"','markdown:','  thematicBreak: ignore','  codeInline: ignore','---') | Set-Content -LiteralPath (Join-Path $yolo 'YADG.md') -Encoding utf8
+    @('# Architecture {#architecture}','','1. First item','2. Second item','','| Component | Purpose |','|---|---|','| YADG | Authors DOCX |','{#yolo-table}','','```diagram {#captioned caption="Release sample"}','┌────┐','│ Y  │','└────┘','```') | Set-Content -LiteralPath (Join-Path $yolo 'content.md') -Encoding utf8
     $strictYoloCheck = (& $yadg check --workspace $yolo 2>&1 | Out-String)
     if ($LASTEXITCODE -eq 0) { throw 'Strict packaged authoring unexpectedly accepted the unavailable fixture list presentation.' }
     $yoloCheck = (& $yadg check --workspace $yolo --yolo 2>&1 | Out-String)
@@ -336,6 +336,6 @@ flowchart LR
     Write-Output 'M0015 Tier 4 installed-package consumer validation passed.'
 }
 finally {
-    $env:DOTNET_CLI_HOME = $oldHome; $env:NUGET_PACKAGES = $oldNuget
+    $env:DOTNET_CLI_HOME = $oldHome; $env:NUGET_PACKAGES = $oldNuget; $env:Path = $oldPath
     if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue }
 }
