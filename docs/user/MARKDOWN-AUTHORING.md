@@ -244,13 +244,14 @@ Use exact lowercase `diagram`, a stable ID, and optionally a plain caption:
 <!-- M0015-example: explicit-text-diagram -->
 ````markdown
 ```diagram {#service-flow caption="Service flow"}
-┌──────────┐
-│ Frontend │
-└────┬─────┘
-     ▼
-┌──────────┐
-│ Backend  │
-└──────────┘
+┌────────────┐
+│ Outer      │
+│ ┌──────┐   │
+│ │Inner │   │
+│ └───┴──┘   │
+└─────┼──────┘
+      │
+      ▼
 ```
 ````
 

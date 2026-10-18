@@ -359,6 +359,11 @@ try {
     $templateFrontMatter = @('---') + $templateYamlBody + @('---')
     $templateTags = @($documentedExamples['template-visible-tags'].Body -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $templatePrototypes = @($documentedExamples['template-list-prototype'],$documentedExamples['template-ordered-list-prototype'],$documentedExamples['template-caption-prototype'],$documentedExamples['template-table-caption-prototype'])
+    $consumerTemplate = Join-Path $consumer 'YadgTemplates/template.docx'
+    Remove-Item -LiteralPath $consumerTemplate -Force
+    New-M0015TemplateFromExamples $fixture $consumerTemplate $templateFrontMatter $templateTags $templatePrototypes
+    $documentedPrefix = @('# Architecture {#architecture}','An installed-tool release sample.',$documentedExamples['markdown-table'].Body,$documentedExamples['markdown-figure'].Body)
+    Copy-Item -LiteralPath $imageDirectory -Destination (Join-Path $consumer 'images') -Recurse
     $templateDocument = Join-Path $templateExample 'YadgTemplates/template.docx'
     Remove-Item -LiteralPath $templateDocument -Force
     New-M0015TemplateFromExamples $fixture $templateDocument $templateFrontMatter $templateTags $templatePrototypes
@@ -366,12 +371,15 @@ try {
     Set-Content -LiteralPath (Join-Path $templateExample 'content.md') -Value $templateSource -Encoding utf8
     Copy-Item -LiteralPath $imageDirectory -Destination (Join-Path $templateExample 'images') -Recurse
     foreach ($exampleId in @('explicit-text-diagram','standalone-arrow-diagram','nested-box-diagram','corner-occlusion-diagram','autodetect-identified-positive','mermaid-source-fence')) {
-        Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value ('# Documented example {#documented-example}' + "`n`n" + $documentedExamples[$exampleId].Body) -Encoding utf8
-        $exampleCheck = (& $yadg check --workspace $consumer --yolo 2>&1 | Out-String)
-        if ($LASTEXITCODE -ne 0) { throw "Installed tool rejected canonical Markdown example '$exampleId': $exampleCheck" }
+        Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value (($documentedPrefix + $documentedExamples[$exampleId].Body) -join "`n`n") -Encoding utf8
+        $exampleCheck = (& $yadg check --workspace $consumer 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0) { throw "Installed strict check rejected canonical Markdown example '$exampleId': $exampleCheck" }
+        if (Test-Path (Join-Path $consumer 'YadgPreWords')) { Remove-Item -LiteralPath (Join-Path $consumer 'YadgPreWords') -Force -Recurse }
+        & $yadg build --workspace $consumer
+        if ($LASTEXITCODE -ne 0) { throw "Installed strict build rejected canonical Markdown example '$exampleId'." }
     }
-    Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value $source -Encoding utf8
-    $check = (& $yadg check --workspace $consumer --yolo 2>&1 | Out-String)
+    Set-Content -LiteralPath (Join-Path $consumer 'content.md') -Value $templateSource -Encoding utf8
+    $check = (& $yadg check --workspace $consumer 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Installed strict check failed for diagram examples: $check" }
     $list = (& $yadg check --workspace $consumer --list 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0 -or $list -notmatch 'detected-flow\s+figure') { throw "Installed check --list did not list identified text diagram as a figure: $list" }
@@ -379,6 +387,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Installed inspect styles failed.' }
     & $yadg inspect template --workspace $consumer
     if ($LASTEXITCODE -ne 0) { throw 'Installed inspect template failed.' }
+    if (Test-Path (Join-Path $consumer 'YadgPreWords')) { Remove-Item -LiteralPath (Join-Path $consumer 'YadgPreWords') -Force -Recurse }
     & $yadg build --workspace $consumer
     if ($LASTEXITCODE -ne 0) { throw 'Installed strict build failed.' }
     $authored = Get-ChildItem -LiteralPath (Join-Path $consumer 'YadgPreWords') -Filter '*.docx' -File | Select-Object -First 1
@@ -405,14 +414,14 @@ try {
     $results.textDiagrams = [ordered]@{ result='passed'; extractedExamples=@('explicit-text-diagram','standalone-arrow-diagram','nested-box-diagram','corner-occlusion-diagram'); autoDetect='documented identified lowercase text fence'; svgParts=$svgEntries.Count; svgReferences=([regex]::Matches($documentXml,'svgBlip')).Count }
     $results.mermaid = [ordered]@{ result='passed'; producer=$producerKind; executable=$MermaidExecutable; arguments=$mermaidArguments; pinnedPackage="$mermaidPackage@$mermaidVersion"; embeddedPngParts=$pngEntries.Count }
 
-    $templateExampleCheck = (& $yadg check --workspace $templateExample --yolo 2>&1 | Out-String)
+    $templateExampleCheck = (& $yadg check --workspace $templateExample 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Installed tool rejected the canonical DOCX-template tag/front-matter/prototype examples: $templateExampleCheck" }
     $templateExampleInspection = (& $yadg inspect template --workspace $templateExample 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Installed inspect template rejected canonical DOCX-template examples: $templateExampleInspection" }
     foreach ($expected in @('figure-caption','table-caption','bullet-item','number-item','table:interfaces','figure:system-context','value:document-version')) {
         if (($templateExampleCheck + $templateExampleInspection) -notmatch [regex]::Escape($expected)) { throw "Installed DOCX-template example audit did not resolve documented tag/prototype '$expected'." }
     }
-    & $yadg build --workspace $templateExample --yolo
+    & $yadg build --workspace $templateExample
     if ($LASTEXITCODE -ne 0) { throw 'Installed tool could not build the canonical DOCX-template examples.' }
     $templateOutput = Get-ChildItem -LiteralPath (Join-Path $templateExample 'YadgPreWords') -Filter '*.docx' -File | Select-Object -First 1
     if ($null -eq $templateOutput) { throw 'Canonical DOCX-template example build produced no document.' }
