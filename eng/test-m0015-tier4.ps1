@@ -166,7 +166,7 @@ try {
     $fixture = Join-Path $repo 'tests/fixtures/m0010/word-origin.docx'
     if (-not (Test-Path -LiteralPath $fixture)) { throw "Application-produced Word template fixture is missing: $fixture" }
     foreach ($workspace in @($consumer,$yolo,$weak,$autoOff)) { New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'YadgTemplates') | Out-Null; Copy-Item -LiteralPath $fixture -Destination (Join-Path $workspace 'YadgTemplates/template.docx') }
-    $yaml = @('---','yadg:','  version: 1','values:','  document-version: "1.2"','  story-value: "M0015 installed consumer value"','markdown:','  thematicBreak: ignore','  codeInline: ignore','diagrams:','  autoDetect: true','publish:','  path: ./Published','producers:','  mermaid:','    executable: ' + $producerExecutable,'    arguments:') + @($mermaidArguments | ForEach-Object { '      - "' + $_.Replace('"','\"') + '"' }) + @('---')
+    $yaml = @('---','yadg:','  version: 1','values:','  document-version: "1.2"','  story-value: "M0015 installed consumer value"','markdown:','  thematicBreak: ignore','  codeInline: ignore','diagrams:','  autoDetect: true','publish:','  path: ./Published','producers:','  mermaid:',('    executable: ' + $producerExecutable),'    arguments:') + @($mermaidArguments | ForEach-Object { '      - "' + $_.Replace('"','\"') + '"' }) + @('---')
     Set-Content -LiteralPath (Join-Path $consumer 'YADG.md') -Value $yaml -Encoding utf8
     $source = @'
 # Architecture {#architecture}
