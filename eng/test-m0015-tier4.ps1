@@ -21,6 +21,22 @@ function Get-M0015DocumentedExample([string]$Path, [string]$Id) {
     return [pscustomobject]@{ Id=$Id; Path=$Path; Language=$language; Body=($lines[($start + 1)..($end - 1)] -join "`n") }
 }
 
+function Invoke-M0015Captured([string]$Executable, [string[]]$Arguments) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new($Executable)
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add($argument) }
+    $process = [Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) { throw "Unable to start installed command: $Executable" }
+    try {
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        return [pscustomobject]@{ ExitCode=$process.ExitCode; Stdout=$stdout.GetAwaiter().GetResult(); Stderr=$stderr.GetAwaiter().GetResult() }
+    } finally { $process.Dispose() }
+}
+
 function Get-M0015FrontMatterLines($Example) {
     if ($Example.Language -ne 'yaml') { throw "Example '$($Example.Id)' must be a yaml fence." }
     $lines = @($Example.Body -split '\r?\n')
@@ -328,7 +344,7 @@ try {
         @{args=@('inspect','styles','--help'); required=@('--workspace','--template')},
         @{args=@('inspect','template','--help'); required=@('--workspace','--template')},
         @{args=@('build','--help'); required=@('--workspace','--yolo')},
-        @{args=@('render','--help'); required=@('--workspace','--renderer','libreoffice','word','--renderer-path','--yolo')},
+        @{args=@('render','--help'); required=@('--workspace','--renderer','libreoffice','word','--renderer-path','--yolo','--verbose')},
         @{args=@('publish','--help'); required=@('--workspace','--publish-path')}
     )
     foreach ($case in $helpCases) {
@@ -487,9 +503,21 @@ if (-not (Test-Path -LiteralPath $templateFixture)) { throw "Application-produce
     & $yadg render --workspace $consumer --renderer word
     if ($LASTEXITCODE -ne 0) { throw 'Installed Microsoft Word renderer failed.' }
     $results.wordRender = [ordered]@{ result='passed'; version=$wordVersion }
-    & $yadg render --workspace $consumer --renderer libreoffice --renderer-path $loPath
-    if ($LASTEXITCODE -ne 0) { throw 'Installed LibreOffice renderer failed.' }
-    $results.libreOfficeRender = [ordered]@{ result='passed'; version=$loVersion }
+    $normalResult = Invoke-M0015Captured $yadg @('render','--workspace',$consumer,'--renderer','libreoffice','--renderer-path',$loPath)
+    if ($normalResult.ExitCode -ne 0 -or $normalResult.Stdout -notmatch 'render: finalized PreWords through libreoffice' -or $normalResult.Stderr.Trim().Length -ne 0) { throw "Installed default LibreOffice render output changed or failed. stdout=$($normalResult.Stdout) stderr=$($normalResult.Stderr)" }
+    $results.libreOfficeNormalOutput = 'passed; default render emitted its existing summary without verbose phase diagnostics'
+    $verboseResult = Invoke-M0015Captured $yadg @('render','--workspace',$consumer,'--renderer','libreoffice','--renderer-path',$loPath,'--verbose')
+    if ($verboseResult.ExitCode -ne 0 -or $verboseResult.Stdout -notmatch 'render: finalized PreWords through libreoffice') { throw "Installed verbose LibreOffice renderer failed. stdout=$($verboseResult.Stdout) stderr=$($verboseResult.Stderr)" }
+    $verboseRender = $verboseResult.Stderr
+    $requiredVerbosePhases = @('runtime/executable resolution','version/runtime discovery','UNO runtime resolution','UNO sidecar resolution','isolated session/process start','per-document package normalization','UNO connect','document load','field refresh','index update','link update','calculation','DOCX save','PDF export','document close','per-document total','output validation/commit','cleanup','total render')
+    $lastPhaseIndex = -1
+    foreach ($phase in $requiredVerbosePhases) {
+        $phaseIndex = $verboseRender.IndexOf("phase complete: $phase",[StringComparison]::Ordinal)
+        if ($phaseIndex -lt 0 -or $phaseIndex -lt $lastPhaseIndex) { throw "Installed verbose LibreOffice trace lacks ordered phase '$phase': $verboseRender" }
+        $lastPhaseIndex = $phaseIndex
+    }
+    if ($verboseRender -notmatch 'elapsed=\d+ms' -or $verboseRender -notmatch 'phaseElapsed=\d+ms') { throw "Installed verbose LibreOffice diagnostics lack per-phase/per-document elapsed times: $verboseRender" }
+    $results.libreOfficeRender = [ordered]@{ result='passed'; version=$loVersion; verbose='passed on stderr'; phases=$requiredVerbosePhases; output=$verboseRender }
     $fallback = (& $yadg render --workspace $consumer --renderer libreoffice --renderer-path (Join-Path $temporary 'missing-soffice.exe') --yolo 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0 -or $fallback -notmatch 'requested=libreoffice' -or $fallback -notmatch 'actual=word') { throw "Installed renderer YOLO fallback failed or hid actual renderer: $fallback" }
     $results.rendererFallback = 'passed; requested libreoffice and actual word were reported'
@@ -516,6 +544,8 @@ if (-not (Test-Path -LiteralPath $templateFixture)) { throw "Application-produce
     foreach ($required in @('stable IDs','Sections and content','Paragraphs and inline content','Flat lists','Pipe tables','PNG','caption','thematicBreak','codeInline','```diagram','character grid','Standalone arrows','Nested boxes','corner','auto-detection','anonymous','```mermaid','Text diagram or Mermaid?','YOLO')) { if ($markdownGuide -notmatch [regex]::Escape($required)) { throw "Markdown authoring guide is missing required source-authoring topic '$required'." } }
     $templateGuide = Get-Content -LiteralPath (Join-Path $repo 'docs/user/DOCX-TEMPLATE-AUTHORING.md') -Raw
     foreach ($required in @('ordinary visible text tags','{{section:architecture}}','{{content:architecture}}','{{table:interfaces}}','{{figure:system-context}}','{{value:document-version}}','front matter','styles:','prototypes:','inspect styles','inspect template','Headings','List-item prototypes','exactly one `SEQ` field','bookmark/reference mechanics','{{table-rows:interfaces}}','{{cell}}','codeInline','TOC','YOLO','near:','both reach template authoring as figure-like content')) { if ($templateGuide -notmatch [regex]::Escape($required)) { throw "DOCX template guide is missing required template-authoring topic '$required'." } }
+    $troubleshooting = Get-Content -LiteralPath (Join-Path $repo 'docs/user/TROUBLESHOOTING.md') -Raw
+    foreach ($required in @('yadg render --verbose','stderr','30-second','persistent log','current/last observed phase')) { if ($troubleshooting -notmatch [regex]::Escape($required)) { throw "Troubleshooting guide is missing verbose-render contract '$required'." } }
     $results.documentation = [ordered]@{ result='passed'; canonicalExampleIds=@($documentedExampleSpecs | ForEach-Object id); navigation='repository links, compatibility links, and packaged README guide URLs checked'; exampleExecution='schema-v1/autodetect/Mermaid YAML plus Markdown table, figure, explicit diagram, standalone arrow, nested/corner geometry, positive/negative auto-detection, Mermaid source, and DOCX template tags/frontmatter/prototypes extracted from canonical guides and accepted by installed 1.2 tool' }
 
     Remove-Item -LiteralPath (Join-Path $consumer 'YADG.md'),(Join-Path $consumer 'content.md'),(Join-Path $consumer 'YadgTemplates') -Force -Recurse
@@ -538,6 +568,7 @@ if (-not (Test-Path -LiteralPath $templateFixture)) { throw "Application-produce
         wordVersion=$wordVersion; libreOfficeVersion=$loVersion
         mermaidProducer=[ordered]@{kind=$producerKind; executable=$MermaidExecutable; version=$mermaidVersionOutput; invocationArguments=$mermaidArguments; package="$mermaidPackage@$mermaidVersion"}
         m0014Tier3=[ordered]@{evidencePath='artifacts/review/evidence/M0014/tier3-evidence.json'; repositoryRevision=[string]$tier3.repositoryRevision}
+        rendererDiagnostics=[ordered]@{verbosePhaseTiming=$results.libreOfficeRender.verbose; quietOutput=$results.libreOfficeNormalOutput; configuredLibreOfficeTimeout='30000 ms, unchanged'}
         installedConsumer=$results; documentationExampleAudit='passed; bounded canonical guide blocks were extracted by stable markers, validated with the installed candidate, and included schema-v1 YAML, Markdown table/figure, explicit text diagrams, standalone arrows, nested/corner geometry, positive/negative auto-detection, real Mermaid config/source, README package navigation, and DOCX tags/frontmatter/prototype authoring.'
         externalPublication='none'
     }

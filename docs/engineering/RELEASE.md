@@ -270,9 +270,10 @@ Validate:
 14. real Microsoft Word and LibreOffice rendering of output containing a built-in text diagram;
 15. representative YOLO renderer fallback;
 16. downstream-only publish;
-17. documented command/YAML/Markdown/template/link and compatibility-page audit;
-18. no dependency on repository `bin/obj`;
-19. exact revision/package-bound release evidence declaring no external publication.
+17. default render output remains unchanged and installed LibreOffice `render --verbose` reports ordered phase timings;
+18. documented command/YAML/Markdown/template/link and compatibility-page audit;
+19. no dependency on repository `bin/obj`;
+20. exact revision/package-bound release evidence declaring no external publication.
 
 Tier 4 proves the installed consumer surface. It does not replace Tier 3.
 
@@ -366,6 +367,7 @@ Record at least:
 - YOLO renderer fallback;
 - publish;
 - documentation/example audit;
+- verbose renderer phase timing, quiet-output compatibility, timeout-path diagnostics, and the unchanged 30-second LibreOffice operation bound;
 - external publication = none.
 
 If production code/package/docs change, regenerate affected evidence.

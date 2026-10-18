@@ -44,6 +44,18 @@ For deeper inspection:
 yadg inspect template
 ```
 
+## Diagnose a render stall
+
+Run render with invocation-local phase timing:
+
+```powershell
+yadg render --verbose
+```
+
+Verbose diagnostics go to stderr and report renderer phases and elapsed time. LibreOffice also reports UNO connection, document load, field/index updates, saves, export, and cleanup. If the existing 30-second LibreOffice operation bound expires, the diagnostic includes the input document, elapsed time, timeout, and current/last observed phase. Use that phase to locate where the operation stopped progressing before investigating the relevant runtime or document operation.
+
+The trace is only printed for that invocation; YADG does not create a persistent log or increase the timeout automatically. Without `--verbose`, render output is unchanged.
+
 ## A style name does not resolve
 
 Run:

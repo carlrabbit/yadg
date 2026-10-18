@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Reflection;
 using System.Runtime.Versioning;
+using System.Diagnostics;
 using DocumentFormat.OpenXml.Packaging;
 using Yadg.Core;
 using Yadg.Word;
@@ -127,24 +128,26 @@ public static class Program
         var renderer = new Option<string>("--renderer") { Description = "Renderer ID: libreoffice (default) or word.", DefaultValueFactory = _ => "libreoffice" };
         var rendererPath = new Option<FileInfo?>("--renderer-path") { Description = "Explicit LibreOffice soffice executable path." };
         var yolo = new Option<bool>("--yolo") { Description = "Explicit best-effort rendering; may use the alternate supported renderer." };
-        command.Add(workspace); command.Add(renderer); command.Add(rendererPath); command.Add(yolo);
+        var verbose = new Option<bool>("--verbose") { Description = "Write invocation-local renderer phase timings to stderr." };
+        command.Add(workspace); command.Add(renderer); command.Add(rendererPath); command.Add(yolo); command.Add(verbose);
         command.SetAction(parseResult =>
         {
             var path = parseResult.GetValue(workspace);
             var rendererId = parseResult.GetValue(renderer)!;
             var executable = parseResult.GetValue(rendererPath);
             var useYolo = parseResult.GetValue(yolo);
+            var useVerbose = parseResult.GetValue(verbose);
             RenderResult result;
             if (!string.Equals(rendererId, "word", StringComparison.OrdinalIgnoreCase) && !string.Equals(rendererId, "libreoffice", StringComparison.OrdinalIgnoreCase)) { Console.Error.WriteLine($"YADG-RENDER-020: Unsupported renderer ID '{rendererId}'. Supported renderers are 'libreoffice' and 'word'."); fail(); return; }
             if (string.Equals(rendererId, "word", StringComparison.OrdinalIgnoreCase) && executable is not null) { Console.Error.WriteLine("YADG-RENDER-021: --renderer-path is valid only for LibreOffice."); fail(); return; }
             var root = Path.GetFullPath(path?.FullName ?? Directory.GetCurrentDirectory());
             if (useYolo)
             {
-                result = RunStagedRenderer(rendererId, root, executable?.FullName);
+                result = RunStagedRenderer(rendererId, root, executable?.FullName, useVerbose);
                 if (!result.Success)
                 {
                     var alternate = rendererId.Equals("word", StringComparison.OrdinalIgnoreCase) ? "libreoffice" : "word";
-                    var second = RunStagedRenderer(alternate, root, null);
+                    var second = RunStagedRenderer(alternate, root, null, useVerbose);
                     if (!second.Success) { foreach (var d in second.Diagnostics) Console.Error.WriteLine(d); fail(); return; }
                     Console.Error.WriteLine($"degradation YADG-YOLO-RENDER-001: requested renderer '{rendererId}' failed; fallback: '{second.ActualRenderer}' ({second.RuntimeVersion ?? "runtime version unavailable"}).");
                     foreach (var d in result.Diagnostics) Console.Error.WriteLine($"  detail {d}");
@@ -156,8 +159,14 @@ public static class Program
                 Console.WriteLine($"render: finalized PreWords; requested={rendererId}; actual={actual}; runtime={result.RuntimeVersion ?? "runtime detected"}; yolo={(fallbackUsed ? "fallback used" : "no fallback")}; degradations={(fallbackUsed ? 1 : 0)}");
                 return;
             }
-            if (string.Equals(rendererId, "word", StringComparison.OrdinalIgnoreCase)) result = new WordRendererEngine().Render(root);
-            else result = new LibreOfficeRenderer().Render(root, executable?.FullName);
+            if (string.Equals(rendererId, "word", StringComparison.OrdinalIgnoreCase))
+            {
+                var clock = Stopwatch.StartNew();
+                if (useVerbose) Console.Error.WriteLine("[renderer] phase started: Microsoft Word render");
+                result = new WordRendererEngine().Render(root);
+                if (useVerbose) Console.Error.WriteLine($"[renderer] phase {(result.Success ? "complete" : "failed")}: Microsoft Word render; elapsed={clock.Elapsed.TotalMilliseconds:F0}ms");
+            }
+            else result = new LibreOfficeRenderer().Render(root, executable?.FullName, useVerbose ? Console.Error.WriteLine : null);
             foreach (var diagnostic in result.Diagnostics) Console.Error.WriteLine(diagnostic);
             if (!result.Success) { fail(); return; }
             Console.WriteLine($"render: finalized PreWords through {rendererId} ({result.RuntimeVersion ?? "runtime detected"})");
@@ -350,14 +359,22 @@ public static class Program
         command.Add(styles); command.Add(templateCommand); return command;
     }
 
-    private static RenderResult RunStagedRenderer(string rendererId, string workspaceRoot, string? rendererPath)
+    private static RenderResult RunStagedRenderer(string rendererId, string workspaceRoot, string? rendererPath, bool verbose)
     {
         var stage = Path.Combine(workspaceRoot, ".yadg-yolo-stage-" + Guid.NewGuid().ToString("N"));
         try
         {
             Directory.CreateDirectory(Path.Combine(stage, "YadgPreWords"));
             foreach (var input in Directory.EnumerateFiles(Path.Combine(workspaceRoot, "YadgPreWords"), "*.docx", SearchOption.TopDirectoryOnly)) File.Copy(input, Path.Combine(stage, "YadgPreWords", Path.GetFileName(input)), true);
-            var result = rendererId.Equals("word", StringComparison.OrdinalIgnoreCase) ? new WordRendererEngine().Render(stage) : new LibreOfficeRenderer().Render(stage, rendererPath);
+            RenderResult result;
+            if (rendererId.Equals("word", StringComparison.OrdinalIgnoreCase))
+            {
+                var clock = Stopwatch.StartNew();
+                if (verbose) Console.Error.WriteLine("[renderer] phase started: Microsoft Word staged render");
+                result = new WordRendererEngine().Render(stage);
+                if (verbose) Console.Error.WriteLine($"[renderer] phase {(result.Success ? "complete" : "failed")}: Microsoft Word staged render; elapsed={clock.Elapsed.TotalMilliseconds:F0}ms");
+            }
+            else result = new LibreOfficeRenderer().Render(stage, rendererPath, verbose ? message => Console.Error.WriteLine(message) : null);
             if (!result.Success) return result;
             FinalizedOutputCommit.Commit(workspaceRoot, Path.Combine(stage, "YadgWords"), result.ActualRenderer == "libreoffice" ? Path.Combine(stage, "YadgPdfs") : null);
             return result;

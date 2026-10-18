@@ -25,8 +25,11 @@ public sealed class M0005IntegrationTests
             var authoredErrors = new OpenXmlValidator().Validate(authored).ToArray();
             Assert.True(authoredErrors.Length == 0, string.Join(Environment.NewLine, authoredErrors.Select(error => $"{error.Description} at {error.Path?.XPath}")));
         }
-        var result = RunCli(workspace.Root, "render", "--renderer-path", lo);
+        var result = RunCli(workspace.Root, "render", "--renderer-path", lo, "--verbose");
         Assert.True(result.ExitCode == 0, result.Output);
+        Assert.Contains("phase complete: document load", result.Output);
+        Assert.Contains("phase complete: DOCX save", result.Output);
+        Assert.Contains("phase complete: PDF export", result.Output);
         var finalized = Path.Combine(workspace.Root, "YadgWords", "review.docx"); var pdf = Path.Combine(workspace.Root, "YadgPdfs", "review.pdf");
         Assert.True(new FileInfo(finalized).Length > 0); Assert.True(new FileInfo(pdf).Length > 0);
         using var document = WordprocessingDocument.Open(finalized, false);

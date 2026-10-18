@@ -28,7 +28,7 @@ renderer-specific finalized artifacts
 ## CLI
 
 ```text
-yadg render [--workspace <path>] [--renderer <id>] [--renderer-path <path>] [--yolo]
+yadg render [--workspace <path>] [--renderer <id>] [--renderer-path <path>] [--yolo] [--verbose]
 ```
 
 Supported IDs:
@@ -41,6 +41,8 @@ word
 Default remains `libreoffice`.
 
 `--renderer-path` applies only to LibreOffice and is invalid for Word.
+
+`--verbose` is invocation-local renderer diagnostics written to stderr. With LibreOffice it reports phase progress and elapsed timings, including current/last phase and input identity when the bounded UNO operation times out. It does not create persistent logs or change the timeout policy. Without `--verbose`, successful render output remains unchanged.
 
 ## Common input
 
