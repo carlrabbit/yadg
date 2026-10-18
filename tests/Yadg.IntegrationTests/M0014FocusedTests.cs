@@ -12,6 +12,7 @@ public sealed class M0014FocusedTests
 {
     private const string NestedBoxes = "┌────────────┐\n│ Outer      │\n│ ┌──────┐   │\n│ │Inner │   │\n│ └──────┘   │\n└────────────┘";
     private const string OccludedBoxes = "      ┌───────┐\n      │ upper │\n┌─────│       │─────┐\n│lower│       │     │\n│     └───────┘     │\n│                   │\n│                   │\n│                   │\n└───────────────────┘";
+    private const string OccludedLowerRightCorner = "┌────────┐\n│lower   │\n│        │\n│      ┌─┼───┐\n└──────│     │\n       │     │\n       └─────┘";
     private const string UncoveredGap = "┌─────         ─────┐\n│                   │\n│                   │\n└───────────────────┘";
 
     [Fact]
@@ -50,6 +51,10 @@ public sealed class M0014FocusedTests
         Assert.False(occluded.Model!.HasInvalidOcclusion);
         Assert.Contains(occluded.Model.Rectangles, rectangle => rectangle.Reconstructed && rectangle.CoveredBy?.Count == 1);
         Assert.Contains("occlusion-", occluded.Model.Svg, StringComparison.Ordinal);
+        var cornerOccluded = TextDiagramParser.Parse(OccludedLowerRightCorner);
+        Assert.True(cornerOccluded.Success, cornerOccluded.Error);
+        Assert.False(cornerOccluded.Model!.HasInvalidOcclusion);
+        Assert.Contains(cornerOccluded.Model.Rectangles, rectangle => rectangle.Reconstructed && rectangle.Left == 0 && rectangle.Top == 0 && rectangle.Right == 9 && rectangle.Bottom == 4 && rectangle.CoveredBy?.Count == 1);
         var uncovered = TextDiagramParser.Parse(UncoveredGap);
         Assert.True(uncovered.Success, uncovered.Error);
         Assert.True(uncovered.Model!.HasInvalidOcclusion);
@@ -82,6 +87,18 @@ public sealed class M0014FocusedTests
         var punctuation = TextDiagramParser.Parse("line-item label");
         Assert.False(punctuation.Model!.HasStrongGeometry);
         Assert.Contains("line-item", punctuation.Model.Svg, StringComparison.Ordinal);
+
+        foreach (var arrow in "↑↓←→")
+        {
+            var standalone = TextDiagramParser.Parse(arrow.ToString());
+            Assert.Contains(standalone.Model!.Cells, cell => cell.Glyph == arrow && cell.Connections == 0);
+            Assert.Contains("<path", standalone.Model.Svg, StringComparison.Ordinal);
+            Assert.False(standalone.Model.HasStrongGeometry);
+        }
+        const string verticalFlow = "┌───┐\n│ A │\n└───┘\n  ↓\n  ↓";
+        var explicitFlow = MarkdownDocumentParser.Parse($"```diagram {{#vertical-flow}}\n{verticalFlow}\n```", "content.md");
+        Assert.True(explicitFlow.IsValid, string.Join(Environment.NewLine, explicitFlow.Diagnostics));
+        Assert.Contains("<path", Assert.IsType<YadgFigure>(Assert.Single(explicitFlow.Document!.Blocks)).GeneratedSvg, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -119,8 +136,29 @@ public sealed class M0014FocusedTests
         Assert.IsType<YadgDiagram>(Assert.Single(asciiCandidate.Document!.Blocks));
         var unicodeArrowCandidate = MarkdownDocumentParser.Parse("```\n───→\n```", "content.md", diagramsAutoDetect: true);
         Assert.IsType<YadgDiagram>(Assert.Single(unicodeArrowCandidate.Document!.Blocks));
+        var isolatedArrowCandidate = MarkdownDocumentParser.Parse("```\n↓\n```", "content.md", diagramsAutoDetect: true);
+        Assert.Contains(isolatedArrowCandidate.Diagnostics, diagnostic => diagnostic.Code == "YADG-MD-UNSUPPORTED");
+        Assert.Empty(isolatedArrowCandidate.Document!.Figures);
         var uncovered = MarkdownDocumentParser.Parse($"```\n{UncoveredGap}\n```", "content.md", diagramsAutoDetect: true);
         Assert.Contains(uncovered.Diagnostics, diagnostic => diagnostic.Code == "YADG-MD-UNSUPPORTED");
+    }
+
+    [Fact]
+    public void Connector_crossing_box_boundary_continues_outside_without_clipping()
+    {
+        var source = "┌───┐\n│───┼────→\n└───┘";
+        var parsed = TextDiagramParser.Parse(source);
+        Assert.True(parsed.Success, parsed.Error);
+        var rectangle = Assert.Single(parsed.Model!.Rectangles);
+        var boundary = parsed.Model.Cells.Single(cell => cell.Row == 1 && cell.Column == rectangle.Right);
+        Assert.NotEqual(0, boundary.Connections & 2);
+        var svg = XDocument.Parse(parsed.Model.Svg);
+        XNamespace ns = "http://www.w3.org/2000/svg";
+        var rightEdge = rectangle.Right * 14 + 7;
+        Assert.Contains(svg.Descendants(ns + "line"), line =>
+            double.Parse(line.Attribute("x2")!.Value, System.Globalization.CultureInfo.InvariantCulture) > rightEdge &&
+            double.Parse(line.Attribute("y1")!.Value, System.Globalization.CultureInfo.InvariantCulture) == double.Parse(line.Attribute("y2")!.Value, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Contains(svg.Descendants(ns + "path"), path => path.Attribute("d")!.Value.Contains("L", StringComparison.Ordinal));
     }
 
     [Fact]

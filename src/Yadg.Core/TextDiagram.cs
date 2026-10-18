@@ -67,7 +67,7 @@ public static class TextDiagramParser
             if ((mask & 8) != 0 && c > 0 && (raw[r, c - 1] & 2) != 0) connected |= 8;
             // ASCII plus signs participate only in actual connected geometry.
             if (chars[r, c] == '+' && BitCount(connected) == 0) continue;
-            if (connected != 0) cells.Add(new(r, c, chars[r, c], connected));
+            if (connected != 0 || IsStandaloneArrow(chars[r, c])) cells.Add(new(r, c, chars[r, c], connected));
         }
 
         var completeRectangles = FindRectangles(chars, rows.Length, width);
@@ -116,13 +116,14 @@ public static class TextDiagramParser
                 if (!IsCorner(grid[top, right], '┐', '+')) continue;
                 for (var bottom = top + 2; bottom < height; bottom++)
                 {
-                    if (!IsCorner(grid[bottom, left], '└', '+') || !IsCorner(grid[bottom, right], '┘', '+')) continue;
+                    if (!IsCorner(grid[bottom, left], '└', '+')) continue;
                     if (result.Any(rect => rect.Left == left && rect.Top == top && rect.Right == right && rect.Bottom == bottom)) continue;
                     var missing = new List<(int X, int Y)>();
                     if (!InspectEdge((x, y) => grid[y, x], left + 1, right - 1, top, true, missing) ||
                         !InspectEdge((x, y) => grid[y, x], left + 1, right - 1, bottom, true, missing) ||
                         !InspectEdge((x, y) => grid[y, x], top + 1, bottom - 1, left, false, missing) ||
                         !InspectEdge((x, y) => grid[y, x], top + 1, bottom - 1, right, false, missing)) continue;
+                    if (!IsCorner(grid[bottom, right], '┘', '+')) missing.Add((right, bottom));
                     if (missing.Count == 0) continue;
                     var covers = new HashSet<int>();
                     var everyGapCoveredExactlyOnce = true;
@@ -160,12 +161,13 @@ public static class TextDiagramParser
         // Missing cells must form a single interior interval with visible fragments on both sides.
         if (edgeMissing.Count == 0) return true;
         if (visible.Count < 2) return false;
-        if (edgeMissing[0] <= start || edgeMissing[^1] >= end || edgeMissing.Count != edgeMissing[^1] - edgeMissing[0] + 1) return false;
+        if (edgeMissing.Count != edgeMissing[^1] - edgeMissing[0] + 1) return false;
         missing.AddRange(edgeMissing.Select(position => horizontal ? (position, fixedCoordinate) : (fixedCoordinate, position)));
         return true;
     }
 
     private static bool IsCorner(char value, char unicode, char ascii) => value == unicode || value == ascii;
+    private static bool IsStandaloneArrow(char value) => value is '→' or '←' or '↑' or '↓' or '►' or '◄' or '▲' or '▼';
     private static bool HorizontalEdge(char[,] grid, int row, int left, int right)
     {
         for (var c = left + 1; c < right; c++) if (grid[row, c] is not '─' and not '-' and not '┬' and not '┴' and not '┼' and not '+') return false;
@@ -198,7 +200,7 @@ public static class TextDiagramParser
         }
         var structural = cells.ToDictionary(cell => (cell.Row, cell.Column));
         output.Append("<g fill=\"none\" stroke=\"#202124\" stroke-width=\"1.5\" stroke-linecap=\"square\" stroke-linejoin=\"round\">");
-        foreach (var cell in cells.Where(c => c.Connections != 0))
+        foreach (var cell in cells)
         {
             var x = (cell.Column + 0.5) * CellWidth;
             var y = (cell.Row + 0.5) * CellHeight;

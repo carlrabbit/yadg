@@ -33,7 +33,7 @@ Representative source for the M0014 text-diagram renderer.
 │ ┌──────┐   │
 │ │Inner │   │
 │ └───┴──┘   │
-└─────┴──────┘
+└─────┼──────┘
       │
       ▼
 ```
@@ -45,6 +45,7 @@ Representative source for the M0014 text-diagram renderer.
 │ │Inner │   │
 │ └──────┘   │
 └────────────┘
+      ↓
 ```
 
 ```text {#auto-flow}
@@ -100,6 +101,7 @@ try {
             }
             $svgText = $allSvg -join "`n"
             foreach ($expected in @('Outer','Inner','upper','lower')) { if ($svgText -notmatch [regex]::Escape($expected)) { throw "Expected diagram text '$expected' is absent from finalized $renderer SVG content." } }
+            if ($svgText -notmatch '<path') { throw "Finalized $renderer SVG content is missing the standalone arrow primitive." }
             if ($svgText -match '<script|foreignObject|(?:href|src)\s*=\s*["''](?:https?:|//|data:)') { throw "Finalized $renderer SVG contains active or external content." }
         }
         finally { $zip.Dispose() }
