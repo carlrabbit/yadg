@@ -432,7 +432,7 @@ if (-not (Test-Path -LiteralPath $templateFixture)) { throw "Application-produce
         if (-not ($pngHashes | Where-Object { $_ -ne $sourcePngHash })) { throw 'A PNG distinct from the source-file figure was not embedded; Mermaid output was not established.' }
         $svgText = foreach ($entry in $svgEntries) { $reader = [IO.StreamReader]::new($entry.Open()); try { $reader.ReadToEnd() } finally { $reader.Dispose() } }
         $svgAll = $svgText -join "`n"
-        foreach ($term in @('lower','Gateway','Input','Backend','Inner','A')) { if ($svgAll -notmatch [regex]::Escape($term)) { throw "Generated SVG content omitted expected documented grid text '$term'." } }
+        foreach ($term in @('Outer','Inner','lower','Input','Transform','Output','A','B')) { if ($svgAll -notmatch [regex]::Escape($term)) { throw "Generated SVG content omitted expected documented grid text '$term'." } }
         if ($svgAll -notmatch '<path' -or $svgAll -match '<script|foreignObject|(?:href|src)\s*=\s*["''](?:https?:|//|data:)') { throw 'Generated text-diagram SVG lacks arrow geometry or includes active/external content.' }
     } finally { $zip.Dispose() }
     $results.strictAuthoring = 'installed strict check/build, check --list, inspect styles/template passed'
