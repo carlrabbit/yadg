@@ -119,7 +119,7 @@ if ($Milestone -eq 'M0016') {
         if ($run.Count -ne 1) { Write-Error "M0016 Tier 3 requires one passed $renderer run."; exit 2 }
         $artifactPath = Join-Path $root ([string]$run[0].finalized)
         if (-not (Test-Path -LiteralPath $artifactPath) -or (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToUpperInvariant() -ne [string]$run[0].finalizedSha256) { Write-Error "M0016 finalized $renderer artifact hash does not match evidence."; exit 2 }
-        $expectedPath = "artifacts/review/evidence/M0016/$renderer-finalized.docx"
+        $expectedPath = [string]$run[0].finalized
         $expectedHash = [string]$run[0].finalizedSha256
         if ($text -notmatch "(?m)^${renderer}Artifact:\s*$([regex]::Escape($expectedPath))\s*$" -or $text -notmatch "(?m)^${renderer}ArtifactSha256:\s*$expectedHash\s*$") { Write-Error "M0016 approval is not bound to the exact finalized $renderer DOCX."; exit 2 }
     }

@@ -118,6 +118,7 @@ finally {
 
 $templateSha256 = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash.ToUpperInvariant()
 $revision = (& git -C $repo rev-parse HEAD).Trim()
+$revisionSuffix = $revision.Substring(0, 7)
 $os = (Get-CimInstance Win32_OperatingSystem).Caption
 $worktree = ((& git -C $repo status --short --untracked-files=all) | Where-Object { $_ -notmatch '^\?\? (\.execution|\.review|artifacts)/|^[ MARCUD?!]{2} (\.execution|\.review|artifacts)/|docs/milestones/M0016\.md' }) -join "`n"
 $worktreeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($worktree)))
@@ -173,12 +174,14 @@ try {
         }
         finally { $zip.Dispose() }
 
-        $name = "$renderer-finalized.docx"
+        $name = "$renderer-finalized-$revisionSuffix.docx"
         $destination = Join-Path $EvidenceRoot $name
         Copy-Item -LiteralPath $finalized.FullName -Destination $destination -Force
-        $runs += [ordered]@{ renderer = $renderer; runtimeVersion = if ($renderer -eq 'word') { $wordVersion } else { $loVersion }; templateSha256 = $templateSha256; authoredSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); finalized = "artifacts/review/evidence/M0016/$name"; finalizedSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToUpperInvariant(); semanticHyperlinks = $anchors.Count; generatedReferenceFields = @($instructions | Where-Object { $_ -match 'REF\s+' }).Count; result = 'passed' }
+        $relativeArtifact = [IO.Path]::GetRelativePath($repo, $destination).Replace([char]92, [char]47)
+        $runs += [ordered]@{ renderer = $renderer; runtimeVersion = if ($renderer -eq 'word') { $wordVersion } else { $loVersion }; templateSha256 = $templateSha256; authoredSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); finalized = $relativeArtifact; finalizedSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToUpperInvariant(); semanticHyperlinks = $anchors.Count; generatedReferenceFields = @($instructions | Where-Object { $_ -match 'REF\s+' }).Count; result = 'passed' }
     }
-    $evidence = [ordered]@{ milestone = 'M0016'; repositoryRevision = $revision; worktreeStatusSha256 = $worktreeHash; os = $os; fixture = 'tests/fixtures/m0010/word-origin.docx'; fixtureSha256 = $fixtureHash; templateCreation = $templateCreation; templatePath = 'artifacts/review/evidence/M0016/word-authored-reference-template.docx'; templateSha256 = $templateSha256; wordVersion = $wordVersion; libreOfficeVersion = $loVersion; sourceSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($source))); runs = $runs }
+    $relativeTemplate = [IO.Path]::GetRelativePath($repo, $templatePath).Replace([char]92, [char]47)
+    $evidence = [ordered]@{ milestone = 'M0016'; repositoryRevision = $revision; worktreeStatusSha256 = $worktreeHash; os = $os; fixture = 'tests/fixtures/m0010/word-origin.docx'; fixtureSha256 = $fixtureHash; templateCreation = $templateCreation; templatePath = $relativeTemplate; templateSha256 = $templateSha256; wordVersion = $wordVersion; libreOfficeVersion = $loVersion; sourceSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($source))); runs = $runs }
     $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'tier3-evidence.json') -Encoding utf8
     Write-Output 'M0016 real Word and LibreOffice finalization passed.'
 }
