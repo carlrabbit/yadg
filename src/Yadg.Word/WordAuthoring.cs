@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text;
 using System.Security.Cryptography;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -51,6 +52,15 @@ public static class WordAuthoring
     private static readonly Regex DirectTag = new(@"^\{\{(table|figure):([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex PreparedTag = new(@"^\{\{table-rows:([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex CellTag = new(@"\{\{cell\}\}", RegexOptions.Compiled);
+    private sealed record ComplexFieldRange(string Instruction, OpenXmlElement BeginNode, OpenXmlElement? SeparateNode, OpenXmlElement? EndNode, bool ContainsNestedField);
+    private sealed record CaptionLabelRange(OpenXmlElement FirstNode, OpenXmlElement LastNode, string Label);
+    private sealed class ComplexFieldState(OpenXmlElement beginNode)
+    {
+        public OpenXmlElement BeginNode { get; } = beginNode;
+        public StringBuilder Instruction { get; } = new();
+        public OpenXmlElement? SeparateNode { get; set; }
+        public bool ContainsNestedField { get; set; }
+    }
 
     public static IReadOnlyList<string> InspectStyles(string templatePath)
     {
@@ -1276,7 +1286,7 @@ public static class WordAuthoring
             if (index >= paragraphs.Length) { diagnostics.Add(new("YADG-PROT-002", $"Prototype '{id.Groups["id"].Value}' has no closing marker.", true, location)); break; }
             controls.Add(paragraphs[index]); index++;
             if (inside.Count != 1) { diagnostics.Add(new("YADG-PROT-003", $"Prototype '{id.Groups["id"].Value}' must contain exactly one paragraph.", true, location)); continue; }
-            var clone = (Paragraph)inside[0].CloneNode(true); var text = LogicalText(clone); var seq = clone.Descendants<SimpleField>().Count() + clone.Descendants<FieldCode>().Count(t => t.Text?.Contains("SEQ", StringComparison.OrdinalIgnoreCase) == true);
+            var clone = (Paragraph)inside[0].CloneNode(true); var text = LogicalText(clone); var seq = CountSequenceFields(clone);
             var proto = new CaptionPrototype(id.Groups["id"].Value, clone, seq, Regex.Matches(text, Regex.Escape("{{caption}}")).Count);
             if (!prototypeMap.TryAdd(proto.Id, proto)) diagnostics.Add(new("YADG-PROT-004", $"Duplicate prototype ID '{proto.Id}'.", true, location));
             var listPrototype = bindings.Any(b => b.Key is "unorderedListItem" or "orderedListItem" && b.Value == proto.Id);
@@ -1348,15 +1358,9 @@ public static class WordAuthoring
 
     private static void WrapCaptionPrefixAndSequence(Paragraph paragraph, string name)
     {
-        var sequence = paragraph.Descendants<FieldCode>().FirstOrDefault(field => field.Text?.Contains("SEQ", StringComparison.OrdinalIgnoreCase) == true);
-        var simple = sequence is null ? paragraph.Descendants<SimpleField>().FirstOrDefault(field => field.Instruction?.Value?.Contains("SEQ", StringComparison.OrdinalIgnoreCase) == true) : null;
-        OpenXmlElement? sequenceNode = sequence?.Ancestors<Run>().FirstOrDefault() ?? (OpenXmlElement?)simple;
-        if (sequenceNode is null) return;
-        var endField = paragraph.Descendants<FieldChar>().LastOrDefault(field => field.FieldCharType?.Value == FieldCharValues.End);
-        OpenXmlElement endNode = endField?.Ancestors<Run>().FirstOrDefault() ?? (OpenXmlElement?)simple ?? sequenceNode;
-        var prefixNode = paragraph.ChildElements.TakeWhile(node => !ReferenceEquals(node, sequenceNode)).FirstOrDefault(node => node.Descendants<Text>().Any(text => !string.IsNullOrWhiteSpace(text.Text)));
-        if (prefixNode is null) return;
-        InsertBookmarkAroundNodes(prefixNode, endNode, name);
+        if (!TryGetCaptionLabelRange(paragraph, requirePlaceholder: false, out var range, out var reason) || range is null)
+            throw new WordAuthoringException(new("YADG-REF-006", $"Cannot create a label-number reference bookmark: {reason} Update the selected caption prototype so its label is literal text immediately before one complete SEQ field, followed by the caption placeholder.", true, "template caption prototype"));
+        InsertBookmarkAroundNodes(range.FirstNode, range.LastNode, name);
     }
 
     private static void InsertBookmarkAroundNodes(OpenXmlElement firstNode, OpenXmlElement lastNode, string name)
@@ -1374,13 +1378,142 @@ public static class WordAuthoring
         firstRun.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe }); lastRun.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId });
     }
 
-    private static bool HasCaptionLabel(CaptionPrototype prototype)
+    private static bool HasCaptionLabel(CaptionPrototype prototype, out string reason) =>
+        TryGetCaptionLabelRange(prototype.Paragraph, requirePlaceholder: true, out _, out reason);
+
+    private static int CountSequenceFields(Paragraph paragraph)
     {
-        var sequence = prototype.Paragraph.Descendants<FieldCode>().FirstOrDefault(field => field.Text?.Contains("SEQ", StringComparison.OrdinalIgnoreCase) == true);
-        OpenXmlElement? sequenceNode = sequence?.Ancestors<Run>().FirstOrDefault() ?? (OpenXmlElement?)prototype.Paragraph.Descendants<SimpleField>().FirstOrDefault(field => field.Instruction?.Value?.Contains("SEQ", StringComparison.OrdinalIgnoreCase) == true);
-        if (sequenceNode is null) return false;
-        var prefix = prototype.Paragraph.ChildElements.TakeWhile(node => !ReferenceEquals(node, sequenceNode)).SelectMany(node => node.Descendants<Text>()).Select(text => text.Text).Aggregate(string.Empty, (left, right) => left + right);
-        return !string.IsNullOrWhiteSpace(prefix) && prototype.Paragraph.Descendants<Text>().Any(text => text.Text?.Contains("{{caption}}", StringComparison.Ordinal) == true);
+        var simple = paragraph.Descendants<SimpleField>().Count(field => IsSequenceInstruction(field.Instruction?.Value));
+        return simple + ReadComplexFields(paragraph).Count(field => IsSequenceInstruction(field.Instruction));
+    }
+
+    private static bool TryGetCaptionLabelRange(Paragraph paragraph, bool requirePlaceholder, out CaptionLabelRange? range, out string reason)
+    {
+        range = null;
+        var simpleSequences = paragraph.Descendants<SimpleField>().Where(field => IsSequenceInstruction(field.Instruction?.Value)).ToArray();
+        var complexFields = ReadComplexFields(paragraph);
+        var complexSequences = complexFields.Where(field => IsSequenceInstruction(field.Instruction)).ToArray();
+        if (simpleSequences.Length + complexSequences.Length != 1)
+        {
+            reason = $"the prototype must contain exactly one SEQ field (found {simpleSequences.Length + complexSequences.Length}).";
+            return false;
+        }
+
+        OpenXmlElement startNode;
+        OpenXmlElement endNode;
+        if (simpleSequences.Length == 1)
+        {
+            var simple = simpleSequences[0];
+            if (simple.Parent != paragraph || simple.Descendants<FieldChar>().Any() || simple.Descendants<SimpleField>().Any())
+            {
+                reason = "the SEQ simple field must be a single top-level field without nested fields.";
+                return false;
+            }
+            startNode = endNode = simple;
+        }
+        else
+        {
+            var field = complexSequences[0];
+            if (field.ContainsNestedField || field.SeparateNode is null || field.EndNode is null ||
+                !IsDirectFieldBoundary(field.BeginNode, FieldCharValues.Begin, paragraph) ||
+                !IsDirectFieldBoundary(field.SeparateNode, FieldCharValues.Separate, paragraph) ||
+                !IsDirectFieldBoundary(field.EndNode, FieldCharValues.End, paragraph))
+            {
+                reason = "the SEQ complex field must have one top-level begin, instruction, separator, result, and matching end; nested or incomplete fields are unsupported.";
+                return false;
+            }
+            startNode = field.BeginNode.Ancestors<Run>().First();
+            endNode = field.EndNode.Ancestors<Run>().First();
+            if (!IsFieldBoundaryRun((Run)startNode, FieldCharValues.Begin) || !IsFieldBoundaryRun((Run)endNode, FieldCharValues.End))
+            {
+                reason = "the SEQ begin and end markers must each occupy their own run so the reference bookmark cannot include adjacent caption text.";
+                return false;
+            }
+        }
+
+        var children = paragraph.ChildElements.ToArray();
+        var startIndex = Array.IndexOf(children, startNode);
+        var endIndex = Array.IndexOf(children, endNode);
+        if (startIndex < 0 || endIndex < startIndex)
+        {
+            reason = "the SEQ field must be a direct paragraph child with a stable bookmark boundary.";
+            return false;
+        }
+        var prefixNodes = children.Take(startIndex).Where(node => node is not ParagraphProperties).ToArray();
+        if (prefixNodes.Length == 0 || prefixNodes.Any(node => node is not Run run || !IsLiteralTextRun(run)))
+        {
+            reason = "the label before SEQ must consist only of literal text runs; fields, links, drawings, and other content make its boundary ambiguous.";
+            return false;
+        }
+        var label = string.Concat(prefixNodes.Cast<Run>().SelectMany(run => run.Elements<Text>()).Select(text => text.Text ?? string.Empty));
+        if (!Regex.IsMatch(label, @"^\s*[\p{L}\p{M}][\p{L}\p{M}\p{Zs}.'’()/-]*$", RegexOptions.CultureInvariant))
+        {
+            reason = "the label before SEQ must be nonempty template text beginning with a letter and containing only letters, spaces, and ordinary label punctuation; numeric or field-derived prefixes are unsupported.";
+            return false;
+        }
+
+        if (requirePlaceholder)
+        {
+            var placeholders = paragraph.Descendants<Text>().Sum(text => Regex.Matches(text.Text ?? string.Empty, Regex.Escape("{{caption}}")).Count);
+            var suffixContainsPlaceholder = children.Skip(endIndex + 1).SelectMany(node => node.Descendants<Text>()).Any(text => text.Text?.Contains("{{caption}}", StringComparison.Ordinal) == true);
+            if (placeholders != 1 || !suffixContainsPlaceholder)
+            {
+                reason = "exactly one {{caption}} placeholder must follow the complete SEQ field.";
+                return false;
+            }
+        }
+
+        range = new(prefixNodes[0], endNode, label);
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool IsSequenceInstruction(string? instruction) =>
+        Regex.IsMatch(instruction ?? string.Empty, @"^\s*SEQ\s+[^\s\\]+(?=\s|\\|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static bool IsDirectFieldBoundary(OpenXmlElement node, FieldCharValues type, Paragraph paragraph) =>
+        node is FieldChar field && field.FieldCharType?.Value == type && field.Ancestors<Run>().FirstOrDefault()?.Parent == paragraph;
+
+    private static bool IsFieldBoundaryRun(Run run, FieldCharValues type) =>
+        run.ChildElements.Count(element => element is FieldChar field && field.FieldCharType?.Value == type) == 1 &&
+        run.ChildElements.All(element => element is FieldChar field && field.FieldCharType?.Value == type || element is RunProperties);
+
+    private static bool IsLiteralTextRun(Run run) =>
+        run.Elements<Text>().Any() && run.ChildElements.All(element => element is RunProperties or Text);
+
+    private static List<ComplexFieldRange> ReadComplexFields(Paragraph paragraph)
+    {
+        var stack = new Stack<ComplexFieldState>();
+        var completed = new List<ComplexFieldRange>();
+        foreach (var node in paragraph.Descendants().Where(element => element is FieldChar or FieldCode))
+        {
+            if (node is FieldChar fieldChar)
+            {
+                var type = fieldChar.FieldCharType?.Value;
+                if (type == FieldCharValues.Begin)
+                {
+                    if (stack.Count > 0) stack.Peek().ContainsNestedField = true;
+                    stack.Push(new ComplexFieldState(fieldChar));
+                }
+                else if (type == FieldCharValues.Separate)
+                {
+                    if (stack.Count > 0 && stack.Peek().SeparateNode is null) stack.Peek().SeparateNode = fieldChar;
+                }
+                else if (type == FieldCharValues.End && stack.Count > 0)
+                {
+                    var state = stack.Pop();
+                    completed.Add(new(state.Instruction.ToString(), state.BeginNode, state.SeparateNode, fieldChar, state.ContainsNestedField));
+                }
+            }
+            else if (node is FieldCode code && stack.Count > 0 && stack.Peek().SeparateNode is null)
+                stack.Peek().Instruction.Append(code.Text);
+        }
+        while (stack.Count > 0)
+        {
+            var state = stack.Pop();
+            completed.Add(new(state.Instruction.ToString(), state.BeginNode, state.SeparateNode, null, state.ContainsNestedField));
+        }
+        return completed;
     }
 
     private static void ValidateReferences(WordprocessingDocument document, string location, YadgDocument model, TemplateMetadata metadata, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, List<Diagnostic> diagnostics)
@@ -1395,8 +1528,10 @@ public static class WordAuthoring
             if (model.ReferenceFormatting.For(target) == "label-number" && target is YadgFigure or YadgTable)
             {
                 var binding = target is YadgFigure ? "figureCaption" : "tableCaption";
-                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype) || !HasCaptionLabel(prototype))
-                { diagnostics.Add(new("YADG-REF-006", $"Reference '[@{reference.Id}]' requests label-number, but the selected caption prototype cannot supply a label and SEQ number.", true, location)); continue; }
+                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
+                { diagnostics.Add(new("YADG-REF-006", $"Reference '[@{reference.Id}]' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.", true, location)); continue; }
+                if (!HasCaptionLabel(prototype, out var reason))
+                { diagnostics.Add(new("YADG-REF-006", $"Reference '[@{reference.Id}]' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.", true, location)); continue; }
             }
             if (!targets.ContainsKey($"number:{reference.Id}")) diagnostics.Add(new("YADG-REF-005", $"Semantic reference '[@{reference.Id}]' has no uniquely rendered numbered target in this template.", true, location));
         }
@@ -1459,9 +1594,14 @@ public static class WordAuthoring
             if (referenceMode == "label-number" && target is YadgFigure or YadgTable)
             {
                 var binding = target is YadgFigure ? "figureCaption" : "tableCaption";
-                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype) || !HasCaptionLabel(prototype))
+                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
                 {
-                    diagnostics.Add(new("YADG-REF-006", $"Reference formatting for '{id}' requests label-number, but its caption prototype has no unambiguous label before its SEQ field.", true, location));
+                    diagnostics.Add(new("YADG-REF-006", $"Reference formatting for '{id}' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.", true, location));
+                    continue;
+                }
+                if (!HasCaptionLabel(prototype, out var reason))
+                {
+                    diagnostics.Add(new("YADG-REF-006", $"Reference formatting for '{id}' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.", true, location));
                     continue;
                 }
                 result[$"number:{id}"] = "label:" + bookmark;

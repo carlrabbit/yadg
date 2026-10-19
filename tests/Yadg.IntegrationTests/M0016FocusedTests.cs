@@ -87,6 +87,7 @@ public sealed class M0016FocusedTests
             var children = paragraph.ChildElements.ToList();
             Assert.True(children.IndexOf(start) < children.IndexOf(sequence.Ancestors<Run>().First()));
             Assert.True(children.IndexOf(sequence.Ancestors<Run>().First()) < children.IndexOf(end));
+            Assert.Equal(": ", end.NextSibling<Run>()?.GetFirstChild<Text>()?.Text);
         }
         Assert.Equal(body.Descendants<BookmarkStart>().Count(), body.Descendants<BookmarkEnd>().Count());
     }
@@ -122,14 +123,91 @@ public sealed class M0016FocusedTests
     }
 
     [Fact]
-    public void Strict_template_analysis_rejects_nonrendered_or_ambiguous_fragment_targets()
+    public void Missing_fragment_targets_fail_strictly_and_degrade_visibly_in_yolo()
     {
         using var fixture = Fixture.Create();
         File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Intro {#intro}\n\n[missing](#absent).\n");
+        var workspace = LoadWorkspace(fixture);
+
+        var strict = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
+        Assert.False(strict.IsValid);
+        Assert.Contains(strict.Diagnostics, diagnostic => diagnostic.Code == "YADG-LINK-001" && diagnostic.IsError);
+
+        var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
+        Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
+        Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("preserve authored link text", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Nonrendered_fragment_targets_fail_strictly_and_degrade_in_yolo()
+    {
+        using var fixture = Fixture.Create();
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Intro {#intro}\n\nSee [the flow](#flow).\n\n# Appendix {#appendix}\n\n![Flow diagram](images/flow.png){#flow}\n");
+        var workspace = LoadWorkspace(fixture);
+        Assert.NotNull(workspace.Document.FindFigure("flow"));
+
+        var strict = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
+        Assert.False(strict.IsValid);
+        Assert.Contains(strict.Diagnostics, diagnostic => diagnostic.Code == "YADG-LINK-002" && diagnostic.IsError);
+
+        var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
+        Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
+        Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("not rendered exactly once", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Duplicate_direct_placements_remain_fatal_in_strict_and_yolo_modes()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AppendBodyText("{{figure:flow}}", "{{figure:flow}}");
+        var workspace = LoadWorkspace(fixture);
+
+        var strict = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
+        Assert.False(strict.IsValid);
+        Assert.Contains(strict.Diagnostics, diagnostic => diagnostic.Code == "YADG-PLACEMENT-002" && diagnostic.IsError);
+
+        var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
+        Assert.False(yolo.IsValid);
+        Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-PLACEMENT-002" && diagnostic.IsError);
+    }
+
+    [Fact]
+    public void Invalid_link_destinations_fail_strictly_and_degrade_in_yolo()
+    {
+        using var fixture = Fixture.Create();
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Intro {#intro}\n\n[invalid destination](http://[).\n");
+        var workspace = LoadWorkspace(fixture);
+
+        var strict = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
+        Assert.False(strict.IsValid);
+        Assert.Contains(strict.Diagnostics, diagnostic => diagnostic.Code == "YADG-LINK-003" && diagnostic.IsError);
+
+        var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
+        Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
+        Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("http://[", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Ambiguous_caption_prototypes_are_rejected_with_an_actionable_diagnostic()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AppendSecondSequenceToCaptionPrototype();
+        var workspace = LoadWorkspace(fixture);
+
+        var strict = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
+        Assert.False(strict.IsValid);
+        Assert.Contains(strict.Diagnostics, diagnostic => diagnostic.Code == "YADG-REF-006" && diagnostic.IsError && diagnostic.Message.Contains("exactly one SEQ field", StringComparison.Ordinal) && diagnostic.Message.Contains("Update the prototype", StringComparison.Ordinal));
+
+        var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
+        Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
+        Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("caption prototype", StringComparison.Ordinal));
+    }
+
+    private static YadgWorkspace LoadWorkspace(Fixture fixture)
+    {
         var workspace = WorkspaceLoader.Load(fixture.Root);
         Assert.True(workspace.IsValid, string.Join(Environment.NewLine, workspace.Diagnostics));
-        var analysis = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
-        Assert.Contains(analysis.Diagnostics, diagnostic => diagnostic.Code == "YADG-LINK-001");
+        return workspace;
     }
 
     private static string InlineText(IEnumerable<YadgInline> inlines) => string.Concat(inlines.Select(inline => inline switch
@@ -162,6 +240,26 @@ public sealed class M0016FocusedTests
         }
 
         public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); }
+
+        public void AppendBodyText(params string[] values)
+        {
+            using var document = WordprocessingDocument.Open(Template, true);
+            var body = document.MainDocumentPart!.Document.Body!;
+            foreach (var value in values) body.Append(new Paragraph(new Run(new Text(value))));
+            document.MainDocumentPart.Document.Save();
+        }
+
+        public void AppendSecondSequenceToCaptionPrototype()
+        {
+            using var document = WordprocessingDocument.Open(Template, true);
+            var paragraph = document.MainDocumentPart!.Document.Body!.Descendants<Paragraph>().Single(candidate => string.Concat(candidate.Descendants<Text>().Select(text => text.Text)).StartsWith("Figure ", StringComparison.Ordinal) && candidate.Descendants<Text>().Any(text => text.Text?.Contains("{{caption}}", StringComparison.Ordinal) == true));
+            paragraph.Append(new Run(new FieldChar { FieldCharType = FieldCharValues.Begin }));
+            paragraph.Append(new Run(new FieldCode(" SEQ Alternate ")));
+            paragraph.Append(new Run(new FieldChar { FieldCharType = FieldCharValues.Separate }));
+            paragraph.Append(new Run(new Text("0")));
+            paragraph.Append(new Run(new FieldChar { FieldCharType = FieldCharValues.End }));
+            document.MainDocumentPart.Document.Save();
+        }
 
         private static void CreateTemplate(string path)
         {
