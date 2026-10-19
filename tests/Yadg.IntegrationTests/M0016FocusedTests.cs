@@ -136,6 +136,12 @@ public sealed class M0016FocusedTests
         var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
         Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
         Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("preserve authored link text", StringComparison.Ordinal));
+        var output = Path.Combine(fixture.Root, "missing-link-yolo.docx");
+        WordAuthoring.Author(fixture.Template, output, workspace.Document, workspace.Values.Values, yolo: true);
+        using var authored = WordprocessingDocument.Open(output, false);
+        var text = string.Concat(authored.MainDocumentPart!.Document.Body!.Descendants<Text>().Select(node => node.Text));
+        Assert.Contains("missing", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(authored.MainDocumentPart.Document.Body.Descendants<Hyperlink>(), link => InlineText(link) == "missing");
     }
 
     [Fact]
@@ -153,6 +159,12 @@ public sealed class M0016FocusedTests
         var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
         Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
         Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("not rendered exactly once", StringComparison.Ordinal));
+        var output = Path.Combine(fixture.Root, "nonrendered-link-yolo.docx");
+        WordAuthoring.Author(fixture.Template, output, workspace.Document, workspace.Values.Values, yolo: true);
+        using var authored = WordprocessingDocument.Open(output, false);
+        var text = string.Concat(authored.MainDocumentPart!.Document.Body!.Descendants<Text>().Select(node => node.Text));
+        Assert.Contains("the flow", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(authored.MainDocumentPart.Document.Body.Descendants<Hyperlink>(), link => InlineText(link) == "the flow");
     }
 
     [Fact]
@@ -185,6 +197,11 @@ public sealed class M0016FocusedTests
         var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
         Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
         Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("http://[", StringComparison.Ordinal));
+        var output = Path.Combine(fixture.Root, "invalid-link-yolo.docx");
+        WordAuthoring.Author(fixture.Template, output, workspace.Document, workspace.Values.Values, yolo: true);
+        using var authored = WordprocessingDocument.Open(output, false);
+        var text = string.Concat(authored.MainDocumentPart!.Document.Body!.Descendants<Text>().Select(node => node.Text));
+        Assert.Contains("invalid destination", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -201,6 +218,13 @@ public sealed class M0016FocusedTests
         var yolo = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
         Assert.True(yolo.IsValid, string.Join(Environment.NewLine, yolo.Diagnostics));
         Assert.Contains(yolo.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-UNRESOLVED-001" && diagnostic.IsDegradation && diagnostic.Message.Contains("caption prototype", StringComparison.Ordinal));
+        var output = Path.Combine(fixture.Root, "ambiguous-caption-yolo.docx");
+        WordAuthoring.Author(fixture.Template, output, workspace.Document, workspace.Values.Values, yolo: true);
+        using var authored = WordprocessingDocument.Open(output, false);
+        var body = authored.MainDocumentPart!.Document.Body!;
+        var text = string.Concat(body.Descendants<Text>().Select(node => node.Text));
+        Assert.Contains("[@flow]", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(body.Descendants<FieldCode>(), field => field.Text?.Contains("REF", StringComparison.OrdinalIgnoreCase) == true && field.Text.Contains("flow", StringComparison.Ordinal));
     }
 
     private static YadgWorkspace LoadWorkspace(Fixture fixture)
