@@ -247,3 +247,7 @@ YOLO   = truthful best-effort authoring progress
 ```
 
 YOLO may reduce fidelity. It may not misstate output freshness, selected renderer, semantic identity, or success.
+
+## M0016 internal-link and generated-reference recovery
+
+An unresolved or non-rendered Markdown fragment target under YOLO keeps the exact authored link wording but emits it without a clickable target and reports that degradation. YOLO never redirects the link to a similarly named object. An unresolved or unusable generated `[@id]` reference keeps its source identity visibly; it does not invent a figure/table label, sequence number, or heading number. Duplicate or ambiguous semantic IDs remain fatal.

@@ -19,7 +19,7 @@ public static class MarkdownDocumentParser
 
     public static ParseResult Parse(string markdown, string location = "<input>", string thematicBreakPolicy = "error", string codeInlinePolicy = "error", bool diagramsAutoDetect = false)
     {
-        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().UsePipeTables().Build();
+        var pipeline = new MarkdownPipelineBuilder().UsePipeTables().UseGenericAttributes().Build();
         var ast = Markdown.Parse(markdown, pipeline);
         var diagnostics = new List<Diagnostic>();
         var lines = markdown.Replace("\r\n", "\n").Split('\n');
@@ -215,7 +215,7 @@ public static class MarkdownDocumentParser
 
     private static IReadOnlyList<YadgInline> ParseCell(string source, List<Diagnostic> diagnostics, string location)
     {
-        var paragraph = Markdown.Parse(source, new MarkdownPipelineBuilder().UseAdvancedExtensions().Build()).OfType<ParagraphBlock>().FirstOrDefault();
+        var paragraph = Markdown.Parse(source, new MarkdownPipelineBuilder().UsePipeTables().UseGenericAttributes().Build()).OfType<ParagraphBlock>().FirstOrDefault();
         return paragraph is null ? Array.Empty<YadgInline>() : ConvertInlines(paragraph.Inline, diagnostics, location);
     }
 
@@ -251,6 +251,11 @@ public static class MarkdownDocumentParser
                 case LineBreakInline lineBreak: result.Add(lineBreak.IsHard ? new YadgHardBreak() : new YadgSoftBreak()); break;
                 case EmphasisInline emphasis:
                     var children = ConvertInlines(emphasis, diagnostics, location, codeInlinePolicy); result.Add(emphasis.DelimiterCount >= 2 ? new YadgStrong(children) : new YadgEmphasis(children)); break;
+                case LinkInline link when !link.IsImage:
+                    var destination = link.Url ?? string.Empty;
+                    var internalTarget = destination.StartsWith('#') ? destination[1..] : null;
+                    result.Add(new YadgLink(destination, ConvertInlines(link, diagnostics, location, codeInlinePolicy), internalTarget));
+                    break;
                 case CodeInline code when codeInlinePolicy == "ignore": result.Add(new YadgLiteralText(code.Content)); break;
                 case CodeInline code when codeInlinePolicy == "style": result.Add(new YadgCode(code.Content)); break;
                 default: diagnostics.Add(Positioned("YADG-MD-UNSUPPORTED", $"Unsupported Markdown inline '{inline.GetType().Name}'.", inline, location)); break;

@@ -2,7 +2,7 @@
 
 ## Status
 
-Authoritative for M0004 template front matter, template prototypes, numbered captions, bookmarks, and semantic cross-references.
+Authoritative for M0004/M0016 template prototypes, numbered captions, bookmarks, ordinary semantic links, and generated cross-references.
 
 ## Design principle
 
@@ -158,7 +158,42 @@ The syntax emits only the numeric Word result. Surrounding Markdown supplies hum
 
 References are supported in existing inline-capable contexts: ordinary paragraphs, flat list items, and table cells.
 
-Ordinary Markdown hyperlinks remain outside M0004.
+M0004 introduced generated numeric references. M0016 adds ordinary Markdown links as a separate construct; the two syntaxes do not share display behavior.
+
+## M0016 ordinary semantic links
+
+An ordinary internal fragment link uses an explicit workspace semantic ID:
+
+```markdown
+[the model description](#liquidity-model)
+```
+
+It preserves the authored link text exactly and emits a Word-native hyperlink to the unique rendered target. A local fragment must resolve to one actual emitted heading, figure, or table in the selected DOCX. Stable IDs that are missing, ambiguous, or not emitted are errors in strict mode. A `{{content:id}}` insertion does not emit the target heading, so it cannot establish a heading link target.
+
+External URLs and file links remain ordinary Word hyperlinks with their authored wording. They do not enter numeric-reference validation. `[@id]` remains the only generated semantic-number syntax.
+
+Under YOLO, an unresolved internal fragment keeps its authored visible wording and is explicitly reported as unclickable; it does not point at a guessed target. Duplicate workspace IDs remain fatal.
+
+## M0016 workspace reference display
+
+Root `YADG.md` schema version 1 may configure generated reference display:
+
+```yaml
+references:
+  headings: number
+  figures: label-number
+  tables: label-number
+```
+
+Allowed values are `headings: number`, `figures: number|label-number`, and `tables: number|label-number`. Omitted keys default to `number`, preserving legacy output. Unknown or invalid keys/values are strict errors. The setting applies only to generated `[@id]` fields, not to ordinary Markdown link wording.
+
+For figure/table `label-number`, the actual selected caption prototype supplies the label text and spacing/punctuation before its sequence number, as well as the sequence number format. YADG bookmarks that prototype-derived label-plus-SEQ range and emits an updateable Word `REF` field to it. A prototype without a clear non-empty label before its one `SEQ` field cannot satisfy this mode. Strict validation reports the missing template capability; YADG does not invent localized labels, punctuation, or cached numbers.
+
+Heading references remain number-only. Figure/table `number` mode continues to reference the existing SEQ field as before.
+
+## Canonical Markdown profile
+
+The supported profile is CommonMark core, supported GFM pipe tables, and explicit Pandoc-inspired `{#id}` attributes on existing YADG semantic objects. This profile does not imply full Pandoc, MyST, or vendor-specific Markdown compatibility. Unsupported extensions are not silently accepted as new semantic behavior.
 
 ## Figure/table targets
 
@@ -234,7 +269,7 @@ M0004 does not define:
 - deliberate duplicate targets with disambiguation;
 - auto-injected localized labels;
 - page-number references;
-- workspace-global presentation configuration;
+- workspace-global presentation configuration (superseded for generated reference display by M0016's constrained `references` mapping; no other presentation configuration is added);
 - prepared-table row population;
 - field evaluation/rendering;
 - PDF output.

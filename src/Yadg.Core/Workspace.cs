@@ -47,7 +47,7 @@ public static class WorkspaceLoader
         if (templates.Length == 0) diagnostics.Add(new("YADG-WS-005", "Workspace contains no top-level DOCX templates in YadgTemplates.", true, templateDir));
 
         var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path, yolo && values.ThematicBreakPolicy == "error" ? "ignore" : values.ThematicBreakPolicy, yolo && values.CodeInlinePolicy == "error" ? "ignore" : values.CodeInlinePolicy, values.DiagramsAutoDetect)));
-        var document = MarkdownDocumentParser.Merge(parsed, diagnostics);
+        var document = MarkdownDocumentParser.Merge(parsed, diagnostics) with { ReferenceFormatting = values.References };
         document = AssetValidation.AttachAndValidate(document, root, diagnostics, yolo);
         var workspace = new YadgWorkspace(root, sources, templates, document, values, diagnostics);
         return workspace with { Document = MermaidProducer.RenderFigures(workspace.Document, root, values, diagnostics, workspace.TemporaryProducerDirectories, yolo) };

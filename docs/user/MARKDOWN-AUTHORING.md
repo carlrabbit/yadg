@@ -32,6 +32,22 @@ yadg check --list
 
 to inspect discovered sources, templates, and referenceable semantic objects.
 
+## Supported Markdown profile
+
+YADG accepts one constrained, Pandoc-inspired profile: CommonMark core, GFM pipe tables, and explicit `{#id}` attributes only on the supported semantic objects described below. This is not full Pandoc, MyST, or GitHub-flavored Markdown compatibility. Unsupported extensions are not part of the authoring contract.
+
+| Authoring intent | Syntax | Word result |
+|---|---|---|
+| Link to a rendered semantic object | `[the model description](#liquidity-model)` | Clickable link; preserves exactly “the model description” |
+| Generate a heading number | `Section [@architecture]` | Updateable Word `REF` field for the heading number |
+| Generate a figure number | `Figure [@system-context]` | Updateable `REF` field; configured label-number mode uses its caption prototype |
+| Generate a table number | `Table [@interfaces]` | Updateable `REF` field; configured label-number mode uses its caption prototype |
+| Link to an external URL or file | `[reference](https://example.com)` | Normal hyperlink retaining its authored wording |
+
+Ordinary Markdown links and generated references are different constructs. A fragment link never replaces its words with a title or number. `[@id]` emits only the configured generated reference; write any surrounding prose and label yourself.
+
+Internal fragment links require one explicit stable ID and a target that renders exactly once in the selected DOCX. A target omitted by template placement, such as a heading whose template uses only `{{content:id}}`, is not a rendered heading target. Strict `check` reports broken, ambiguous, and non-rendered targets. Under YOLO, unresolved internal links keep their authored wording and are reported as unclickable degradations.
+
 ## Stable IDs
 
 Stable IDs identify semantic objects across source files and templates.
@@ -112,7 +128,27 @@ Semantic numeric references use:
 See Section [@architecture].
 ```
 
-The reference emits only the numeric Word result when the target has the required numbering/reference structure. Source text owns labels such as “Section”, “Figure”, or “Table”.
+The reference emits only its configured Word result when the target has the required numbering/reference structure. With no `references` settings, it remains the legacy numeric-only output. Source text owns labels such as “Section”, “Figure”, or “Table” in that default mode.
+
+### Generated reference display
+
+Configure generated reference display once in the root `YADG.md` front matter:
+
+```yaml
+---
+yadg:
+  version: 1
+
+references:
+  headings: number
+  figures: label-number
+  tables: label-number
+---
+```
+
+`headings` accepts only `number`. `figures` and `tables` accept `number` or `label-number`. Omitted settings mean `number`, preserving existing projects. Unknown keys and values fail validation. This setting changes only generated `[@id]` references; it does not affect `[authored words](#id)`.
+
+In `label-number` mode, the actual DOCX caption prototype supplies the label, its spacing/punctuation, and the sequence field format. YADG creates a Word field targeting that prototype-derived label and `SEQ` number. If the selected template cannot supply a clear label and sequence target, strict validation reports a template capability error. YADG never translates or hardcodes caption labels or cached numerals.
 
 ## Lists
 

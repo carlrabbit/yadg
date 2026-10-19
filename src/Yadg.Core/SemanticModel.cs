@@ -40,7 +40,20 @@ public sealed record YadgStrong(IReadOnlyList<YadgInline> Inlines) : YadgInline;
 public sealed record YadgHardBreak : YadgInline;
 public sealed record YadgSoftBreak : YadgInline;
 public sealed record YadgReference(string Id) : YadgInline;
+public sealed record YadgLink(string Destination, IReadOnlyList<YadgInline> Inlines, string? InternalTargetId = null) : YadgInline;
 public sealed record YadgCode(string Value) : YadgInline;
+
+public sealed record ReferenceFormatting(string Headings = "number", string Figures = "number", string Tables = "number")
+{
+    public static ReferenceFormatting Default { get; } = new();
+    public string For(object? target) => target switch
+    {
+        YadgSection => Headings,
+        YadgFigure => Figures,
+        YadgTable => Tables,
+        _ => "number"
+    };
+}
 
 public sealed record YadgSection(string Id, YadgHeading Heading, IReadOnlyList<YadgBlock> Body)
 {
@@ -55,6 +68,7 @@ public sealed record YadgDocument(
     IReadOnlyDictionary<string, YadgTable> Tables,
     IReadOnlyDictionary<string, YadgFigure> Figures)
 {
+    public ReferenceFormatting ReferenceFormatting { get; init; } = ReferenceFormatting.Default;
     public YadgSection? FindSection(string id) => References.TryGetValue(id, out var section) ? section : null;
     public YadgTable? FindTable(string id) => Tables.TryGetValue(id, out var table) ? table : null;
     public YadgFigure? FindFigure(string id) => Figures.TryGetValue(id, out var figure) ? figure : null;

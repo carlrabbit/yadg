@@ -6,6 +6,7 @@ namespace Yadg.Core;
 
 public sealed record WorkspaceValues(IReadOnlyDictionary<string, string> Values)
 {
+    public ReferenceFormatting References { get; init; } = ReferenceFormatting.Default;
     public IReadOnlyDictionary<string, MermaidProducerConfiguration> Producers { get; init; } = new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal);
     public string? PublishPath { get; init; }
     public string ThematicBreakPolicy { get; init; } = "error";
@@ -95,12 +96,16 @@ public static class WorkspaceValuesParser
         var mermaidKeys = new HashSet<string>(StringComparer.Ordinal);
         var markdownKeys = new HashSet<string>(StringComparer.Ordinal);
         var diagramsKeys = new HashSet<string>(StringComparer.Ordinal);
+        var referenceKeys = new HashSet<string>(StringComparer.Ordinal);
         var producerArguments = new List<string>();
         string? producerExecutable = null;
         string? publishPath = null;
         var thematicBreak = "error";
         var codeInline = "error";
         var diagramsAutoDetect = false;
+        var headingReferences = "number";
+        var figureReferences = "number";
+        var tableReferences = "number";
         var publishSeen = false;
         var section = "";
         var versionSeen = false;
@@ -133,7 +138,7 @@ public static class WorkspaceValuesParser
             if (indent == 0)
             {
                 if (!rootKeys.Add(key)) Error(diagnostics, "YADG-VALUES-006", $"Duplicate front matter key '{key}'.", location, i);
-                if (key is not "yadg" and not "values" and not "producers" and not "publish" and not "markdown" and not "diagrams") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
+                if (key is not "yadg" and not "values" and not "producers" and not "publish" and not "markdown" and not "diagrams" and not "references") Error(diagnostics, "YADG-VALUES-007", $"Unknown front matter key '{key}'.", location, i);
                 if (rawValue.Length != 0) Error(diagnostics, "YADG-VALUES-005", $"Mapping key '{key}' must not have an inline value.", location, i);
                 if (key == "publish") publishSeen = true;
                 section = key; continue;
@@ -175,6 +180,18 @@ public static class WorkspaceValuesParser
                 else Error(diagnostics, "YADG-VALUES-007", "diagrams.autoDetect must be a YAML boolean.", location, i);
                 continue;
             }
+            if (section == "references" && indent == 2)
+            {
+                if (!referenceKeys.Add(key)) { Error(diagnostics, "YADG-VALUES-006", $"Duplicate references key '{key}'.", location, i); continue; }
+                if (key is not "headings" and not "figures" and not "tables") { Error(diagnostics, "YADG-VALUES-007", $"Unknown references key '{key}'.", location, i); continue; }
+                if (!TryStringScalar(rawValue, out var mode)) { Error(diagnostics, "YADG-VALUES-007", $"references.{key} must be a supported string mode.", location, i); continue; }
+                var valid = key == "headings" ? mode == "number" : mode is "number" or "label-number";
+                if (!valid) { Error(diagnostics, "YADG-VALUES-007", key == "headings" ? "references.headings supports only 'number'." : $"references.{key} supports only 'number' or 'label-number'.", location, i); continue; }
+                if (key == "headings") headingReferences = mode;
+                else if (key == "figures") figureReferences = mode;
+                else tableReferences = mode;
+                continue;
+            }
             if (section == "producers" && indent == 2)
             {
                 if (key != "mermaid") { Error(diagnostics, "YADG-PRODUCER-001", $"Unsupported producer kind '{key}'.", location, i); continue; }
@@ -212,7 +229,7 @@ public static class WorkspaceValuesParser
         if (!rootKeys.Contains("yadg") || !versionSeen) diagnostics.Add(new("YADG-VALUES-008", "Workspace front matter must declare yadg.version: 1.", true, location));
         if (producerKeys.Contains("mermaid") && producerExecutable is null) diagnostics.Add(new("YADG-PRODUCER-003", "Mermaid producer configuration requires executable.", true, location));
         if (publishSeen && publishPath is null) diagnostics.Add(new("YADG-PUBLISH-001", "publish.path must be a non-empty string.", true, location));
-        return new(values) { PublishPath = publishPath, ThematicBreakPolicy = thematicBreak, CodeInlinePolicy = codeInline, DiagramsAutoDetect = diagramsAutoDetect, Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
+        return new(values) { PublishPath = publishPath, ThematicBreakPolicy = thematicBreak, CodeInlinePolicy = codeInline, DiagramsAutoDetect = diagramsAutoDetect, References = new(headingReferences, figureReferences, tableReferences), Producers = producerExecutable is null ? new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) : new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal) { ["mermaid"] = new(producerExecutable, producerArguments) } };
     }
 
     private static bool TryScalar(string raw, out string value)

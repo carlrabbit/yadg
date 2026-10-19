@@ -26,6 +26,8 @@ M0003 adds these semantic block concepts:
 
 Tables and figures are first-class referenceable objects.
 
+M0016 adds ordinary `[authored words](#stable-id)` links to rendered tables and figures, alongside generated numeric `[@stable-id]` references. An ordinary fragment link preserves its words and targets the one actual emitted occurrence; it does not request a number or caption text. See `WORD-REFERENCES.md` for workspace display settings and target validation.
+
 A table or figure carries one stable ID that participates in the workspace-wide registry shared with sections and future stable objects.
 
 The semantic model must not contain Open XML SDK types.
