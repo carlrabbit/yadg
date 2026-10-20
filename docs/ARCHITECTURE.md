@@ -140,6 +140,8 @@ Publication reads finalized inputs and publication destination configuration onl
 
 ## Dependency direction
 
+Markdown inline link and generated-reference nodes remain renderer-neutral semantic data. The Open XML authoring boundary validates each semantic target against the actual template placements, then creates Word bookmarks/hyperlinks and updateable `REF` fields. Root workspace reference-display policy is carried with the parsed semantic document; caption labels and sequence formats still come from the selected DOCX prototype.
+
 Semantic/core and Open XML authoring must not gain renderer-specific COM dependencies.
 
 Renderer-specific runtime code depends inward on the common renderer contract.

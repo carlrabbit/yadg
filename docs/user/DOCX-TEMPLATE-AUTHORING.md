@@ -299,6 +299,19 @@ Table [SEQ Table field]: {{caption}}
 
 This applies equally to ordinary image figures, identified built-in text diagrams, and Mermaid figures because all are figure semantics at the template boundary.
 
+Root `YADG.md` may select how generated `[@id]` references display:
+
+```yaml
+references:
+  headings: number
+  figures: label-number
+  tables: label-number
+```
+
+Headings support `number`; figures and tables support `number` or `label-number`. Omitted settings preserve numeric-only legacy output. In `label-number` mode, YADG derives the label and spacing/punctuation before the `SEQ` field from the selected caption prototype. Use the label text and Word field format already present in that real template prototype; YADG does not supply English/German labels. A prototype with no clear label before its single sequence field cannot support this mode.
+
+Ordinary Markdown links such as `[the model description](#liquidity-model)` use a Word bookmark for the explicitly identified heading, figure, or table that actually renders. Their authored wording stays visible and clickable. A template using `{{content:liquidity-model}}` does not emit the heading itself and therefore cannot be the target of a heading fragment link.
+
 ## Prepared tables
 
 When the Word template owns the desired table layout, use a prepared row marker:

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text;
 using System.Security.Cryptography;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -22,6 +23,7 @@ public sealed record TemplateMetadata(
     IReadOnlyList<Paragraph> ControlParagraphs)
 {
     public IReadOnlyDictionary<string, CaptionPrototype> ListItemPrototypes { get; init; } = new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, string> HyperlinkRelationships { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
     public static TemplateMetadata Defaults => new(0, new Dictionary<string, string>(StringComparer.Ordinal) {
         ["heading1"] = "Heading1", ["heading2"] = "Heading2", ["heading3"] = "Heading3", ["heading4"] = "Heading4", ["heading5"] = "Heading5", ["heading6"] = "Heading6", ["heading7"] = "Heading7", ["heading8"] = "Heading8", ["heading9"] = "Heading9",
         ["unordered"] = "ListBullet", ["ordered"] = "ListNumber", ["generatedTable"] = "TableGrid", ["caption"] = "Caption" },
@@ -50,6 +52,15 @@ public static class WordAuthoring
     private static readonly Regex DirectTag = new(@"^\{\{(table|figure):([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex PreparedTag = new(@"^\{\{table-rows:([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex CellTag = new(@"\{\{cell\}\}", RegexOptions.Compiled);
+    private sealed record ComplexFieldRange(string Instruction, OpenXmlElement BeginNode, OpenXmlElement? SeparateNode, OpenXmlElement? EndNode, bool ContainsNestedField);
+    private sealed record CaptionLabelRange(OpenXmlElement FirstNode, OpenXmlElement LastNode, string Label);
+    private sealed class ComplexFieldState(OpenXmlElement beginNode)
+    {
+        public OpenXmlElement BeginNode { get; } = beginNode;
+        public StringBuilder Instruction { get; } = new();
+        public OpenXmlElement? SeparateNode { get; set; }
+        public bool ContainsNestedField { get; set; }
+    }
 
     public static IReadOnlyList<string> InspectStyles(string templatePath)
     {
@@ -183,8 +194,10 @@ public static class WordAuthoring
             for (var i = diagnostics.Count - 1; i >= 0; i--)
             {
                 var d = diagnostics[i];
-                if (d.Code is "YADG-VALUE-002" or "YADG-VALUE-UNSUPPORTED" or "YADG-REF-004" or "YADG-REF-005")
+                if (d.Code is "YADG-VALUE-002" or "YADG-VALUE-UNSUPPORTED" or "YADG-REF-004" or "YADG-REF-005" or "YADG-REF-006")
                     diagnostics[i] = d with { Code = "YADG-YOLO-UNRESOLVED-001", IsError = false, IsDegradation = true, Message = d.Message + "; fallback: preserve the unresolved source token visibly." };
+                else if (d.Code is "YADG-LINK-001" or "YADG-LINK-002" or "YADG-LINK-003")
+                    diagnostics[i] = d with { Code = "YADG-YOLO-UNRESOLVED-001", IsError = false, IsDegradation = true, Message = d.Message + "; fallback: preserve authored link text without asserting a clickable target." };
                 else if (d.Code is "YADG-PROT-005" or "YADG-PROT-003" or "YADG-PROT-006")
                     diagnostics[i] = d with { Code = "YADG-YOLO-PROTOTYPE-001", IsError = false, IsDegradation = true, Message = d.Message + "; fallback: resolve presentation through a compatible resource or built-in example." };
             }
@@ -277,6 +290,7 @@ public static class WordAuthoring
         var analysisOutput = AnalyzeOpen(document, outputPath, model, values, metadata, yolo);
         if (!analysisOutput.IsValid) throw new WordAuthoringException(analysisOutput.Diagnostics.First(d => d.IsError));
         metadata = analysisOutput.Metadata;
+        metadata = metadata with { HyperlinkRelationships = CreateExternalHyperlinks(model, document.MainDocumentPart!) };
         var direct = analysisOutput.Placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).Select(p => (p.Kind, p.Id)).ToHashSet();
         foreach (var binding in analysisOutput.PreparedBindings ?? Array.Empty<PreparedTableBinding>()) direct.Add((PlacementKind.Table, binding.Id));
         var targetMap = BuildTargets(model, analysisOutput, document, outputPath);
@@ -284,6 +298,7 @@ public static class WordAuthoring
         {
             var table = model.FindTable(binding.Id)!;
             PopulatePreparedTable(binding, table, targetMap, metadata);
+            if (!targetMap.ContainsKey($"number:{table.Id}") && targetMap.TryGetValue(table.Id, out var tableAnchor)) WrapTableAnchor(binding.Table, StripSectionPrefix(tableAnchor));
             if (!string.IsNullOrWhiteSpace(table.Caption))
                 binding.Table.InsertAfterSelf(CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targetMap));
         }
@@ -305,6 +320,39 @@ public static class WordAuthoring
         ReplaceValues(document, values);
         document.MainDocumentPart!.Document.Save();
     }
+
+    private static IReadOnlyDictionary<string, string> CreateExternalHyperlinks(YadgDocument model, MainDocumentPart main)
+    {
+        var links = AllLinks(model).Where(link => link.InternalTargetId is null && !string.IsNullOrWhiteSpace(link.Destination) && Uri.TryCreate(link.Destination, UriKind.RelativeOrAbsolute, out _)).Select(link => link.Destination).Distinct(StringComparer.Ordinal);
+        var relationships = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var destination in links)
+        {
+            var uri = new Uri(destination, UriKind.RelativeOrAbsolute);
+            relationships[destination] = main.AddHyperlinkRelationship(uri, true).Id;
+        }
+        return relationships;
+    }
+
+    private static IEnumerable<YadgLink> AllLinks(YadgDocument model)
+    {
+        IEnumerable<YadgLink> Inlines(IEnumerable<YadgInline> values) => values.SelectMany(value => value switch
+        {
+            YadgLink link => new[] { link }.Concat(Inlines(link.Inlines)),
+            YadgEmphasis emphasis => Inlines(emphasis.Inlines),
+            YadgStrong strong => Inlines(strong.Inlines),
+            _ => Array.Empty<YadgLink>()
+        });
+        IEnumerable<YadgLink> InBlock(YadgBlock block) => block switch
+        {
+            YadgParagraph paragraph => Inlines(paragraph.Inlines),
+            YadgList list => list.Items.SelectMany(item => Inlines(item.Inlines)),
+            YadgTable table => table.Header.SelectMany(Inlines).Concat(table.Rows.SelectMany(row => row.SelectMany(Inlines))),
+            _ => Array.Empty<YadgLink>()
+        };
+        return model.Blocks.SelectMany(InBlock);
+    }
+
+    private static string StripSectionPrefix(string value) => value.StartsWith("section:", StringComparison.Ordinal) ? value[8..] : value;
 
     private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, List<TemplatePlacement> placements, List<PreparedTableBinding> prepared, List<Diagnostic> diagnostics, IReadOnlyDictionary<string, string> values, string location, Body? body = null, bool yolo = false)
     {
@@ -971,8 +1019,11 @@ public static class WordAuthoring
                 if (!string.IsNullOrWhiteSpace(table.Caption)) yield return CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targets);
                 break;
             case YadgFigure figure:
-                if (figure.Asset is null && figure.GeneratedSvg is null && yolo) yield return new Paragraph(new Run(new Text($"[YADG figure \"{figure.Id}\" unavailable: {BoundExcerpt(figure.AssetPath, 90)}{(string.IsNullOrWhiteSpace(figure.AltText) ? "" : " — " + BoundExcerpt(figure.AltText, 90))}]")));
-                else yield return CreateFigureParagraph(figure, anchor, document);
+                var figureParagraph = figure.Asset is null && figure.GeneratedSvg is null && yolo
+                    ? new Paragraph(new Run(new Text($"[YADG figure \"{figure.Id}\" unavailable: {BoundExcerpt(figure.AssetPath, 90)}{(string.IsNullOrWhiteSpace(figure.AltText) ? "" : " — " + BoundExcerpt(figure.AltText, 90))}]")))
+                    : CreateFigureParagraph(figure, anchor, document);
+                if (!targets.ContainsKey($"number:{figure.Id}") && targets.TryGetValue(figure.Id, out var figureAnchor)) WrapParagraphBookmark(figureParagraph, StripSectionPrefix(figureAnchor));
+                yield return figureParagraph;
                 if (!string.IsNullOrEmpty(figure.AltText)) yield return CreateCaption(figure.Id, figure.AltText, "figureCaption", metadata, targets);
                 break;
             case YadgDiagram diagram:
@@ -1079,7 +1130,14 @@ public static class WordAuthoring
         result.Append(new TableGrid(Enumerable.Range(0, table.Header.Count).Select(_ => new GridColumn())));
         var header = new TableRow(new TableRowProperties(new TableHeader())); foreach (var cell in table.Header) header.Append(CreateCell(cell, targets, metadata)); result.Append(header);
         foreach (var row in table.Rows) { var tableRow = new TableRow(); foreach (var cell in row) tableRow.Append(CreateCell(cell, targets, metadata)); result.Append(tableRow); }
+        if (!targets.ContainsKey($"number:{table.Id}") && targets.TryGetValue(table.Id, out var bookmark)) WrapTableAnchor(result, StripSectionPrefix(bookmark));
         return result;
+    }
+
+    private static void WrapTableAnchor(Table table, string bookmark)
+    {
+        var paragraph = table.Elements<TableRow>().SelectMany(row => row.Elements<TableCell>()).SelectMany(cell => cell.Elements<Paragraph>()).FirstOrDefault();
+        if (paragraph is not null) WrapParagraphBookmark(paragraph, bookmark);
     }
 
     private static TableCell CreateCell(IReadOnlyList<YadgInline> inlines, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata) { var paragraph = new Paragraph(); AppendInlines(paragraph, inlines, targets, metadata: metadata); return new TableCell(paragraph); }
@@ -1128,7 +1186,11 @@ public static class WordAuthoring
         {
             var clone = (Paragraph)prototype.Paragraph.CloneNode(true);
             ReplaceLogicalText(clone, "{{caption}}", text);
-            if (targets.TryGetValue(targetId, out var bookmark)) WrapSequenceInBookmark(clone, bookmark);
+            if (targets.TryGetValue($"number:{targetId}", out var bookmark))
+            {
+                if (bookmark.StartsWith("label:", StringComparison.Ordinal)) WrapCaptionPrefixAndSequence(clone, bookmark[6..]);
+                else WrapSequenceInBookmark(clone, bookmark);
+            }
             return clone;
         }
         var captionStyle = StyleFor(metadata, "caption", "Caption");
@@ -1150,8 +1212,20 @@ public static class WordAuthoring
             case YadgText text: var run = new Run(); if (italic || bold) run.Append(new RunProperties { Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null }); run.Append(new Text(text.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(run); break;
             case YadgLiteralText literal: var literalRun = new Run(); if (italic || bold) literalRun.Append(new RunProperties { Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null }); literalRun.Append(new Text(literal.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(literalRun); break;
             case YadgReference reference:
-                if (targets.TryGetValue(reference.Id, out var bookmark)) paragraph.Append(CreateRefRun(bookmark));
+                if (targets.TryGetValue($"number:{reference.Id}", out var bookmark)) paragraph.Append(CreateRefRun(bookmark));
                 else paragraph.Append(new Run(new Text($"[@{reference.Id}]") { Space = SpaceProcessingModeValues.Preserve }));
+                break;
+            case YadgLink link:
+                var destinationBookmark = link.InternalTargetId is not null && targets.TryGetValue(link.InternalTargetId, out var target) ? StripSectionPrefix(target) : null;
+                var relationshipId = link.InternalTargetId is null && metadata?.HyperlinkRelationships.TryGetValue(link.Destination, out var relation) == true ? relation : null;
+                var linkedContent = new Paragraph(); AppendInlines(linkedContent, link.Inlines, targets, italic, bold, metadata);
+                if (destinationBookmark is null && relationshipId is null) paragraph.Append(linkedContent.ChildElements.Select(element => element.CloneNode(true)));
+                else
+                {
+                    var hyperlink = destinationBookmark is not null ? new Hyperlink { Anchor = destinationBookmark } : new Hyperlink { Id = relationshipId };
+                    hyperlink.Append(linkedContent.ChildElements.Select(element => element.CloneNode(true)));
+                    paragraph.Append(hyperlink);
+                }
                 break;
             case YadgHardBreak: paragraph.Append(new Run(new Break())); break;
             case YadgSoftBreak: paragraph.Append(new Run(new Text(" "))); break;
@@ -1165,6 +1239,7 @@ public static class WordAuthoring
 
     private static Run CreateRefRun(string target)
     {
+        if (target.StartsWith("label:", StringComparison.Ordinal)) target = target[6..];
         var paragraphNumber = target.StartsWith("section:", StringComparison.Ordinal);
         var bookmark = paragraphNumber ? target[8..] : target;
         var instruction = paragraphNumber ? $" REF {bookmark} \\p \\h " : $" REF {bookmark} \\h ";
@@ -1211,7 +1286,7 @@ public static class WordAuthoring
             if (index >= paragraphs.Length) { diagnostics.Add(new("YADG-PROT-002", $"Prototype '{id.Groups["id"].Value}' has no closing marker.", true, location)); break; }
             controls.Add(paragraphs[index]); index++;
             if (inside.Count != 1) { diagnostics.Add(new("YADG-PROT-003", $"Prototype '{id.Groups["id"].Value}' must contain exactly one paragraph.", true, location)); continue; }
-            var clone = (Paragraph)inside[0].CloneNode(true); var text = LogicalText(clone); var seq = clone.Descendants<SimpleField>().Count() + clone.Descendants<FieldCode>().Count(t => t.Text?.Contains("SEQ", StringComparison.OrdinalIgnoreCase) == true);
+            var clone = (Paragraph)inside[0].CloneNode(true); var text = LogicalText(clone); var seq = CountSequenceFields(clone);
             var proto = new CaptionPrototype(id.Groups["id"].Value, clone, seq, Regex.Matches(text, Regex.Escape("{{caption}}")).Count);
             if (!prototypeMap.TryAdd(proto.Id, proto)) diagnostics.Add(new("YADG-PROT-004", $"Duplicate prototype ID '{proto.Id}'.", true, location));
             var listPrototype = bindings.Any(b => b.Key is "unorderedListItem" or "orderedListItem" && b.Value == proto.Id);
@@ -1281,11 +1356,164 @@ public static class WordAuthoring
         startRun.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe }); endRun.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId });
     }
 
+    private static void WrapCaptionPrefixAndSequence(Paragraph paragraph, string name)
+    {
+        if (!TryGetCaptionLabelRange(paragraph, requirePlaceholder: false, out var range, out var reason) || range is null)
+            throw new WordAuthoringException(new("YADG-REF-006", $"Cannot create a label-number reference bookmark: {reason} Update the selected caption prototype so its label is literal text immediately before one complete SEQ field, followed by the caption placeholder.", true, "template caption prototype"));
+        InsertBookmarkAroundNodes(range.FirstNode, range.LastNode, name);
+    }
+
+    private static void InsertBookmarkAroundNodes(OpenXmlElement firstNode, OpenXmlElement lastNode, string name)
+    {
+        var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_"); if (!char.IsLetter(safe[0])) safe = "yadg_" + safe;
+        var bookmarkId = Convert.ToInt64(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(safe)))[..8], 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        firstNode.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe });
+        lastNode.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId });
+    }
+
     private static void WrapParagraphBookmark(Paragraph paragraph, string name)
     {
         var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_"); var bookmarkId = Convert.ToInt64(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(safe)))[..8], 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var firstRun = paragraph.Elements<Run>().FirstOrDefault(); var lastRun = paragraph.Elements<Run>().LastOrDefault(); if (firstRun is null || lastRun is null) return;
         firstRun.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe }); lastRun.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId });
+    }
+
+    private static bool HasCaptionLabel(CaptionPrototype prototype, out string reason) =>
+        TryGetCaptionLabelRange(prototype.Paragraph, requirePlaceholder: true, out _, out reason);
+
+    private static int CountSequenceFields(Paragraph paragraph)
+    {
+        var simple = paragraph.Descendants<SimpleField>().Count(field => IsSequenceInstruction(field.Instruction?.Value));
+        return simple + ReadComplexFields(paragraph).Count(field => IsSequenceInstruction(field.Instruction));
+    }
+
+    private static bool TryGetCaptionLabelRange(Paragraph paragraph, bool requirePlaceholder, out CaptionLabelRange? range, out string reason)
+    {
+        range = null;
+        var simpleSequences = paragraph.Descendants<SimpleField>().Where(field => IsSequenceInstruction(field.Instruction?.Value)).ToArray();
+        var complexFields = ReadComplexFields(paragraph);
+        var complexSequences = complexFields.Where(field => IsSequenceInstruction(field.Instruction)).ToArray();
+        if (simpleSequences.Length + complexSequences.Length != 1)
+        {
+            reason = $"the prototype must contain exactly one SEQ field (found {simpleSequences.Length + complexSequences.Length}).";
+            return false;
+        }
+
+        OpenXmlElement startNode;
+        OpenXmlElement endNode;
+        if (simpleSequences.Length == 1)
+        {
+            var simple = simpleSequences[0];
+            if (simple.Parent != paragraph || simple.Descendants<FieldChar>().Any() || simple.Descendants<SimpleField>().Any())
+            {
+                reason = "the SEQ simple field must be a single top-level field without nested fields.";
+                return false;
+            }
+            startNode = endNode = simple;
+        }
+        else
+        {
+            var field = complexSequences[0];
+            if (field.ContainsNestedField || field.SeparateNode is null || field.EndNode is null ||
+                !IsDirectFieldBoundary(field.BeginNode, FieldCharValues.Begin, paragraph) ||
+                !IsDirectFieldBoundary(field.SeparateNode, FieldCharValues.Separate, paragraph) ||
+                !IsDirectFieldBoundary(field.EndNode, FieldCharValues.End, paragraph))
+            {
+                reason = "the SEQ complex field must have one top-level begin, instruction, separator, result, and matching end; nested or incomplete fields are unsupported.";
+                return false;
+            }
+            startNode = field.BeginNode.Ancestors<Run>().First();
+            endNode = field.EndNode.Ancestors<Run>().First();
+            if (!IsFieldBoundaryRun((Run)startNode, FieldCharValues.Begin) || !IsFieldBoundaryRun((Run)endNode, FieldCharValues.End))
+            {
+                reason = "the SEQ begin and end markers must each occupy their own run so the reference bookmark cannot include adjacent caption text.";
+                return false;
+            }
+        }
+
+        var children = paragraph.ChildElements.ToArray();
+        var startIndex = Array.IndexOf(children, startNode);
+        var endIndex = Array.IndexOf(children, endNode);
+        if (startIndex < 0 || endIndex < startIndex)
+        {
+            reason = "the SEQ field must be a direct paragraph child with a stable bookmark boundary.";
+            return false;
+        }
+        var prefixNodes = children.Take(startIndex).Where(node => node is not ParagraphProperties).ToArray();
+        if (prefixNodes.Length == 0 || prefixNodes.Any(node => node is not Run run || !IsLiteralTextRun(run)))
+        {
+            reason = "the label before SEQ must consist only of literal text runs; fields, links, drawings, and other content make its boundary ambiguous.";
+            return false;
+        }
+        var label = string.Concat(prefixNodes.Cast<Run>().SelectMany(run => run.Elements<Text>()).Select(text => text.Text ?? string.Empty));
+        if (!Regex.IsMatch(label, @"^\s*[\p{L}\p{M}][\p{L}\p{M}\p{Zs}.'’()/-]*$", RegexOptions.CultureInvariant))
+        {
+            reason = "the label before SEQ must be nonempty template text beginning with a letter and containing only letters, spaces, and ordinary label punctuation; numeric or field-derived prefixes are unsupported.";
+            return false;
+        }
+
+        if (requirePlaceholder)
+        {
+            var placeholders = paragraph.Descendants<Text>().Sum(text => Regex.Matches(text.Text ?? string.Empty, Regex.Escape("{{caption}}")).Count);
+            var suffixContainsPlaceholder = children.Skip(endIndex + 1).SelectMany(node => node.Descendants<Text>()).Any(text => text.Text?.Contains("{{caption}}", StringComparison.Ordinal) == true);
+            if (placeholders != 1 || !suffixContainsPlaceholder)
+            {
+                reason = "exactly one {{caption}} placeholder must follow the complete SEQ field.";
+                return false;
+            }
+        }
+
+        range = new(prefixNodes[0], endNode, label);
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool IsSequenceInstruction(string? instruction) =>
+        Regex.IsMatch(instruction ?? string.Empty, @"^\s*SEQ\s+[^\s\\]+(?=\s|\\|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static bool IsDirectFieldBoundary(OpenXmlElement node, FieldCharValues type, Paragraph paragraph) =>
+        node is FieldChar field && field.FieldCharType?.Value == type && field.Ancestors<Run>().FirstOrDefault()?.Parent == paragraph;
+
+    private static bool IsFieldBoundaryRun(Run run, FieldCharValues type) =>
+        run.ChildElements.Count(element => element is FieldChar field && field.FieldCharType?.Value == type) == 1 &&
+        run.ChildElements.All(element => element is FieldChar field && field.FieldCharType?.Value == type || element is RunProperties);
+
+    private static bool IsLiteralTextRun(Run run) =>
+        run.Elements<Text>().Any() && run.ChildElements.All(element => element is RunProperties or Text);
+
+    private static List<ComplexFieldRange> ReadComplexFields(Paragraph paragraph)
+    {
+        var stack = new Stack<ComplexFieldState>();
+        var completed = new List<ComplexFieldRange>();
+        foreach (var node in paragraph.Descendants().Where(element => element is FieldChar or FieldCode))
+        {
+            if (node is FieldChar fieldChar)
+            {
+                var type = fieldChar.FieldCharType?.Value;
+                if (type == FieldCharValues.Begin)
+                {
+                    if (stack.Count > 0) stack.Peek().ContainsNestedField = true;
+                    stack.Push(new ComplexFieldState(fieldChar));
+                }
+                else if (type == FieldCharValues.Separate)
+                {
+                    if (stack.Count > 0 && stack.Peek().SeparateNode is null) stack.Peek().SeparateNode = fieldChar;
+                }
+                else if (type == FieldCharValues.End && stack.Count > 0)
+                {
+                    var state = stack.Pop();
+                    completed.Add(new(state.Instruction.ToString(), state.BeginNode, state.SeparateNode, fieldChar, state.ContainsNestedField));
+                }
+            }
+            else if (node is FieldCode code && stack.Count > 0 && stack.Peek().SeparateNode is null)
+                stack.Peek().Instruction.Append(code.Text);
+        }
+        while (stack.Count > 0)
+        {
+            var state = stack.Pop();
+            completed.Add(new(state.Instruction.ToString(), state.BeginNode, state.SeparateNode, null, state.ContainsNestedField));
+        }
+        return completed;
     }
 
     private static void ValidateReferences(WordprocessingDocument document, string location, YadgDocument model, TemplateMetadata metadata, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, List<Diagnostic> diagnostics)
@@ -1295,8 +1523,28 @@ public static class WordAuthoring
         var blocks = placements.SelectMany(p => p.Kind == PlacementKind.Section ? MarkdownDocumentParser.Resolve(model, p.SectionReference!, location).Blocks ?? Array.Empty<YadgBlock>() : p.Kind == PlacementKind.Table ? new YadgBlock[] { model.FindTable(p.Id)! } : new YadgBlock[] { model.FindFigure(p.Id)! }).Concat(prepared.Select(p => (YadgBlock)model.FindTable(p.Id)!));
         foreach (var reference in blocks.SelectMany(ReferencesIn))
         {
-            if (model.FindObject(reference.Id) is null) { diagnostics.Add(new("YADG-REF-004", $"Unresolved semantic reference '[@{reference.Id}]'.", true, location)); continue; }
-            if (!targets.ContainsKey(reference.Id)) diagnostics.Add(new("YADG-REF-005", $"Semantic reference '[@{reference.Id}]' has no uniquely rendered numbered target in this template.", true, location));
+            var target = model.FindObject(reference.Id);
+            if (target is null) { diagnostics.Add(new("YADG-REF-004", $"Unresolved semantic reference '[@{reference.Id}]'.", true, location)); continue; }
+            if (model.ReferenceFormatting.For(target) == "label-number" && target is YadgFigure or YadgTable)
+            {
+                var binding = target is YadgFigure ? "figureCaption" : "tableCaption";
+                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
+                { diagnostics.Add(new("YADG-REF-006", $"Reference '[@{reference.Id}]' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.", true, location)); continue; }
+                if (!HasCaptionLabel(prototype, out var reason))
+                { diagnostics.Add(new("YADG-REF-006", $"Reference '[@{reference.Id}]' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.", true, location)); continue; }
+            }
+            if (!targets.ContainsKey($"number:{reference.Id}")) diagnostics.Add(new("YADG-REF-005", $"Semantic reference '[@{reference.Id}]' has no uniquely rendered numbered target in this template.", true, location));
+        }
+        foreach (var link in blocks.SelectMany(LinksIn))
+        {
+            if (link.InternalTargetId is string id)
+            {
+                if (!Regex.IsMatch(id, "^[A-Za-z][A-Za-z0-9_-]*$")) { diagnostics.Add(new("YADG-LINK-001", $"Internal Markdown link '{link.Destination}' must contain one explicit stable ID fragment.", true, location)); continue; }
+                if (model.FindObject(id) is null) { diagnostics.Add(new("YADG-LINK-001", $"Internal Markdown link target '#{id}' does not match a workspace semantic ID.", true, location)); continue; }
+                if (!targets.ContainsKey(id)) diagnostics.Add(new("YADG-LINK-002", $"Internal Markdown link target '#{id}' is not rendered exactly once in this template.", true, location));
+            }
+            else if (string.IsNullOrWhiteSpace(link.Destination) || !Uri.TryCreate(link.Destination, UriKind.RelativeOrAbsolute, out _))
+                diagnostics.Add(new("YADG-LINK-003", $"Markdown link destination '{link.Destination}' is not a valid URL or file link.", true, location));
         }
     }
 
@@ -1328,16 +1576,37 @@ public static class WordAuthoring
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (id, count) in counts)
         {
-            var target = model.FindObject(id); var valid = count == 1;
-            if (target is YadgFigure figure) valid &= !string.IsNullOrWhiteSpace(figure.AltText) && metadata.PrototypeBindings.ContainsKey("figureCaption") && metadata.Prototypes.ContainsKey(metadata.PrototypeBindings["figureCaption"]);
-            if (target is YadgTable table) valid &= !string.IsNullOrWhiteSpace(table.Caption) && metadata.PrototypeBindings.ContainsKey("tableCaption") && metadata.Prototypes.ContainsKey(metadata.PrototypeBindings["tableCaption"]);
+            var target = model.FindObject(id);
+            if (count != 1) continue;
+            var bookmark = BookmarkName(id);
+            result[id] = target is YadgSection ? "section:" + bookmark : bookmark;
+            var numberValid = true;
+            if (target is YadgFigure figure) numberValid = !string.IsNullOrWhiteSpace(figure.AltText) && metadata.PrototypeBindings.TryGetValue("figureCaption", out var figurePrototype) && metadata.Prototypes.ContainsKey(figurePrototype);
+            if (target is YadgTable table) numberValid = !string.IsNullOrWhiteSpace(table.Caption) && metadata.PrototypeBindings.TryGetValue("tableCaption", out var tablePrototype) && metadata.Prototypes.ContainsKey(tablePrototype);
             if (target is YadgSection section)
             {
                 var placement = placements.FirstOrDefault(p => p.Kind == PlacementKind.Section && p.Id == id && p.SectionReference!.Selection == SectionSelection.Section);
                 var effective = placement is null ? section.Heading.Level : EffectiveHeadingLevel(section.Heading.Level, placement.ContextLevel, placement.SectionReference!.Selection, placement.RootLevel);
-                valid &= sections.Contains(id) && HasEffectiveNumbering(effective, metadata, styles, numbering);
+                numberValid = sections.Contains(id) && HasEffectiveNumbering(effective, metadata, styles, numbering);
             }
-            if (valid) result[id] = (target is YadgSection ? "section:" : "") + BookmarkName(id);
+            if (!numberValid || target is null) continue;
+            var referenceMode = model.ReferenceFormatting.For(target);
+            if (referenceMode == "label-number" && target is YadgFigure or YadgTable)
+            {
+                var binding = target is YadgFigure ? "figureCaption" : "tableCaption";
+                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
+                {
+                    diagnostics.Add(new("YADG-REF-006", $"Reference formatting for '{id}' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.", true, location));
+                    continue;
+                }
+                if (!HasCaptionLabel(prototype, out var reason))
+                {
+                    diagnostics.Add(new("YADG-REF-006", $"Reference formatting for '{id}' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.", true, location));
+                    continue;
+                }
+                result[$"number:{id}"] = "label:" + bookmark;
+            }
+            else result[$"number:{id}"] = target is YadgSection ? "section:" + bookmark : bookmark;
         }
         return result;
     }
@@ -1346,6 +1615,24 @@ public static class WordAuthoring
     {
         IEnumerable<YadgReference> Inline(IEnumerable<YadgInline> values) => values.SelectMany(i => i switch { YadgReference r => new[] { r }, YadgEmphasis e => Inline(e.Inlines), YadgStrong s => Inline(s.Inlines), _ => Array.Empty<YadgReference>() });
         return block switch { YadgParagraph p => Inline(p.Inlines), YadgList l => l.Items.SelectMany(i => Inline(i.Inlines)), YadgTable t => t.Header.SelectMany(Inline).Concat(t.Rows.SelectMany(r => r.SelectMany(Inline))), _ => Array.Empty<YadgReference>() };
+    }
+
+    private static IEnumerable<YadgLink> LinksIn(YadgBlock block)
+    {
+        IEnumerable<YadgLink> Inline(IEnumerable<YadgInline> values) => values.SelectMany(value => value switch
+        {
+            YadgLink link => new[] { link }.Concat(Inline(link.Inlines)),
+            YadgEmphasis emphasis => Inline(emphasis.Inlines),
+            YadgStrong strong => Inline(strong.Inlines),
+            _ => Array.Empty<YadgLink>()
+        });
+        return block switch
+        {
+            YadgParagraph paragraph => Inline(paragraph.Inlines),
+            YadgList list => list.Items.SelectMany(item => Inline(item.Inlines)),
+            YadgTable table => table.Header.SelectMany(Inline).Concat(table.Rows.SelectMany(row => row.SelectMany(Inline))),
+            _ => Array.Empty<YadgLink>()
+        };
     }
 
     private static bool HasEffectiveNumbering(int level, TemplateMetadata metadata, Styles? styles, Numbering? numbering)
