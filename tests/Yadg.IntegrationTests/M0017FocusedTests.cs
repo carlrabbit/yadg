@@ -133,6 +133,7 @@ public sealed class M0017FocusedTests
     public void Word_authoring_emits_valid_gridspan_and_vertical_merge_cells()
     {
         using var fixture = M0016FocusedTests.Fixture.Create();
+        ConfigureGridTableBorders(fixture.Template);
         var source = "# Intro {#intro}\n\n![Flow diagram](images/flow.png){#flow}\n\n+---+---+---+\n| AAAAA | B |\n+---+---+ B +\n| D | E | B |\n+ D +---+---+\n| D | CCCCC |\n+---+---+---+\n{#matrix caption=\"Interface matrix\"}\n";
         File.WriteAllText(Path.Combine(fixture.Root, "content.md"), source);
         var workspace = WorkspaceLoader.Load(fixture.Root);
@@ -147,6 +148,12 @@ public sealed class M0017FocusedTests
         Assert.Contains(table.Descendants<VerticalMerge>(), merge => merge.Val?.Value == MergedCellValues.Restart);
         Assert.Contains(table.Descendants<VerticalMerge>(), merge => merge.Val?.Value == MergedCellValues.Continue);
         Assert.All(table.Elements<TableRow>(), row => Assert.Equal(3, row.Elements<TableCell>().Sum(cell => cell.TableCellProperties?.GridSpan?.Val?.Value ?? 1)));
+        var tableStyle = document.MainDocumentPart.StyleDefinitionsPart!.Styles!.Elements<Style>().Single(style => style.StyleId?.Value == "TableGrid");
+        var styleBorders = Assert.IsType<StyleTableProperties>(tableStyle.StyleTableProperties).GetFirstChild<TableBorders>();
+        Assert.NotNull(styleBorders?.TopBorder);
+        Assert.NotNull(styleBorders?.BottomBorder);
+        Assert.NotNull(styleBorders?.InsideHorizontalBorder);
+        Assert.NotNull(styleBorders?.InsideVerticalBorder);
     }
 
     [Fact]
@@ -172,6 +179,11 @@ public sealed class M0017FocusedTests
         var codeParagraphs = body.Elements<Paragraph>().Where(paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "CodePresentation").ToArray();
         Assert.Equal(new[] { "  first  ", "", "    second", "    indented first", "", "        indented nested" }, codeParagraphs.Select(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text))));
         Assert.All(codeParagraphs, paragraph => Assert.NotEqual("PlacementNoise", paragraph.ParagraphProperties!.ParagraphStyleId?.Val?.Value));
+        Assert.All(codeParagraphs, paragraph => Assert.Null(paragraph.ParagraphProperties?.KeepNext));
+        Assert.All(codeParagraphs, paragraph => Assert.Null(paragraph.ParagraphProperties?.KeepLines));
+        var codeStyle = document.MainDocumentPart!.StyleDefinitionsPart!.Styles!.Elements<Style>().Single(style => style.StyleId?.Value == "CodePresentation");
+        Assert.NotNull(codeStyle.StyleParagraphProperties?.KeepNext);
+        Assert.NotNull(codeStyle.StyleParagraphProperties?.KeepLines);
         Assert.DoesNotContain(body.Elements<Paragraph>(), paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "PlacementNoise");
     }
 
@@ -202,7 +214,7 @@ public sealed class M0017FocusedTests
         var main = document.MainDocumentPart!;
         var styles = main.StyleDefinitionsPart!.Styles!;
         styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "QuotePresentation", StyleName = new StyleName { Val = "Quote Presentation" }, StyleParagraphProperties = new StyleParagraphProperties(new Indentation { Left = "720" }) });
-        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "CodePresentation", StyleName = new StyleName { Val = "Code Presentation" }, StyleRunProperties = new StyleRunProperties(new RunFonts { Ascii = "Consolas", HighAnsi = "Consolas" }) });
+        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "CodePresentation", StyleName = new StyleName { Val = "Code Presentation" }, StyleParagraphProperties = new StyleParagraphProperties(new KeepNext(), new KeepLines()), StyleRunProperties = new StyleRunProperties(new RunFonts { Ascii = "Consolas", HighAnsi = "Consolas" }) });
         styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "PlacementNoise", StyleName = new StyleName { Val = "Placement Noise" } });
         var body = main.Document.Body!;
         var closing = body.Elements<Paragraph>().Single(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text)).Trim() == "{{/yadg:frontmatter}}");
@@ -212,5 +224,19 @@ public sealed class M0017FocusedTests
         var placement = body.Elements<Paragraph>().Single(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text)).Trim() == "{{section:intro}}");
         placement.ParagraphProperties = new ParagraphProperties(new ParagraphStyleId { Val = "PlacementNoise" });
         main.Document.Save();
+    }
+
+    private static void ConfigureGridTableBorders(string template)
+    {
+        using var document = WordprocessingDocument.Open(template, true);
+        var tableStyle = document.MainDocumentPart!.StyleDefinitionsPart!.Styles!.Elements<Style>().Single(style => style.StyleId?.Value == "TableGrid");
+        tableStyle.StyleTableProperties = new StyleTableProperties(new TableBorders(
+            new TopBorder { Val = BorderValues.Single, Size = 6, Color = "7F7F7F" },
+            new LeftBorder { Val = BorderValues.Single, Size = 6, Color = "7F7F7F" },
+            new BottomBorder { Val = BorderValues.Single, Size = 6, Color = "7F7F7F" },
+            new RightBorder { Val = BorderValues.Single, Size = 6, Color = "7F7F7F" },
+            new InsideHorizontalBorder { Val = BorderValues.Single, Size = 6, Color = "7F7F7F" },
+            new InsideVerticalBorder { Val = BorderValues.Single, Size = 6, Color = "7F7F7F" }));
+        document.MainDocumentPart.Document.Save();
     }
 }

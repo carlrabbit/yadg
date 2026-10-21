@@ -66,11 +66,32 @@ try {
         if (-not $paragraphStyles.Contains('QuotePresentation') -or -not $paragraphStyles.Contains('CodeBlockPresentation')) { throw 'M0017 installed package output did not apply template-owned quote and code-block styles.' }
         $codeParagraphs = @($xml.SelectNodes('//w:body/w:p[w:pPr/w:pStyle[@w:val="CodeBlockPresentation"]]',$ns) | ForEach-Object { ($_.SelectNodes('.//w:t',$ns) | ForEach-Object { $_.InnerText }) -join '' })
         if (-not ($codeParagraphs -contains '') -or -not ($codeParagraphs -contains '    installed indented') -or -not ($codeParagraphs -contains '        nested installed indent')) { throw 'M0017 installed package output lost indented code whitespace or blank lines.' }
-        if (@($xml.SelectNodes('//w:strike',$ns)).Count -lt 1 -or @($xml.SelectNodes('//w:gridSpan[@w:val="2"]',$ns)).Count -lt 1 -or @($xml.SelectNodes('//w:vMerge',$ns)).Count -lt 1) { throw 'M0017 installed package output lost strike or grid merge structures.' }
+        $stylesEntry = $zip.GetEntry('word/styles.xml')
+        if ($null -eq $stylesEntry) { throw 'Installed package output lost template styles.' }
+        $stylesReader = [IO.StreamReader]::new($stylesEntry.Open())
+        try { [xml]$stylesXml = $stylesReader.ReadToEnd() } finally { $stylesReader.Dispose() }
+        $styleNs = [Xml.XmlNamespaceManager]::new($stylesXml.NameTable)
+        $styleNs.AddNamespace('w','http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+        $codeStyle = $stylesXml.SelectSingleNode('//w:style[@w:styleId="CodeBlockPresentation"]', $styleNs)
+        if ($null -eq $codeStyle.SelectSingleNode('./w:pPr/w:keepLines', $styleNs) -or $null -eq $codeStyle.SelectSingleNode('./w:pPr/w:keepNext', $styleNs)) { throw 'Installed package output lost template-owned code pagination properties.' }
+        $gridStyle = $stylesXml.SelectSingleNode('//w:style[@w:type="table" and w:name[@w:val="TableGrid"]]', $styleNs)
+        $borders = if ($null -ne $gridStyle) { $gridStyle.SelectSingleNode('./w:tblPr/w:tblBorders', $styleNs) } else { $null }
+        foreach ($edge in @('top', 'left', 'bottom', 'right', 'insideH', 'insideV')) {
+            $border = if ($null -ne $borders) { $borders.SelectSingleNode("./w:$edge", $styleNs) } else { $null }
+            if ($null -eq $border -or $border.GetAttribute('val','http://schemas.openxmlformats.org/wordprocessingml/2006/main') -ne 'single') { throw "Installed package output lost template-owned '$edge' grid borders." }
+        }
+        if (@($xml.SelectNodes('//w:strike',$ns)).Count -lt 1) { throw 'Installed package output lost strike formatting.' }
+        $grid = $xml.SelectSingleNode('//w:tbl[.//w:t[contains(., "AAAAA")]]', $ns)
+        if ($null -eq $grid -or $null -eq $grid.SelectSingleNode('.//w:tc/w:tcPr/w:gridSpan[@w:val="2"]', $ns) -or $null -eq $grid.SelectSingleNode('.//w:tc/w:tcPr/w:vMerge[@w:val="restart"]', $ns) -or $null -eq $grid.SelectSingleNode('.//w:tc/w:tcPr/w:vMerge[not(@w:val) or @w:val="continue"]', $ns)) { throw 'Installed package output lost horizontal or vertical merged-cell geometry.' }
+        foreach ($row in $grid.SelectNodes('./w:tr', $ns)) {
+            $width = 0
+            foreach ($cell in $row.SelectNodes('./w:tc', $ns)) { $span = $cell.SelectSingleNode('./w:tcPr/w:gridSpan', $ns); $width += if ($null -ne $span) { [int]$span.GetAttribute('val','http://schemas.openxmlformats.org/wordprocessingml/2006/main') } else { 1 } }
+            if ($width -ne 3) { throw "Installed package merged-grid row covers $width logical columns; expected all 3." }
+        }
     }
     finally { $zip.Dispose() }
 
-    $evidence = [ordered]@{ milestone = 'M0017'; packagePath = [IO.Path]::GetRelativePath($repo, $package).Replace([char]92,[char]47); packageSha256 = $sha256; packageVersion = '1.2.0'; isolatedToolPath = 'temporary dotnet tool path'; isolatedWorkspace = 'temporary consumer workspace'; installedCommand = $installed; commands = $commands; authoredDocxSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); result = 'passed' }
+    $evidence = [ordered]@{ milestone = 'M0017'; packagePath = [IO.Path]::GetRelativePath($repo, $package).Replace([char]92,[char]47); packageSha256 = $sha256; packageVersion = '1.2.0'; isolatedToolPath = 'temporary dotnet tool path'; isolatedWorkspace = 'temporary consumer workspace'; installedCommand = $installed; commands = $commands; authoredDocxSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); codeBlockPaginationStyle = @('keepLines', 'keepNext'); mergedGrid = [ordered]@{ rowCount = 3; logicalColumnsPerRow = 3; horizontalSpan = 2; verticalMergeRestart = $true; verticalMergeContinuation = $true; visibleTemplateBorderEdges = @('top', 'left', 'bottom', 'right', 'insideH', 'insideV') }; result = 'passed' }
     $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'tier4-evidence.json') -Encoding utf8
     Write-Output "M0017 isolated packed-tool check/build passed for Yadg 1.2.0 ($sha256)."
 }

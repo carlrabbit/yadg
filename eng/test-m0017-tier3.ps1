@@ -88,6 +88,66 @@ function Find-DocumentTextRange($Document, [string] $Text, [int] $Start = 0, [in
     return $range
 }
 
+function Set-TemplateOwnedPresentation([string] $Path) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $replacement = "$Path.presentation.tmp"
+    Copy-Item -LiteralPath $Path -Destination $replacement -Force
+    $archive = [IO.Compression.ZipFile]::Open($replacement, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $entry = $archive.GetEntry('word/styles.xml')
+        if ($null -eq $entry) { throw 'M0017 validation template has no styles part.' }
+        $reader = [IO.StreamReader]::new($entry.Open())
+        try { [xml]$styles = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        $namespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+        $manager = [Xml.XmlNamespaceManager]::new($styles.NameTable)
+        $manager.AddNamespace('w', $namespace)
+
+        $codeStyle = $styles.SelectSingleNode('//w:style[w:name[@w:val="CodeBlockPresentation"]]', $manager)
+        if ($null -eq $codeStyle) { throw 'M0017 validation template has no CodeBlockPresentation paragraph style.' }
+        $paragraphProperties = $codeStyle.SelectSingleNode('./w:pPr', $manager)
+        if ($null -eq $paragraphProperties) {
+            $paragraphProperties = $styles.CreateElement('w', 'pPr', $namespace)
+            $codeStyle.AppendChild($paragraphProperties) | Out-Null
+        }
+        foreach ($property in @('keepLines', 'keepNext')) {
+            if ($null -eq $paragraphProperties.SelectSingleNode("./w:$property", $manager)) {
+                $paragraphProperties.AppendChild($styles.CreateElement('w', $property, $namespace)) | Out-Null
+            }
+        }
+
+        $tableStyle = $styles.SelectSingleNode('//w:style[@w:type="table" and w:name[@w:val="TableGrid"]]', $manager)
+        if ($null -eq $tableStyle) { throw 'M0017 validation template has no TableGrid table style.' }
+        $tableProperties = $tableStyle.SelectSingleNode('./w:tblPr', $manager)
+        if ($null -eq $tableProperties) {
+            $tableProperties = $styles.CreateElement('w', 'tblPr', $namespace)
+            $tableStyle.AppendChild($tableProperties) | Out-Null
+        }
+        $borders = $tableProperties.SelectSingleNode('./w:tblBorders', $manager)
+        if ($null -eq $borders) {
+            $borders = $styles.CreateElement('w', 'tblBorders', $namespace)
+            $tableProperties.AppendChild($borders) | Out-Null
+        }
+        foreach ($edge in @('top', 'left', 'bottom', 'right', 'insideH', 'insideV')) {
+            $border = $borders.SelectSingleNode("./w:$edge", $manager)
+            if ($null -eq $border) {
+                $border = $styles.CreateElement('w', $edge, $namespace)
+                $borders.AppendChild($border) | Out-Null
+            }
+            $null = $border.SetAttribute('val', $namespace, 'single')
+            $null = $border.SetAttribute('sz', $namespace, '6')
+            $null = $border.SetAttribute('space', $namespace, '0')
+            $null = $border.SetAttribute('color', $namespace, '7F7F7F')
+        }
+
+        $entry.Delete()
+        $newEntry = $archive.CreateEntry('word/styles.xml')
+        $writer = [IO.StreamWriter]::new($newEntry.Open(), [Text.UTF8Encoding]::new($false))
+        try { $styles.Save($writer) } finally { $writer.Dispose() }
+    }
+    finally { $archive.Dispose() }
+    Move-Item -LiteralPath $replacement -Destination $Path -Force
+}
+
 $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ('yadg-m0017-tier3-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $temporary, $EvidenceRoot | Out-Null
 $diagramPath = Join-Path $EvidenceRoot 'system-flow.png'
@@ -179,6 +239,9 @@ finally {
     if ($null -ne $word) { try { $word.Quit() } catch {} }
 }
 
+Set-TemplateOwnedPresentation $templatePath
+$templateCreation = 'saved through Microsoft Word document model; template-owned table borders and code pagination set in template styles'
+
 $templateSha256 = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash.ToUpperInvariant()
 $revision = (& git -C $repo rev-parse HEAD).Trim()
 $revisionSuffix = $revision.Substring(0, 7)
@@ -228,6 +291,15 @@ try {
             $styleManager.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
             $quoteStyleId = [string]$styleXml.SelectSingleNode('//w:style[w:name[@w:val="QuotePresentation"]]', $styleManager).GetAttribute('styleId', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
             $codeBlockStyleId = [string]$styleXml.SelectSingleNode('//w:style[w:name[@w:val="CodeBlockPresentation"]]', $styleManager).GetAttribute('styleId', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+            $codeStyleDefinition = $styleXml.SelectSingleNode('//w:style[@w:styleId="' + $codeBlockStyleId + '"]', $styleManager)
+            if ($null -eq $codeStyleDefinition.SelectSingleNode('./w:pPr/w:keepLines', $styleManager) -or $null -eq $codeStyleDefinition.SelectSingleNode('./w:pPr/w:keepNext', $styleManager)) { throw "Finalized $renderer output lost template-owned keep-lines/keep-with-next code pagination properties." }
+            $tableStyle = $styleXml.SelectSingleNode('//w:style[@w:type="table" and w:name[@w:val="TableGrid"]]', $styleManager)
+            if ($null -eq $tableStyle) { throw "Finalized $renderer output lost the template-owned TableGrid style." }
+            $tableBorders = $tableStyle.SelectSingleNode('./w:tblPr/w:tblBorders', $styleManager)
+            foreach ($edge in @('top', 'left', 'bottom', 'right', 'insideH', 'insideV')) {
+                $border = if ($null -ne $tableBorders) { $tableBorders.SelectSingleNode("./w:$edge", $styleManager) } else { $null }
+                if ($null -eq $border -or $border.GetAttribute('val', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') -ne 'single') { throw "Finalized $renderer output lost visible template-owned '$edge' table borders." }
+            }
             $paragraphs = @($xml.SelectNodes('//w:body/w:p', $manager))
             $quoteParagraphs = @($paragraphs | Where-Object { $_.SelectSingleNode('./w:pPr/w:pStyle', $manager)?.GetAttribute('val', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') -eq $quoteStyleId })
             $codeParagraphs = @($paragraphs | Where-Object { $_.SelectSingleNode('./w:pPr/w:pStyle', $manager)?.GetAttribute('val', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') -eq $codeBlockStyleId })
@@ -248,7 +320,22 @@ try {
                 if (-not $allText.Contains($expected, [StringComparison]::Ordinal)) { throw "Finalized $renderer output lost M0017 content '$expected'." }
             }
             if (@($xml.SelectNodes('//w:strike', $manager)).Count -lt 1) { throw "Finalized $renderer output lost strike formatting." }
-            if (@($xml.SelectNodes('//w:gridSpan[@w:val="2"]', $manager)).Count -lt 1 -or @($xml.SelectNodes('//w:vMerge', $manager)).Count -lt 1) { throw "Finalized $renderer output lost grid-table merge structures." }
+            $mergedTable = $xml.SelectSingleNode('//w:tbl[.//w:t[contains(., "AAAAA")]]', $manager)
+            if ($null -eq $mergedTable) { throw "Finalized $renderer output lost the representative merged grid table." }
+            $mergedRows = @($mergedTable.SelectNodes('./w:tr', $manager))
+            if ($mergedRows.Count -ne 3) { throw "Finalized $renderer output has unexpected merged-grid row count $($mergedRows.Count)." }
+            foreach ($row in $mergedRows) {
+                $logicalWidth = 0
+                foreach ($cell in $row.SelectNodes('./w:tc', $manager)) {
+                    $span = $cell.SelectSingleNode('./w:tcPr/w:gridSpan', $manager)
+                    $logicalWidth += if ($null -ne $span) { [int]$span.GetAttribute('val', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') } else { 1 }
+                }
+                if ($logicalWidth -ne 3) { throw "Finalized $renderer merged-grid row covers $logicalWidth logical columns; expected all 3." }
+            }
+            $horizontalMerge = $mergedTable.SelectSingleNode('.//w:tc/w:tcPr/w:gridSpan[@w:val="2"]', $manager)
+            $verticalRestart = $mergedTable.SelectSingleNode('.//w:tc/w:tcPr/w:vMerge[@w:val="restart"]', $manager)
+            $verticalContinue = $mergedTable.SelectSingleNode('.//w:tc/w:tcPr/w:vMerge[not(@w:val) or @w:val="continue"]', $manager)
+            if ($null -eq $horizontalMerge -or $null -eq $verticalRestart -or $null -eq $verticalContinue) { throw "Finalized $renderer output did not preserve the representative horizontal and vertical merge geometry." }
             if (@($instructions | Where-Object { $_ -match 'REF\s+' }).Count -lt 2) { throw "Finalized $renderer output is missing generated figure/table REF fields." }
             $anchors = @($xml.SelectNodes('//w:hyperlink[@w:anchor]', $manager) | ForEach-Object { [string]$_.GetAttribute('anchor', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') })
             $bookmarkNames = @($xml.SelectNodes('//w:bookmarkStart', $manager) | ForEach-Object { [string]$_.GetAttribute('name', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') })
@@ -263,7 +350,7 @@ try {
         $destination = Join-Path $EvidenceRoot $name
         Copy-Item -LiteralPath $finalized.FullName -Destination $destination -Force
         $relativeArtifact = [IO.Path]::GetRelativePath($repo, $destination).Replace([char]92, [char]47)
-        $runs += [ordered]@{ renderer = $renderer; runtimeVersion = if ($renderer -eq 'word') { $wordVersion } else { $loVersion }; templateSha256 = $templateSha256; authoredSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); finalized = $relativeArtifact; finalizedSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToUpperInvariant(); semanticHyperlinks = $anchors.Count; generatedReferenceFields = @($instructions | Where-Object { $_ -match 'REF\s+' }).Count; result = 'passed' }
+        $runs += [ordered]@{ renderer = $renderer; runtimeVersion = if ($renderer -eq 'word') { $wordVersion } else { $loVersion }; templateSha256 = $templateSha256; authoredSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); finalized = $relativeArtifact; finalizedSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToUpperInvariant(); semanticHyperlinks = $anchors.Count; generatedReferenceFields = @($instructions | Where-Object { $_ -match 'REF\s+' }).Count; codeBlockPaginationStyle = @('keepLines', 'keepNext'); mergedGrid = [ordered]@{ rowCount = $mergedRows.Count; logicalColumnsPerRow = 3; horizontalSpan = 2; verticalMergeRestart = $true; verticalMergeContinuation = $true; visibleTemplateBorderEdges = @('top', 'left', 'bottom', 'right', 'insideH', 'insideV') }; result = 'passed' }
     }
     $relativeTemplate = [IO.Path]::GetRelativePath($repo, $templatePath).Replace([char]92, [char]47)
     $evidence = [ordered]@{ milestone = 'M0017'; repositoryRevision = $revision; worktreeStatusSha256 = $worktreeHash; os = $os; fixture = 'tests/fixtures/m0010/word-origin.docx'; fixtureSha256 = $fixtureHash; templateCreation = $templateCreation; templatePath = $relativeTemplate; templateSha256 = $templateSha256; wordVersion = $wordVersion; libreOfficeVersion = $loVersion; sourceSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($source))); runs = $runs }
