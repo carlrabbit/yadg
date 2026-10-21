@@ -231,7 +231,13 @@ compatible related code/source/monospace character style
 -> ordinary text
 ```
 
-M0017 blockquotes and literal code blocks inherit the insertion-context paragraph presentation; no quotation label or code-language label is fabricated. Nested list paragraphs use the bound list prototype/style and its Word numbering definition at the source nesting level.
+### Blockquotes and literal code blocks
+
+M0017 requires template-owned paragraph presentation for selected blockquotes and literal code blocks. These roles do not inherit paragraph properties from the template placement marker, because that paragraph may carry an unrelated layout style.
+
+Strict resolution uses the configured paragraph-style selector when present, otherwise the compatible defaults `Quote` for `blockquote` and `HTMLPreformatted` for `codeBlock`. The selected style must be a concrete paragraph style in the template. If it is absent or resolves to another style type, strict analysis reports the missing template capability. Workspace authors may bind `styles.blockquote` and `styles.codeBlock` to other concrete paragraph styles.
+
+Nested blockquotes retain their nesting with increasing paragraph indentation while keeping the selected template quote style. Each literal code source line is emitted as a separate paragraph with the selected code-block style; blank source lines remain blank paragraphs and source whitespace is preserved. Code and language labels are not fabricated. Nested list paragraphs use the bound list prototype/style and its Word numbering definition at the source nesting level.
 
 ### Value replacement
 

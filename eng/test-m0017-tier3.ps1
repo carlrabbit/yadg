@@ -55,7 +55,9 @@ code line
 
 Indented literal code:
 
-    keep four spaces
+        keep four spaces
+
+            nested indented line
 
 Task status [x] ordinary prose stays literal.
 
@@ -124,10 +126,16 @@ try {
     $document = $word.Documents.Open($templatePath, $false, $false)
 
     $frontMatterEnd = Find-DocumentTextRange $document '{{/yadg:frontmatter}}'
-    $frontMatterEnd.InsertBefore("styles:`r  generatedTable: TableGrid`r  caption: Normal`r  codeInline: Code`rprototypes:`r  figureCaption: figure-caption`r  tableCaption: table-caption`r  unorderedListItem: list-bullet`r  orderedListItem: list-number`r")
+    $frontMatterEnd.InsertBefore("styles:`r  generatedTable: TableGrid`r  caption: Normal`r  codeInline: Code`r  blockquote: QuotePresentation`r  codeBlock: CodeBlockPresentation`rprototypes:`r  figureCaption: figure-caption`r  tableCaption: table-caption`r  unorderedListItem: list-bullet`r  orderedListItem: list-number`r")
     try { $null = $document.Styles.Item('TableGrid') } catch { $null = $document.Styles.Add('TableGrid', 3) }
     try { $codeStyle = $document.Styles.Item('Code') } catch { $codeStyle = $document.Styles.Add('Code', 2) }
     $codeStyle.Font.Name = 'Consolas'
+    $quoteStyle = $document.Styles.Add('QuotePresentation', 1)
+    $quoteStyle.ParagraphFormat.LeftIndent = 18
+    $quoteStyle.Font.Italic = $true
+    $codeBlockStyle = $document.Styles.Add('CodeBlockPresentation', 1)
+    $codeBlockStyle.Font.Name = 'Consolas'
+    $codeBlockStyle.ParagraphFormat.LeftIndent = 18
 
     $firstBody = Find-DocumentTextRange $document 'Word-origin static cover content.'
     $insertAt = [int]$firstBody.Start
@@ -212,6 +220,23 @@ try {
             $manager.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
             $manager.AddNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships')
             $allText = ($xml.SelectNodes('//w:t', $manager) | ForEach-Object { $_.InnerText }) -join ''
+            $stylesEntry = $zip.GetEntry('word/styles.xml')
+            if ($null -eq $stylesEntry) { throw "Finalized $renderer output has no template styles part." }
+            $stylesReader = [IO.StreamReader]::new($stylesEntry.Open())
+            try { [xml]$styleXml = $stylesReader.ReadToEnd() } finally { $stylesReader.Dispose() }
+            $styleManager = [Xml.XmlNamespaceManager]::new($styleXml.NameTable)
+            $styleManager.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+            $quoteStyleId = [string]$styleXml.SelectSingleNode('//w:style[w:name[@w:val="QuotePresentation"]]', $styleManager).GetAttribute('styleId', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+            $codeBlockStyleId = [string]$styleXml.SelectSingleNode('//w:style[w:name[@w:val="CodeBlockPresentation"]]', $styleManager).GetAttribute('styleId', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+            $paragraphs = @($xml.SelectNodes('//w:body/w:p', $manager))
+            $quoteParagraphs = @($paragraphs | Where-Object { $_.SelectSingleNode('./w:pPr/w:pStyle', $manager)?.GetAttribute('val', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') -eq $quoteStyleId })
+            $codeParagraphs = @($paragraphs | Where-Object { $_.SelectSingleNode('./w:pPr/w:pStyle', $manager)?.GetAttribute('val', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') -eq $codeBlockStyleId })
+            if ($quoteParagraphs.Count -lt 2) { throw "Finalized $renderer output did not apply the template blockquote style to outer and nested quote paragraphs." }
+            if ($codeParagraphs.Count -lt 7) { throw "Finalized $renderer output did not apply the template code-block style to fenced and indented source lines and blank lines." }
+            $quoteText = $quoteParagraphs | ForEach-Object { ($_.SelectNodes('.//w:t', $manager) | ForEach-Object { $_.InnerText }) -join '' }
+            if (-not ($quoteText -contains 'Nested quote paragraph.')) { throw "Finalized $renderer output lost the nested quote paragraph or its quote style." }
+            $codeText = @($codeParagraphs | ForEach-Object { ($_.SelectNodes('.//w:t', $manager) | ForEach-Object { $_.InnerText }) -join '' })
+            if (-not ($codeText -contains '  keep leading spaces') -or -not ($codeText -contains '') -or -not ($codeText -contains 'code line') -or -not ($codeText -contains '    keep four spaces') -or -not ($codeText -contains '        nested indented line')) { throw "Finalized $renderer output did not preserve fenced and indented code indentation, blank lines, and line boundaries." }
             foreach ($expected in @('the architecture explanation','the system flow','the interface matrix','the external guide')) {
                 if (-not $allText.Contains($expected, [StringComparison]::Ordinal)) { throw "Finalized $renderer output lost authored link wording '$expected'." }
             }

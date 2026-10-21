@@ -243,7 +243,7 @@ public static class MarkdownDocumentParser
         diagnostics.Add(Positioned("YADG-MD-UNSUPPORTED", $"Unsupported Markdown construct '{block.GetType().Name}'.", block, location)); return null;
     }
 
-    private static YadgTable? ConvertTable(Table table, string? id, string? caption, List<Diagnostic> diagnostics, string location, string codeInlinePolicy)
+    internal static YadgTable? ConvertTable(Table table, string? id, string? caption, List<Diagnostic> diagnostics, string location, string codeInlinePolicy)
     {
         if (string.IsNullOrWhiteSpace(id)) { diagnostics.Add(Positioned("YADG-TABLE-001", "Every pipe or grid table must be immediately followed by a stable-ID attribute line.", table, location)); return null; }
         var rows = table.OfType<TableRow>().ToArray();
@@ -252,11 +252,43 @@ public static class MarkdownDocumentParser
         var gridHeader = headerRow.OfType<TableCell>().Select(c => ConvertTableCell(c, diagnostics, location, codeInlinePolicy)).ToArray();
         var dataRows = rows.Where(r => r != headerRow).Select(r => (IReadOnlyList<YadgTableCell>)r.OfType<TableCell>().Select(c => ConvertTableCell(c, diagnostics, location, codeInlinePolicy)).ToArray()).ToArray();
         var isGridTable = rows.SelectMany(row => row.OfType<TableCell>()).Any(cell => cell.ColumnIndex >= 0);
-        var width = isGridTable ? Math.Max(table.ColumnDefinitions.Count, gridHeader.Select(c => c.StartColumn + c.ColumnSpan).DefaultIfEmpty().Max()) : gridHeader.Length;
-        if (width == 0 || dataRows.Any(r => r.Sum(c => c.ColumnSpan) > width || r.Any(c => c.StartColumn >= 0 && c.StartColumn + c.ColumnSpan > width))) diagnostics.Add(Positioned("YADG-TABLE-003", "Grid table cells do not form a consistent rectangular column coverage.", table, location));
+        var headerWidth = gridHeader.Select(c => c.StartColumn + c.ColumnSpan).DefaultIfEmpty().Max();
+        var width = isGridTable ? (table.ColumnDefinitions.Count > 0 ? table.ColumnDefinitions.Count : headerWidth) : gridHeader.Length;
+        if (isGridTable && !HasCompleteGridCoverage(rows, width))
+        {
+            diagnostics.Add(Positioned("YADG-TABLE-003", "Grid table cells do not provide complete, non-overlapping rectangular coverage across all rows and merged spans. Correct the grid borders/cell spans so every logical position is represented exactly once.", table, location));
+            return null;
+        }
         var legacyHeader = gridHeader.Select(c => c.Paragraphs.FirstOrDefault() ?? Array.Empty<YadgInline>()).ToArray();
         var legacyRows = dataRows.Select(row => (IReadOnlyList<IReadOnlyList<YadgInline>>)row.Select(c => c.Paragraphs.FirstOrDefault() ?? Array.Empty<YadgInline>()).ToArray()).ToArray();
         return new YadgTable(id, legacyHeader, legacyRows, caption) { GridHeader = isGridTable ? gridHeader : null, GridRows = isGridTable ? dataRows : null, IsGridTable = isGridTable };
+    }
+
+    internal static bool HasCompleteGridCoverage(IReadOnlyList<TableRow> rows, int width)
+    {
+        if (width <= 0 || rows.Count == 0) return false;
+        var covered = new bool[rows.Count, width];
+        foreach (var (row, rowIndex) in rows.Select((value, index) => (value, index)))
+        {
+            foreach (var cell in row.OfType<TableCell>())
+            {
+                var startColumn = cell.ColumnIndex;
+                var columnSpan = cell.ColumnSpan;
+                var rowSpan = cell.RowSpan;
+                if (startColumn < 0 || columnSpan < 1 || rowSpan < 1 || startColumn + columnSpan > width || rowIndex + rowSpan > rows.Count)
+                    return false;
+                for (var r = rowIndex; r < rowIndex + rowSpan; r++)
+                    for (var c = startColumn; c < startColumn + columnSpan; c++)
+                    {
+                        if (covered[r, c]) return false;
+                        covered[r, c] = true;
+                    }
+            }
+        }
+        for (var r = 0; r < rows.Count; r++)
+            for (var c = 0; c < width; c++)
+                if (!covered[r, c]) return false;
+        return true;
     }
 
     private static int LineAt(string source, int offset)

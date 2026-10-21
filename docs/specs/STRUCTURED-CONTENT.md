@@ -143,7 +143,7 @@ The table uses automatic Word table layout rather than YADG calculating final co
 
 ### M0017 additional blocks and inline forms
 
-Markdig AST blocks now support fenced and indented literal code (except existing diagram-fence handling), nested ordered/unordered lists through nine effective numbering levels, and blockquotes containing paragraphs or nested blockquotes. List items support one paragraph plus nested lists. Task markers in list items are static checkbox glyphs. GFM strikethrough maps to Word strike formatting.
+Markdig AST blocks now support fenced and indented literal code (except existing diagram-fence handling), nested ordered/unordered lists through nine effective numbering levels, and blockquotes containing paragraphs or nested blockquotes. Literal code uses the template-owned `codeBlock` paragraph role; each source line is a paragraph and blank lines/whitespace are preserved. Blockquotes use the template-owned `blockquote` paragraph role and preserve nesting through increasing indentation. Their default selectors are `HTMLPreformatted` and `Quote`. List items support one paragraph plus nested lists. Task markers in list items are static checkbox glyphs. GFM strikethrough maps to Word strike formatting.
 
 The M0003 exclusions below for nested lists and the M0012 exclusions below for ordinary code fences are superseded by M0017. Multi-paragraph list items, unrelated block types in list items, and unsupported block types in quotes or grid cells remain errors. Inline code styling defaults to the template-owned `codeInline` character role; explicit `ignore` and `error` policies remain available.
 

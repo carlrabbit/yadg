@@ -95,11 +95,15 @@ ordered             -> paragraph
 caption             -> paragraph
 generatedTable      -> table
 codeInline          -> character
+blockquote          -> paragraph
+codeBlock           -> paragraph
 ```
 
 A selector that uniquely resolves to the wrong style type is an error with the actual/required type shown.
 
 The `codeInline` role is introduced by M0012. The workspace default is `markdown.codeInline: style`, so templates used with inline code must provide a character style for that role. A workspace may explicitly select `ignore` to preserve code text without styling, or legacy `error` to reject inline code.
+
+M0017 also accepts `styles.blockquote` and `styles.codeBlock` paragraph-style selectors. When omitted, their template compatibility selectors are `Quote` and `HTMLPreformatted`. These two capabilities are required only when selected Markdown content uses the corresponding blocks. A concrete paragraph style must exist in the template; otherwise strict check/build reports the unresolved role. Blockquotes use the selected quote style at each nesting level, and code-block lines use the selected preformatted style without inheriting the placement paragraph style.
 
 Nested lists use the existing ordered/unordered paragraph role and the corresponding Word numbering level, through level nine. The template owns numbering formats and visible list styling at each level.
 
@@ -124,6 +128,8 @@ styles:
   generatedTable: "Table Grid"
   caption: "Caption"
   codeInline: "Code"
+  blockquote: "Quote"
+  codeBlock: "HTML Preformatted"
 
 prototypes:
   figureCaption: figure-caption

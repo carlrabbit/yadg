@@ -1,5 +1,6 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using Markdig;
 using Yadg.Core;
 using Yadg.Word;
 
@@ -51,6 +52,23 @@ public sealed class M0017FocusedTests
         Assert.Contains(table.GridHeader!, cell => cell.ColumnSpan > 1);
         Assert.Contains(table.GridHeader!, cell => cell.RowSpan > 1);
         Assert.Contains(table.GridRows!.SelectMany(row => row), cell => cell.RowSpan > 1);
+    }
+
+    [Fact]
+    public void Grid_tables_reject_unrepresentable_geometry_instead_of_filling_structural_gaps()
+    {
+        const string source = "+---+---+---+\n| A | B | C |\n+===+===+===+\n| D | E | F |\n+---+---+---+";
+        var ast = Markdig.Markdown.Parse(source, new MarkdownPipelineBuilder().UseGridTables().Build());
+        var table = Assert.Single(ast.OfType<Markdig.Extensions.Tables.Table>());
+        var rows = table.OfType<Markdig.Extensions.Tables.TableRow>().ToArray();
+        rows[1].Remove(rows[1].OfType<Markdig.Extensions.Tables.TableCell>().Last());
+        var diagnostics = new List<Diagnostic>();
+        var converted = MarkdownDocumentParser.ConvertTable(table, "bad-grid", null, diagnostics, "bad-grid.md", "style");
+
+        Assert.Null(converted);
+        var diagnostic = Assert.Single(diagnostics, item => item.Code == "YADG-TABLE-003");
+        Assert.True(diagnostic.IsError);
+        Assert.Contains("complete, non-overlapping rectangular coverage", diagnostic.Message);
     }
 
     [Fact]
@@ -128,5 +146,71 @@ public sealed class M0017FocusedTests
         Assert.Contains(table.Descendants<GridSpan>(), span => span.Val?.Value > 1);
         Assert.Contains(table.Descendants<VerticalMerge>(), merge => merge.Val?.Value == MergedCellValues.Restart);
         Assert.Contains(table.Descendants<VerticalMerge>(), merge => merge.Val?.Value == MergedCellValues.Continue);
+        Assert.All(table.Elements<TableRow>(), row => Assert.Equal(3, row.Elements<TableCell>().Sum(cell => cell.TableCellProperties?.GridSpan?.Val?.Value ?? 1)));
+    }
+
+    [Fact]
+    public void Word_authoring_uses_template_blockquote_and_code_styles_and_preserves_nested_levels_and_code_lines()
+    {
+        using var fixture = M0016FocusedTests.Fixture.Create();
+        ConfigureBlockPresentation(fixture.Template);
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Intro {#intro}\n\n> outer **bold**\n>\n> > nested quote\n\n```text\n  first  \n\n    second\n```\n\n        indented first\n\n            indented nested\n");
+        var workspace = WorkspaceLoader.Load(fixture.Root);
+        Assert.True(workspace.IsValid, string.Join(Environment.NewLine, workspace.Diagnostics));
+        var output = Path.Combine(fixture.Root, "block-presentation.docx");
+        WordAuthoring.Author(fixture.Template, output, workspace.Document, workspace.Values.Values);
+
+        using var document = WordprocessingDocument.Open(output, false);
+        var body = document.MainDocumentPart!.Document.Body!;
+        var quoteParagraphs = body.Elements<Paragraph>().Where(paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "QuotePresentation").ToArray();
+        Assert.Equal(2, quoteParagraphs.Length);
+        Assert.Contains("outer bold", string.Concat(quoteParagraphs[0].Descendants<Text>().Select(text => text.Text)));
+        Assert.Equal("nested quote", string.Concat(quoteParagraphs[1].Descendants<Text>().Select(text => text.Text)));
+        Assert.True(int.Parse(quoteParagraphs[1].ParagraphProperties!.Indentation!.Left!.Value!) >
+                    int.Parse(quoteParagraphs[0].ParagraphProperties!.Indentation?.Left?.Value ?? "0"));
+
+        var codeParagraphs = body.Elements<Paragraph>().Where(paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "CodePresentation").ToArray();
+        Assert.Equal(new[] { "  first  ", "", "    second", "    indented first", "", "        indented nested" }, codeParagraphs.Select(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text))));
+        Assert.All(codeParagraphs, paragraph => Assert.NotEqual("PlacementNoise", paragraph.ParagraphProperties!.ParagraphStyleId?.Val?.Value));
+        Assert.DoesNotContain(body.Elements<Paragraph>(), paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "PlacementNoise");
+    }
+
+    [Fact]
+    public void Word_authoring_requires_template_block_presentation_when_quotes_or_code_are_used()
+    {
+        using var fixture = M0016FocusedTests.Fixture.Create();
+        ConfigureBlockPresentation(fixture.Template);
+        using (var document = WordprocessingDocument.Open(fixture.Template, true))
+        {
+            var styles = document.MainDocumentPart!.StyleDefinitionsPart!.Styles!;
+            styles.Elements<Style>().Single(style => style.StyleId?.Value == "QuotePresentation").Remove();
+            styles.Elements<Style>().Single(style => style.StyleId?.Value == "CodePresentation").Remove();
+            document.MainDocumentPart.Document.Save();
+        }
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Intro {#intro}\n\n> quoted text\n\n```\ncode\n```\n");
+        var workspace = WorkspaceLoader.Load(fixture.Root);
+        Assert.True(workspace.IsValid, string.Join(Environment.NewLine, workspace.Diagnostics));
+        var analysis = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
+
+        Assert.Contains(analysis.Diagnostics, diagnostic => diagnostic.Code == "YADG-WORD-STYLE" && diagnostic.Message.Contains("QuotePresentation", StringComparison.Ordinal));
+        Assert.Contains(analysis.Diagnostics, diagnostic => diagnostic.Code == "YADG-WORD-STYLE" && diagnostic.Message.Contains("CodePresentation", StringComparison.Ordinal));
+    }
+
+    private static void ConfigureBlockPresentation(string template)
+    {
+        using var document = WordprocessingDocument.Open(template, true);
+        var main = document.MainDocumentPart!;
+        var styles = main.StyleDefinitionsPart!.Styles!;
+        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "QuotePresentation", StyleName = new StyleName { Val = "Quote Presentation" }, StyleParagraphProperties = new StyleParagraphProperties(new Indentation { Left = "720" }) });
+        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "CodePresentation", StyleName = new StyleName { Val = "Code Presentation" }, StyleRunProperties = new StyleRunProperties(new RunFonts { Ascii = "Consolas", HighAnsi = "Consolas" }) });
+        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "PlacementNoise", StyleName = new StyleName { Val = "Placement Noise" } });
+        var body = main.Document.Body!;
+        var closing = body.Elements<Paragraph>().Single(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text)).Trim() == "{{/yadg:frontmatter}}");
+        closing.InsertBeforeSelf(new Paragraph(new Run(new Text("styles:"))));
+        closing.InsertBeforeSelf(new Paragraph(new Run(new Text("  blockquote: QuotePresentation"))));
+        closing.InsertBeforeSelf(new Paragraph(new Run(new Text("  codeBlock: CodePresentation"))));
+        var placement = body.Elements<Paragraph>().Single(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text)).Trim() == "{{section:intro}}");
+        placement.ParagraphProperties = new ParagraphProperties(new ParagraphStyleId { Val = "PlacementNoise" });
+        main.Document.Save();
     }
 }

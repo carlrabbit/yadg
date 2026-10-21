@@ -167,7 +167,7 @@ Ordered and unordered lists support mixed nesting through nine Word numbering le
    - Nested unordered item
 ````
 
-Task markers `[ ]`, `[x]`, and `[X]` in list items render as static checkbox glyphs. List items may contain one paragraph and nested lists; unrelated block content and multi-paragraph list items are not supported. Blockquotes support paragraphs, inline formatting, links, and nested blockquotes.
+Task markers `[ ]`, `[x]`, and `[X]` in list items render as static checkbox glyphs. List items may contain one paragraph and nested lists; unrelated block content and multi-paragraph list items are not supported. Blockquotes support paragraphs, inline formatting, links, and nested blockquotes. Their paragraph style comes from the template's `blockquote` role (default selector `Quote`); nested levels retain the role and gain indentation.
 
 List presentation is controlled by the DOCX template through styles, numbering, or prototypes.
 
@@ -242,7 +242,7 @@ Default is `style` for inline code. A matching template character style is requi
 
 Pipe tables are the preferred form for simple rectangular data. Pandoc-style grid tables support multiline cell paragraphs and horizontal/vertical cell spans. Cells may contain paragraphs and supported inline content; nested tables, lists, headings, images, and fenced code blocks are rejected with a diagnostic.
 
-Fenced and indented code blocks are emitted literally with source indentation and line boundaries preserved. Blockquotes support paragraphs and nested blockquotes without synthetic labels. `~~struck~~` uses Word strike formatting. Task markers `[ ]`, `[x]`, and `[X]` become static checkbox glyphs rather than interactive controls.
+Fenced and indented code blocks are emitted literally with source indentation, blank lines, and line boundaries preserved. Every code line uses the template's `codeBlock` paragraph role (default selector `HTMLPreformatted`), rather than the placement marker's paragraph style. Blockquotes use the template's `blockquote` paragraph role (default selector `Quote`) for paragraphs and nested levels without synthetic labels. Templates can bind either role to another concrete paragraph style. `~~struck~~` uses Word strike formatting. Task markers `[ ]`, `[x]`, and `[X]` become static checkbox glyphs rather than interactive controls.
 
 ### Inline code
 

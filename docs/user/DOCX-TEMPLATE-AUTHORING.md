@@ -126,6 +126,8 @@ styles:
   generatedTable: "Normal Table"
   caption: "Normal"
   codeInline: "Code Character"
+  blockquote: "Quote"
+  codeBlock: "HTML Preformatted"
 
 prototypes:
   figureCaption: figure-caption
@@ -135,6 +137,8 @@ prototypes:
 ```
 
 Use only keys supported by the current template schema.
+
+For Markdown blockquotes and fenced or indented code blocks, the selected template must contain concrete paragraph styles for `blockquote` and `codeBlock`. The defaults are `Quote` and `HTMLPreformatted`; bind these roles to other template paragraph styles when needed. Code blocks use the selected preformatted style for every source line and do not inherit the placement marker's paragraph style. Nested quotes keep the quote style and gain indentation at each nested level.
 
 ## Presentation resolution principle
 

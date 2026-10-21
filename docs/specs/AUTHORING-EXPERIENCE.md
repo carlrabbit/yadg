@@ -132,7 +132,7 @@ inline code becomes a semantic inline that is rendered using the template-owned 
 
 A template only needs that role when rendered/selected content actually contains styled inline code.
 
-`error` retains the unsupported-inline failure. Fenced and indented non-diagram code blocks are supported as literal content; explicit diagram fences retain their existing handling.
+`error` retains the unsupported-inline failure. Fenced and indented non-diagram code blocks are supported as literal content using the template-owned `codeBlock` paragraph role; explicit diagram fences retain their existing handling. Blockquotes use the template-owned `blockquote` paragraph role and preserve nested levels.
 
 ## Diagnostics
 
