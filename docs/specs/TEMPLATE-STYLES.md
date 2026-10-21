@@ -95,13 +95,17 @@ ordered             -> paragraph
 caption             -> paragraph
 generatedTable      -> table
 codeInline          -> character
+blockquote          -> paragraph
+codeBlock           -> paragraph
 ```
 
 A selector that uniquely resolves to the wrong style type is an error with the actual/required type shown.
 
-The optional `codeInline` role is introduced by M0012.
+The `codeInline` role is introduced by M0012. The workspace default is `markdown.codeInline: style`, so templates used with inline code must provide a character style for that role. A workspace may explicitly select `ignore` to preserve code text without styling, or legacy `error` to reject inline code.
 
-There is no default `codeInline` style. It is required only when workspace `markdown.codeInline: style` applies to content rendered by that template.
+M0017 also accepts `styles.blockquote` and `styles.codeBlock` paragraph-style selectors. When omitted, their template compatibility selectors are `Quote` and `HTMLPreformatted`. These two capabilities are required only when selected Markdown content uses the corresponding blocks. A concrete paragraph style must exist in the template; otherwise strict check/build reports the unresolved role. Blockquotes use the selected quote style at each nesting level, and code-block lines use the selected preformatted style without inheriting the placement paragraph style.
+
+Nested lists use the existing ordered/unordered paragraph role and the corresponding Word numbering level, through level nine. The template owns numbering formats and visible list styling at each level.
 
 ## Front-matter compatibility
 
@@ -124,6 +128,8 @@ styles:
   generatedTable: "Table Grid"
   caption: "Caption"
   codeInline: "Code"
+  blockquote: "Quote"
+  codeBlock: "HTML Preformatted"
 
 prototypes:
   figureCaption: figure-caption
@@ -258,12 +264,12 @@ Authoritative realistic compatibility uses actual Word/LibreOffice-produced temp
 
 ## Non-goals
 
-M0012 does not:
+M0012 did not:
 
 - expose arbitrary raw numbering IDs as normal workspace configuration;
 - create a Word style editor;
 - create new Word styles on behalf of the user;
-- support nested Markdown lists;
+- support nested Markdown lists (superseded by M0017, which uses the same template-owned list role and corresponding Word numbering level through level nine);
 - make fuzzy style matching a public behavior;
 - promise that every latent style visible in the Word gallery is directly bindable.
 

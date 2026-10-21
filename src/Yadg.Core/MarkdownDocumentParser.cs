@@ -1,6 +1,9 @@
 using System.Text.RegularExpressions;
 using Markdig;
 using Markdig.Extensions.Tables;
+using Markdig.Extensions.EmphasisExtras;
+using Markdig.Extensions.TaskLists;
+using Markdig.Renderers.Html;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 
@@ -15,14 +18,26 @@ public static class MarkdownDocumentParser
     private static readonly Regex DiagramInfo = new("^diagram\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
     private static readonly Regex TextDiagramInfo = new("^text\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
     private static readonly Regex MermaidOpening = new("^\\s*`{3,}\\s*(?<info>mermaid.*)$", RegexOptions.Compiled);
-    private sealed record RawTable(string? Id, string? Caption, string[] Header, string[][] Rows);
 
-    public static ParseResult Parse(string markdown, string location = "<input>", string thematicBreakPolicy = "error", string codeInlinePolicy = "error", bool diagramsAutoDetect = false)
+    public static ParseResult Parse(string markdown, string location = "<input>", string thematicBreakPolicy = "error", string codeInlinePolicy = "style", bool diagramsAutoDetect = false)
     {
-        var pipeline = new MarkdownPipelineBuilder().UsePipeTables().UseGenericAttributes().Build();
-        var ast = Markdown.Parse(markdown, pipeline);
+        var pipeline = new MarkdownPipelineBuilder().UsePipeTables().UseGridTables().UseGenericAttributes().UseEmphasisExtras(EmphasisExtraOptions.Strikethrough).UseTaskLists().Build();
         var diagnostics = new List<Diagnostic>();
         var lines = markdown.Replace("\r\n", "\n").Split('\n');
+        var normalizedSource = string.Join('\n', lines);
+        var initialAst = Markdown.ToHtml(normalizedSource, new StringWriter(), pipeline);
+        var codeLineRanges = initialAst.OfType<CodeBlock>().Select(code => (Start: code.Line, End: LineAt(normalizedSource, code.Span.End))).ToArray();
+        var tableAttributeLines = new Dictionary<int, Match>();
+        var parseLines = (string[])lines.Clone();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (codeLineRanges.Any(range => i >= range.Start && i <= range.End)) continue;
+            var match = TableId.Match(lines[i]);
+            if (match.Success) { tableAttributeLines[i] = match; parseLines[i] = string.Empty; }
+        }
+        var parseSource = string.Join('\n', parseLines);
+        // Keep table metadata out of Markdig's row parser, then attach it to the table identified by the AST line span.
+        var ast = Markdown.ToHtml(parseSource, new StringWriter(), pipeline);
         var headingMetadata = lines.Select(line => Regex.Match(line, @"^(?<marks>#{1,6})\s+(?<text>.+?)(?:\s*\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)\})?\s*$"))
             .Where(m => m.Success).Select(m => (Text: Regex.Replace(m.Groups["text"].Value.Trim(), @"\s*\{#[A-Za-z][A-Za-z0-9_-]*\}$", ""), Id: m.Groups["id"].Success ? m.Groups["id"].Value : null)).ToArray();
         var figureMetadata = lines.Select(line => FigureLine.Match(line)).Where(m => m.Success)
@@ -33,14 +48,35 @@ public static class MarkdownDocumentParser
             if (!match.Success) { diagnostics.Add(new("YADG-MERMAID-001", "Mermaid fence requires exactly a stable ID and optional caption attribute.", true, location)); return (Id: (string?)null, Caption: (string?)null); }
             return (Id: (string?)match.Groups["id"].Value, Caption: match.Groups["caption"].Success ? match.Groups["caption"].Value : null);
         }).ToArray();
-        var rawTables = ParseRawTables(lines);
         var blocks = new List<YadgBlock>();
-        var headingOrdinal = 0; var tableOrdinal = 0; var figureOrdinal = 0; var mermaidOrdinal = 0;
-        foreach (var block in ast)
+        var headingOrdinal = 0; var figureOrdinal = 0; var mermaidOrdinal = 0;
+        var astBlocks = ast.ToArray();
+        var attachedTableAttributeLines = new HashSet<int>();
+        for (var astIndex = 0; astIndex < astBlocks.Length; astIndex++)
         {
-            var converted = ConvertBlock(block, diagnostics, location, headingMetadata, ref headingOrdinal, rawTables, ref tableOrdinal, figureMetadata, ref figureOrdinal, mermaidMetadata, ref mermaidOrdinal, thematicBreakPolicy, codeInlinePolicy, diagramsAutoDetect, lines);
+            var block = astBlocks[astIndex];
+            if (block is Table table)
+            {
+                var tableEnd = table.OfType<TableRow>().SelectMany(row => row.OfType<TableCell>()).Select(cell => cell.Span.End).DefaultIfEmpty(table.Span.End).Max();
+                tableEnd = Math.Max(tableEnd, table.Span.End);
+                var lastCellLine = table.OfType<TableRow>().SelectMany(row => row.OfType<TableCell>()).Select(cell => cell.Line).DefaultIfEmpty(LineAt(parseSource, tableEnd)).Max();
+                var tableEndLine = Math.Max(lastCellLine, LineAt(parseSource, tableEnd));
+                var gridTable = table.OfType<TableRow>().SelectMany(row => row.OfType<TableCell>()).Any(cell => cell.ColumnIndex >= 0);
+                var attrLineIndex = tableEndLine + (gridTable ? 2 : 1); // GridTable spans omit its closing separator line.
+                var attrMatch = tableAttributeLines.TryGetValue(attrLineIndex, out var matchedAttribute) ? matchedAttribute : Match.Empty;
+                if (attrMatch.Success) attachedTableAttributeLines.Add(attrLineIndex);
+                var attrs = table.TryGetAttributes();
+                var id = attrs?.Id;
+                var caption = attrs?.Properties?.FirstOrDefault(p => p.Key == "caption").Value as string;
+                if (attrMatch.Success) { id ??= attrMatch.Groups["id"].Value; caption ??= attrMatch.Groups["caption"].Success ? attrMatch.Groups["caption"].Value : null; }
+                var convertedTable = ConvertTable(table, id, caption, diagnostics, location, codeInlinePolicy);
+                if (convertedTable is not null) blocks.Add(convertedTable);
+                continue;
+            }
+            var converted = ConvertBlock(block, diagnostics, location, headingMetadata, ref headingOrdinal, figureMetadata, ref figureOrdinal, mermaidMetadata, ref mermaidOrdinal, thematicBreakPolicy, codeInlinePolicy, diagramsAutoDetect, lines);
             if (converted is not null) blocks.Add(converted);
         }
+        foreach (var attributeLine in tableAttributeLines.Keys.Except(attachedTableAttributeLines)) diagnostics.Add(new("YADG-TABLE-005", "Table attribute line must immediately follow exactly one parsed Markdig table.", true, $"{location}:{attributeLine + 1}:1"));
         if (figureMetadata.Any(f => f.HasTitle)) diagnostics.Add(new("YADG-FIGURE-001", "Markdown image titles are unsupported for M0003 figures.", true, location));
         var sections = new Dictionary<string, YadgSection>(StringComparer.Ordinal);
         var tables = new Dictionary<string, YadgTable>(StringComparer.Ordinal);
@@ -88,7 +124,7 @@ public static class MarkdownDocumentParser
         if (!target.TryAdd(id, value)) diagnostics.Add(new("YADG-REF-002", $"Duplicate stable ID '{id}'.", true, location));
     }
 
-    private static YadgBlock? ConvertBlock(Block block, List<Diagnostic> diagnostics, string location, IReadOnlyList<(string Text, string? Id)> headings, ref int headingOrdinal, IReadOnlyList<RawTable> rawTables, ref int tableOrdinal, IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures, ref int figureOrdinal, IReadOnlyList<(string? Id, string? Caption)> mermaidMetadata, ref int mermaidOrdinal, string thematicBreakPolicy, string codeInlinePolicy, bool diagramsAutoDetect, string[] sourceLines)
+    private static YadgBlock? ConvertBlock(Block block, List<Diagnostic> diagnostics, string location, IReadOnlyList<(string Text, string? Id)> headings, ref int headingOrdinal, IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures, ref int figureOrdinal, IReadOnlyList<(string? Id, string? Caption)> mermaidMetadata, ref int mermaidOrdinal, string thematicBreakPolicy, string codeInlinePolicy, bool diagramsAutoDetect, string[] sourceLines)
     {
         if (block is ThematicBreakBlock)
         {
@@ -106,25 +142,24 @@ public static class MarkdownDocumentParser
             var text = InlineText(heading.Inline); var match = StableId.Match(text); var metadata = headingOrdinal < headings.Count ? headings[headingOrdinal] : (null, null); headingOrdinal++;
             return metadata.Item1 is not null ? new YadgHeading(heading.Level, metadata.Item1, metadata.Item2) : match.Success ? new YadgHeading(heading.Level, match.Groups["text"].Value, match.Groups["id"].Value) : new YadgHeading(heading.Level, text);
         }
-        if (block is Table || (block is ParagraphBlock pipeParagraph && pipeParagraph.Inline?.Any(i => i.GetType().Name == "PipeTableDelimiterInline") == true))
-        {
-            if (tableOrdinal >= rawTables.Count || rawTables[tableOrdinal].Id is null) { diagnostics.Add(Positioned("YADG-TABLE-001", "Every pipe table must be immediately followed by a stable-ID attribute line.", block, location)); return null; }
-            var raw = rawTables[tableOrdinal++];
-            var header = raw.Header.Select(cell => ParseCell(cell, diagnostics, location)).ToArray();
-            var rows = raw.Rows.Select(row => (IReadOnlyList<IReadOnlyList<YadgInline>>)row.Select(cell => ParseCell(cell, diagnostics, location)).ToArray()).ToArray();
-            return new YadgTable(raw.Id!, header, rows, raw.Caption);
-        }
         if (block is ListBlock list)
+            return ConvertList(list, diagnostics, location, codeInlinePolicy, 0);
+        if (block is QuoteBlock quote)
         {
-            var items = new List<YadgListItem>();
-            foreach (var item in list.OfType<ListItemBlock>())
+            var children = new List<YadgBlock>();
+            var nestedHeadingOrdinal = 0;
+            foreach (var child in quote)
             {
-                var paragraphs = item.OfType<ParagraphBlock>().ToArray();
-                if (paragraphs.Length != 1 || item.Any(child => child is ListBlock || child is not ParagraphBlock))
-                { diagnostics.Add(Positioned("YADG-LIST-001", "Only flat single-paragraph list items are supported.", block, location)); return null; }
-                items.Add(new YadgListItem(ConvertInlines(paragraphs[0].Inline, diagnostics, location, codeInlinePolicy)));
+                if (child is not ParagraphBlock and not QuoteBlock) { diagnostics.Add(Positioned("YADG-QUOTE-001", $"Blockquote content '{child.GetType().Name}' is unsupported; only paragraphs and nested blockquotes are supported.", child, location)); continue; }
+                var converted = ConvertBlock(child, diagnostics, location, Array.Empty<(string, string?)>(), ref nestedHeadingOrdinal, figures, ref figureOrdinal, mermaidMetadata, ref mermaidOrdinal, thematicBreakPolicy, codeInlinePolicy, diagramsAutoDetect, sourceLines);
+                if (converted is not null) children.Add(converted);
             }
-            return new YadgList(list.IsOrdered, items);
+            return new YadgBlockQuote(children);
+        }
+        if (block is CodeBlock codeBlock and not FencedCodeBlock)
+        {
+            var text = codeBlock.Lines.ToString();
+            return new YadgCodeBlock(text, (codeBlock as FencedCodeBlock)?.Info?.Trim());
         }
         if (block is FencedCodeBlock fenced)
         {
@@ -134,7 +169,7 @@ public static class MarkdownDocumentParser
             var token = Regex.Match(info, @"^(?<language>[^\s]+)(?:\s+(?<arguments>.*))?$");
             var language = token.Success ? token.Groups["language"].Value : string.Empty;
             var arguments = token.Success && token.Groups["arguments"].Success ? token.Groups["arguments"].Value.Trim() : string.Empty;
-            var isExplicitDiagram = language == "diagram";
+            var isExplicitDiagram = string.Equals(language, "diagram", StringComparison.OrdinalIgnoreCase);
             if (isExplicitDiagram)
             {
                 var diagramMetadata = DiagramInfo.Match(info);
@@ -178,7 +213,8 @@ public static class MarkdownDocumentParser
                 }
             }
             NotDiagramCandidate:
-            if (!string.Equals(fenced.Info, "mermaid", StringComparison.Ordinal) || mermaidOrdinal >= mermaidMetadata.Count || mermaidMetadata[mermaidOrdinal].Id is null)
+            if (!string.Equals(language, "mermaid", StringComparison.OrdinalIgnoreCase)) return new YadgCodeBlock(fenced.Lines.ToString(), fenced.Info?.Trim());
+            if (mermaidOrdinal >= mermaidMetadata.Count || mermaidMetadata[mermaidOrdinal].Id is null)
             {
                 diagnostics.Add(Positioned("YADG-MD-UNSUPPORTED", "Only Mermaid fenced blocks with a stable ID are supported.", block, location));
                 return null;
@@ -207,35 +243,101 @@ public static class MarkdownDocumentParser
         diagnostics.Add(Positioned("YADG-MD-UNSUPPORTED", $"Unsupported Markdown construct '{block.GetType().Name}'.", block, location)); return null;
     }
 
-    private static IReadOnlyList<YadgInline> ConvertCell(TableCell cell, List<Diagnostic> diagnostics, string location)
+    internal static YadgTable? ConvertTable(Table table, string? id, string? caption, List<Diagnostic> diagnostics, string location, string codeInlinePolicy)
     {
-        var paragraphs = cell.OfType<ParagraphBlock>().ToArray();
-        return paragraphs.Length == 1 ? ConvertInlines(paragraphs[0].Inline, diagnostics, location) : Array.Empty<YadgInline>();
-    }
-
-    private static IReadOnlyList<YadgInline> ParseCell(string source, List<Diagnostic> diagnostics, string location)
-    {
-        var paragraph = Markdown.Parse(source, new MarkdownPipelineBuilder().UsePipeTables().UseGenericAttributes().Build()).OfType<ParagraphBlock>().FirstOrDefault();
-        return paragraph is null ? Array.Empty<YadgInline>() : ConvertInlines(paragraph.Inline, diagnostics, location);
-    }
-
-    private static IReadOnlyList<RawTable> ParseRawTables(string[] lines)
-    {
-        var tables = new List<RawTable>();
-        for (var i = 0; i + 1 < lines.Length; i++)
+        if (string.IsNullOrWhiteSpace(id)) { diagnostics.Add(Positioned("YADG-TABLE-001", "Every pipe or grid table must be immediately followed by a stable-ID attribute line.", table, location)); return null; }
+        var rows = table.OfType<TableRow>().ToArray();
+        if (rows.Length == 0) { diagnostics.Add(Positioned("YADG-TABLE-002", "Markdown table has no rows.", table, location)); return null; }
+        var headerRow = rows.FirstOrDefault(r => r.IsHeader) ?? rows[0];
+        var gridHeader = headerRow.OfType<TableCell>().Select(c => ConvertTableCell(c, diagnostics, location, codeInlinePolicy)).ToArray();
+        var dataRows = rows.Where(r => r != headerRow).Select(r => (IReadOnlyList<YadgTableCell>)r.OfType<TableCell>().Select(c => ConvertTableCell(c, diagnostics, location, codeInlinePolicy)).ToArray()).ToArray();
+        var isGridTable = rows.SelectMany(row => row.OfType<TableCell>()).Any(cell => cell.ColumnIndex >= 0);
+        var headerWidth = gridHeader.Select(c => c.StartColumn + c.ColumnSpan).DefaultIfEmpty().Max();
+        var width = isGridTable ? (table.ColumnDefinitions.Count > 0 ? table.ColumnDefinitions.Count : headerWidth) : gridHeader.Length;
+        if (isGridTable && !HasCompleteGridCoverage(rows, width))
         {
-            if (!IsPipeRow(lines[i]) || !IsSeparatorRow(lines[i + 1])) continue;
-            var header = SplitPipeRow(lines[i]); var rows = new List<string[]>(); var j = i + 2;
-            while (j < lines.Length && IsPipeRow(lines[j])) { rows.Add(SplitPipeRow(lines[j])); j++; }
-            string? id = null; string? caption = null; if (j < lines.Length) { var match = TableId.Match(lines[j]); if (match.Success) { id = match.Groups["id"].Value; caption = match.Groups["caption"].Success ? match.Groups["caption"].Value : null; } }
-            tables.Add(new(id, caption, header, rows.ToArray())); i = j;
+            diagnostics.Add(Positioned("YADG-TABLE-003", "Grid table cells do not provide complete, non-overlapping rectangular coverage across all rows and merged spans. Correct the grid borders/cell spans so every logical position is represented exactly once.", table, location));
+            return null;
         }
-        return tables;
+        var legacyHeader = gridHeader.Select(c => c.Paragraphs.FirstOrDefault() ?? Array.Empty<YadgInline>()).ToArray();
+        var legacyRows = dataRows.Select(row => (IReadOnlyList<IReadOnlyList<YadgInline>>)row.Select(c => c.Paragraphs.FirstOrDefault() ?? Array.Empty<YadgInline>()).ToArray()).ToArray();
+        return new YadgTable(id, legacyHeader, legacyRows, caption) { GridHeader = isGridTable ? gridHeader : null, GridRows = isGridTable ? dataRows : null, IsGridTable = isGridTable };
     }
 
-    private static bool IsPipeRow(string line) => line.Contains('|', StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(line);
-    private static bool IsSeparatorRow(string line) => Regex.IsMatch(line, @"^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$");
-    private static string[] SplitPipeRow(string line) => line.Trim().Trim('|').Split('|').Select(cell => cell.Trim()).ToArray();
+    internal static bool HasCompleteGridCoverage(IReadOnlyList<TableRow> rows, int width)
+    {
+        if (width <= 0 || rows.Count == 0) return false;
+        var covered = new bool[rows.Count, width];
+        foreach (var (row, rowIndex) in rows.Select((value, index) => (value, index)))
+        {
+            foreach (var cell in row.OfType<TableCell>())
+            {
+                var startColumn = cell.ColumnIndex;
+                var columnSpan = cell.ColumnSpan;
+                var rowSpan = cell.RowSpan;
+                if (startColumn < 0 || columnSpan < 1 || rowSpan < 1 || startColumn + columnSpan > width || rowIndex + rowSpan > rows.Count)
+                    return false;
+                for (var r = rowIndex; r < rowIndex + rowSpan; r++)
+                    for (var c = startColumn; c < startColumn + columnSpan; c++)
+                    {
+                        if (covered[r, c]) return false;
+                        covered[r, c] = true;
+                    }
+            }
+        }
+        for (var r = 0; r < rows.Count; r++)
+            for (var c = 0; c < width; c++)
+                if (!covered[r, c]) return false;
+        return true;
+    }
+
+    private static int LineAt(string source, int offset)
+    {
+        if (source.Length == 0 || offset < 0) return 0;
+        var end = Math.Min(offset, source.Length - 1); var line = 0;
+        for (var i = 0; i <= end; i++) if (source[i] == '\n') line++;
+        return line;
+    }
+
+    private static YadgTableCell ConvertTableCell(TableCell cell, List<Diagnostic> diagnostics, string location, string codeInlinePolicy)
+    {
+        var paragraphs = new List<IReadOnlyList<YadgInline>>();
+        foreach (var block in cell)
+        {
+            if (block is ParagraphBlock paragraph) paragraphs.Add(ConvertInlines(paragraph.Inline, diagnostics, location, codeInlinePolicy));
+            else diagnostics.Add(Positioned("YADG-TABLE-004", $"Grid table cell contains unsupported block '{block.GetType().Name}'. Lists, headings, nested tables and code blocks are not supported in table cells.", block, location));
+        }
+        if (paragraphs.Count == 0) paragraphs.Add(Array.Empty<YadgInline>());
+        return new YadgTableCell(paragraphs, Math.Max(1, cell.ColumnSpan), Math.Max(1, cell.RowSpan), cell.ColumnIndex);
+    }
+
+    private static YadgList ConvertList(ListBlock list, List<Diagnostic> diagnostics, string location, string codeInlinePolicy, int level)
+    {
+        var items = new List<YadgListItem>();
+        foreach (var item in list.OfType<ListItemBlock>())
+        {
+            var paragraphs = item.OfType<ParagraphBlock>().ToArray();
+            var nested = item.OfType<ListBlock>().ToArray();
+            if (paragraphs.Length != 1 || item.Any(child => child is not ParagraphBlock && child is not ListBlock))
+            { diagnostics.Add(Positioned("YADG-LIST-001", "List items support one paragraph and nested lists; other multi-paragraph or block content is unsupported.", item, location)); continue; }
+            var rawInlines = paragraphs[0].Inline;
+            bool? checkedValue = null;
+            if (rawInlines is not null)
+            {
+                var task = rawInlines.OfType<TaskList>().FirstOrDefault();
+                if (task is not null)
+                {
+                    var prop = task.GetType().GetProperty("Checked") ?? task.GetType().GetProperty("IsChecked");
+                    checkedValue = prop?.GetValue(task) as bool? ?? false;
+                    task.Remove();
+                }
+            }
+            if (level > 8) diagnostics.Add(Positioned("YADG-LIST-002", "List nesting exceeds Word's supported nine effective levels.", item, location));
+            items.Add(new YadgListItem(ConvertInlines(rawInlines, diagnostics, location, codeInlinePolicy), nested.Select(n => ConvertList(n, diagnostics, location, codeInlinePolicy, level + 1)).ToArray(), checkedValue));
+        }
+        return new YadgList(list.IsOrdered, items, level);
+    }
+
 
     private static IReadOnlyList<YadgInline> ConvertInlines(ContainerInline? container, List<Diagnostic> diagnostics, string location, string codeInlinePolicy = "error")
     {
@@ -250,7 +352,8 @@ public static class MarkdownDocumentParser
                     break;
                 case LineBreakInline lineBreak: result.Add(lineBreak.IsHard ? new YadgHardBreak() : new YadgSoftBreak()); break;
                 case EmphasisInline emphasis:
-                    var children = ConvertInlines(emphasis, diagnostics, location, codeInlinePolicy); result.Add(emphasis.DelimiterCount >= 2 ? new YadgStrong(children) : new YadgEmphasis(children)); break;
+                    var children = ConvertInlines(emphasis, diagnostics, location, codeInlinePolicy);
+                    result.Add(emphasis.GetType().Name.Contains("Strikethrough", StringComparison.Ordinal) || emphasis.DelimiterChar == '~' ? new YadgStrike(children) : emphasis.DelimiterCount >= 2 ? new YadgStrong(children) : new YadgEmphasis(children)); break;
                 case LinkInline link when !link.IsImage:
                     var destination = link.Url ?? string.Empty;
                     var internalTarget = destination.StartsWith('#') ? destination[1..] : null;

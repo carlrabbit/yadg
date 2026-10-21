@@ -101,7 +101,7 @@ public static class WorkspaceValuesParser
         string? producerExecutable = null;
         string? publishPath = null;
         var thematicBreak = "error";
-        var codeInline = "error";
+        var codeInline = "style";
         var diagramsAutoDetect = false;
         var headingReferences = "number";
         var figureReferences = "number";

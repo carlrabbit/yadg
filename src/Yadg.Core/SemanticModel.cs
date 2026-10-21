@@ -21,9 +21,17 @@ public sealed record DocxLocation(string FilePath, string Story, IReadOnlyList<s
 public abstract record YadgBlock;
 public sealed record YadgHeading(int Level, string Text, string? Id = null) : YadgBlock;
 public sealed record YadgParagraph(IReadOnlyList<YadgInline> Inlines) : YadgBlock;
-public sealed record YadgList(bool Ordered, IReadOnlyList<YadgListItem> Items) : YadgBlock;
-public sealed record YadgListItem(IReadOnlyList<YadgInline> Inlines);
-public sealed record YadgTable(string Id, IReadOnlyList<IReadOnlyList<YadgInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<YadgInline>>> Rows, string? Caption = null) : YadgBlock;
+public sealed record YadgList(bool Ordered, IReadOnlyList<YadgListItem> Items, int Level = 0) : YadgBlock;
+public sealed record YadgListItem(IReadOnlyList<YadgInline> Inlines, IReadOnlyList<YadgList>? NestedLists = null, bool? TaskChecked = null);
+public sealed record YadgTable(string Id, IReadOnlyList<IReadOnlyList<YadgInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<YadgInline>>> Rows, string? Caption = null) : YadgBlock
+{
+    public IReadOnlyList<YadgTableCell>? GridHeader { get; init; }
+    public IReadOnlyList<IReadOnlyList<YadgTableCell>>? GridRows { get; init; }
+    public bool IsGridTable { get; init; }
+}
+public sealed record YadgTableCell(IReadOnlyList<IReadOnlyList<YadgInline>> Paragraphs, int ColumnSpan = 1, int RowSpan = 1, int StartColumn = 0);
+public sealed record YadgCodeBlock(string Text, string? Language = null) : YadgBlock;
+public sealed record YadgBlockQuote(IReadOnlyList<YadgBlock> Blocks) : YadgBlock;
 public sealed record YadgFigure(string Id, string AltText, string AssetPath, string SourcePath, ImageAsset? Asset = null, string? GeneratedSource = null) : YadgBlock
 {
     public string? GeneratedSvg { get; init; }
@@ -42,6 +50,7 @@ public sealed record YadgSoftBreak : YadgInline;
 public sealed record YadgReference(string Id) : YadgInline;
 public sealed record YadgLink(string Destination, IReadOnlyList<YadgInline> Inlines, string? InternalTargetId = null) : YadgInline;
 public sealed record YadgCode(string Value) : YadgInline;
+public sealed record YadgStrike(IReadOnlyList<YadgInline> Inlines) : YadgInline;
 
 public sealed record ReferenceFormatting(string Headings = "number", string Figures = "number", string Tables = "number")
 {

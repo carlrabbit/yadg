@@ -77,7 +77,7 @@ The allowed root mapping is extended with optional:
 ```yaml
 markdown:
   thematicBreak: error
-  codeInline: error
+  codeInline: style
 ```
 
 The supported values are:
@@ -89,7 +89,7 @@ codeInline:     error | ignore | style
 
 Unknown keys or values are configuration errors.
 
-The defaults are `error`, preserving 1.0 behavior for existing workspaces.
+`thematicBreak` defaults to `error`. `codeInline` defaults to `style`; existing workspace configuration is not rewritten. Explicit `codeInline: error` and `codeInline: ignore` remain supported.
 
 These keys are stable YADG product vocabulary. Markdig implementation type names such as `ThematicBreakBlock` and `CodeInline` are diagnostic/internal concepts and are not configuration keys.
 
@@ -132,9 +132,7 @@ inline code becomes a semantic inline that is rendered using the template-owned 
 
 A template only needs that role when rendered/selected content actually contains styled inline code.
 
-`error` retains the 1.0 unsupported-inline failure.
-
-Inline code remains inline content; fenced non-Mermaid code blocks remain unsupported by M0012.
+`error` retains the unsupported-inline failure. Fenced and indented non-diagram code blocks are supported as literal content using the template-owned `codeBlock` paragraph role; explicit diagram fences retain their existing handling. Blockquotes use the template-owned `blockquote` paragraph role and preserve nested levels.
 
 ## Diagnostics
 
@@ -306,12 +304,12 @@ M0012 does not introduce a JSON diagnostic/listing format.
 
 ## Non-goals
 
-M0012 does not:
+M0012 did not:
 
 - render thematic breaks;
-- add fenced code-block rendering other than existing Mermaid;
+- add fenced code-block rendering other than existing Mermaid (superseded by M0017 literal fenced and indented code support);
 - add arbitrary per-Markdig-node ignore rules;
-- add nested lists;
+- add nested lists (superseded by M0017 nested ordered/unordered list support);
 - add machine-readable `check` output;
 - add an interactive TUI/template editor;
 - synthesize a starter DOCX template;
