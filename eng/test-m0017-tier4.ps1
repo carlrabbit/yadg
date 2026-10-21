@@ -5,6 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+$revision = (& git -C $repo rev-parse HEAD).Trim()
 $package = [IO.Path]::GetFullPath($PackagePath)
 if (-not (Test-Path -LiteralPath $package -PathType Leaf)) { throw "M0017 Tier 4 package is missing: $package" }
 $sha256 = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToUpperInvariant()
@@ -91,7 +92,7 @@ try {
     }
     finally { $zip.Dispose() }
 
-    $evidence = [ordered]@{ milestone = 'M0017'; packagePath = [IO.Path]::GetRelativePath($repo, $package).Replace([char]92,[char]47); packageSha256 = $sha256; packageVersion = '1.2.0'; isolatedToolPath = 'temporary dotnet tool path'; isolatedWorkspace = 'temporary consumer workspace'; installedCommand = $installed; commands = $commands; authoredDocxSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); codeBlockPaginationStyle = @('keepLines', 'keepNext'); mergedGrid = [ordered]@{ rowCount = 3; logicalColumnsPerRow = 3; horizontalSpan = 2; verticalMergeRestart = $true; verticalMergeContinuation = $true; visibleTemplateBorderEdges = @('top', 'left', 'bottom', 'right', 'insideH', 'insideV') }; result = 'passed' }
+    $evidence = [ordered]@{ milestone = 'M0017'; repositoryRevision = $revision; packagePath = [IO.Path]::GetRelativePath($repo, $package).Replace([char]92,[char]47); packageSha256 = $sha256; packageVersion = '1.2.0'; isolatedToolPath = 'temporary dotnet tool path'; isolatedWorkspace = 'temporary consumer workspace'; installedCommand = $installed; commands = $commands; authoredDocxSha256 = (Get-FileHash -LiteralPath $authored.FullName -Algorithm SHA256).Hash.ToUpperInvariant(); codeBlockPaginationStyle = @('keepLines', 'keepNext'); mergedGrid = [ordered]@{ rowCount = 3; logicalColumnsPerRow = 3; horizontalSpan = 2; verticalMergeRestart = $true; verticalMergeContinuation = $true; visibleTemplateBorderEdges = @('top', 'left', 'bottom', 'right', 'insideH', 'insideV') }; result = 'passed' }
     $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'tier4-evidence.json') -Encoding utf8
     Write-Output "M0017 isolated packed-tool check/build passed for Yadg 1.2.0 ($sha256)."
 }
