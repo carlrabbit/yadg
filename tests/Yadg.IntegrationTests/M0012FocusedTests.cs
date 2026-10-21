@@ -14,7 +14,7 @@ public sealed class M0012FocusedTests
         var defaults = MarkdownDocumentParser.Parse("---", "content.md");
         Assert.Contains(defaults.Diagnostics, d => d.Code == "YADG-MD-UNSUPPORTED");
         Assert.Contains(defaults.Diagnostics, d => d.Location == "content.md:1:1");
-        var codeError = MarkdownDocumentParser.Parse("first line\n\nA `code` span.", "content.md");
+        var codeError = MarkdownDocumentParser.Parse("first line\n\nA `code` span.", "content.md", codeInlinePolicy: "error");
         Assert.Contains(codeError.Diagnostics, d => d.Code == "YADG-MD-UNSUPPORTED" && d.Location is not null && d.Location.StartsWith("content.md:3:", StringComparison.Ordinal));
 
         var ignored = MarkdownDocumentParser.Parse("before `literal` after\n\n---", "content.md", "ignore", "ignore");
@@ -25,12 +25,12 @@ public sealed class M0012FocusedTests
     }
 
     [Fact]
-    public void Workspace_markdown_policy_keys_are_validated_and_default_to_error()
+    public void Workspace_markdown_policy_keys_are_validated_and_inline_code_defaults_to_style()
     {
         var diagnostics = new List<Diagnostic>();
         var defaults = WorkspaceValuesParser.Parse("---\nyadg:\n  version: 1\n---\n", "YADG.md", diagnostics);
         Assert.Equal("error", defaults.ThematicBreakPolicy);
-        Assert.Equal("error", defaults.CodeInlinePolicy);
+        Assert.Equal("style", defaults.CodeInlinePolicy);
 
         diagnostics.Clear();
         var configured = WorkspaceValuesParser.Parse("---\nyadg:\n  version: 1\nmarkdown:\n  thematicBreak: ignore\n  codeInline: style\n---\n", "YADG.md", diagnostics);
@@ -525,7 +525,6 @@ public sealed class M0012FocusedTests
         finally { Console.SetOut(originalOut); Console.SetError(originalError); }
         Assert.Contains("degradations=", stdout.ToString(), StringComparison.Ordinal);
         Assert.Contains("YADG-YOLO-MD-001", stderr.ToString(), StringComparison.Ordinal);
-        Assert.Contains("YADG-YOLO-MD-002", stderr.ToString(), StringComparison.Ordinal);
         Assert.Contains("YADG-YOLO-FIGURE-001", stderr.ToString(), StringComparison.Ordinal);
         Assert.Contains("YADG-YOLO-UNRESOLVED-001", stderr.ToString(), StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(fixture.Root, "YadgPreWords", "report.docx")));

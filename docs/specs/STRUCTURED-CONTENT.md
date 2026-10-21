@@ -36,7 +36,7 @@ The semantic model must not contain Open XML SDK types.
 
 ### Supported source form
 
-M0003 supports flat unordered and ordered Markdown lists.
+M0017 supports unordered and ordered Markdown lists, including nested ordered/unordered combinations up to nine effective Word numbering levels. Static task-list markers are also supported.
 
 Examples:
 
@@ -50,15 +50,12 @@ Examples:
 2. Second
 ```
 
-Each list item contains one inline sequence using the already-supported inline subset.
+Each list item contains one paragraph using the supported inline subset and may contain nested child lists. Nested lists preserve source order and use the template's numbering at the corresponding level.
 
-M0003 does not support:
+YADG does not support:
 
-- nested lists;
-- mixed nested list types;
-- task/check lists;
 - multi-paragraph list items;
-- block content inside list items.
+- block content other than nested lists inside list items.
 
 Unsupported list forms fail `check`.
 
@@ -89,11 +86,15 @@ YADG does not generate substitute bullet/number glyphs when the template numberi
 
 M0003 does not synthesize arbitrary list appearance.
 
+Nested items use the same template-owned list role/prototype with the effective Word numbering level set to the nesting depth. Depths beyond nine are diagnosed before output mutation. Task markers are static `☐` / `☒` glyphs in the list paragraph, not Word content controls.
+
 ## Tables
 
 ### Markdown syntax and identity
 
-M0003 supports Markdown pipe tables with a header row.
+M0017 uses Markdig's `Table`, `TableRow`, and `TableCell` AST as the sole semantic source for pipe and Pandoc-style grid tables. YADG does not split Markdown table lines or cell content itself.
+
+Pipe tables are the preferred form for simple rectangular tables. Grid tables are the alternative when cells need multiple lines or merged rows/columns. Each table requires one `{#id}` attribute-only line immediately after the table; optional `caption="..."` remains supported on that line. The metadata line is attached to the table and never rendered as a paragraph.
 
 A table becomes a referenceable YADG table only when immediately followed by an attribute-only line containing its stable ID:
 
@@ -107,9 +108,9 @@ A table becomes a referenceable YADG table only when immediately followed by an 
 
 The attribute line belongs to the table and is not rendered.
 
-Every M0003 table must have a stable ID. An un-ID'd Markdown table is invalid.
+Every table must have a stable ID. An un-ID'd Markdown table is invalid.
 
-The attribute line contains only the stable ID in M0003. Additional table attributes are not defined.
+The attribute line accepts a stable ID and the existing optional caption attribute.
 
 ### Cell content
 
@@ -118,10 +119,11 @@ Table cells support:
 - plain text;
 - emphasis;
 - strong emphasis;
-- soft line breaks;
-- hard line breaks.
+- soft and hard line breaks;
+- multiple paragraphs in grid-table cells;
+- Markdig-represented horizontal and vertical grid-cell spans.
 
-Cells do not support block content, nested tables, lists, images, or spans.
+Cells do not support lists, headings, nested tables, fenced code, images, or other non-paragraph blocks. Unsupported cell blocks fail with an actionable diagnostic. Prepared-table row population continues to accept rectangular single-paragraph cells; merged and multi-paragraph shapes are not valid prepared-row input.
 
 Pipe-table column alignment markers may be parsed but M0003 does not establish a Word alignment contract from them; Word presentation is template-owned.
 
@@ -137,7 +139,13 @@ TableGrid
 
 The Markdown header row is semantically marked as the first/header row in OOXML, and the generated table enables first-row table-style behavior.
 
-The table uses automatic Word table layout rather than YADG calculating final column widths.
+The table uses automatic Word table layout rather than YADG calculating final column widths. Grid cell paragraphs remain separate Word paragraphs. Markdig `ColumnSpan` and `RowSpan` map to OOXML `gridSpan` and `vMerge`; invalid or inconsistent coverage is rejected rather than guessed.
+
+### M0017 additional blocks and inline forms
+
+Markdig AST blocks now support fenced and indented literal code (except existing diagram-fence handling), nested ordered/unordered lists through nine effective numbering levels, and blockquotes containing paragraphs or nested blockquotes. List items support one paragraph plus nested lists. Task markers in list items are static checkbox glyphs. GFM strikethrough maps to Word strike formatting.
+
+The M0003 exclusions below for nested lists and the M0012 exclusions below for ordinary code fences are superseded by M0017. Multi-paragraph list items, unrelated block types in list items, and unsupported block types in quotes or grid cells remain errors. Inline code styling defaults to the template-owned `codeInline` character role; explicit `ignore` and `error` policies remain available.
 
 M0003 does not populate or mutate a prepared existing Word table. `table-rows` or equivalent prepared-table behavior is explicitly postponed.
 

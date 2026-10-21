@@ -34,7 +34,7 @@ to inspect discovered sources, templates, and referenceable semantic objects.
 
 ## Supported Markdown profile
 
-YADG accepts one constrained, Pandoc-inspired profile: CommonMark core, GFM pipe tables, and explicit `{#id}` attributes only on the supported semantic objects described below. This is not full Pandoc, MyST, or GitHub-flavored Markdown compatibility. Unsupported extensions are not part of the authoring contract.
+YADG accepts a constrained, Markdig-based profile: CommonMark blocks and inlines, pipe and Pandoc-style grid tables, GFM strikethrough and task markers, plus explicit `{#id}` attributes on supported semantic objects. Supported authoring includes fenced and indented code, nested lists, and blockquotes. This is not full Pandoc, MyST, or GitHub-flavored Markdown compatibility; unsupported extensions are outside the contract.
 
 | Authoring intent | Syntax | Word result |
 |---|---|---|
@@ -152,7 +152,7 @@ In `label-number` mode, the actual DOCX caption prototype supplies the label, it
 
 ## Lists
 
-Flat lists are supported.
+Ordered and unordered lists support mixed nesting through nine Word numbering levels.
 
 <!-- M0015-example: markdown-unordered-list -->
 ````markdown
@@ -164,9 +164,10 @@ Flat lists are supported.
 ````markdown
 1. First
 2. Second
+   - Nested unordered item
 ````
 
-Nested lists, task lists, block content in list items, and multi-paragraph list items are not supported.
+Task markers `[ ]`, `[x]`, and `[X]` in list items render as static checkbox glyphs. List items may contain one paragraph and nested lists; unrelated block content and multi-paragraph list items are not supported. Blockquotes support paragraphs, inline formatting, links, and nested blockquotes.
 
 List presentation is controlled by the DOCX template through styles, numbering, or prototypes.
 
@@ -237,7 +238,11 @@ error
 ignore
 ```
 
-Default is `error`.
+Default is `style` for inline code. A matching template character style is required when styled inline code is present. Explicit `error` and `ignore` remain available.
+
+Pipe tables are the preferred form for simple rectangular data. Pandoc-style grid tables support multiline cell paragraphs and horizontal/vertical cell spans. Cells may contain paragraphs and supported inline content; nested tables, lists, headings, images, and fenced code blocks are rejected with a diagnostic.
+
+Fenced and indented code blocks are emitted literally with source indentation and line boundaries preserved. Blockquotes support paragraphs and nested blockquotes without synthetic labels. `~~struck~~` uses Word strike formatting. Task markers `[ ]`, `[x]`, and `[X]` become static checkbox glyphs rather than interactive controls.
 
 ### Inline code
 
@@ -253,7 +258,7 @@ Default is `error`.
 
 `ignore` preserves code text as ordinary text. `style` requires a suitable template character-style role.
 
-Ordinary fenced code blocks are unsupported except for Mermaid and the text-diagram forms described below.
+Ordinary fenced and indented code blocks are emitted as literal code. Explicit `mermaid` fences and the supported text-diagram fence forms described below retain their diagram behavior.
 
 # Diagramming in Markdown
 

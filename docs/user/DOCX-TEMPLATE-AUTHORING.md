@@ -348,7 +348,7 @@ styles:
   codeInline: "Code"
 ```
 
-`codeInline` requires a character style, not a paragraph style.
+`codeInline` requires a character style, not a paragraph style. Since inline code uses `style` by default, a template used with inline code must provide this role (or the workspace may explicitly choose `ignore` or `error`). Nested lists use the template's existing ordered/unordered paragraph roles and Word numbering levels up to level nine. Blockquotes retain surrounding template paragraph presentation; YADG does not add quotation labels or decorative marks.
 
 ## Generated tables
 

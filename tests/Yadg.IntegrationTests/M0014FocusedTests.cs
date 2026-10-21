@@ -123,13 +123,13 @@ public sealed class M0014FocusedTests
         foreach (var weak in new[] { "A -> B", "key: value", "ordinary prose" })
         {
             var result = MarkdownDocumentParser.Parse($"```text\n{weak}\n```", "content.md", diagramsAutoDetect: true);
-            Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "YADG-MD-UNSUPPORTED");
+            Assert.IsType<YadgCodeBlock>(Assert.Single(result.Document!.Blocks));
             Assert.Empty(result.Document!.Figures);
         }
         var language = MarkdownDocumentParser.Parse($"```csharp\n{NestedBoxes}\n```", "content.md", diagramsAutoDetect: true);
-        Assert.Contains(language.Diagnostics, diagnostic => diagnostic.Code == "YADG-MD-UNSUPPORTED");
+        Assert.IsType<YadgCodeBlock>(Assert.Single(language.Document!.Blocks));
         var disabled = MarkdownDocumentParser.Parse($"```\n{NestedBoxes}\n```", "content.md");
-        Assert.Contains(disabled.Diagnostics, diagnostic => diagnostic.Code == "YADG-MD-UNSUPPORTED");
+        Assert.IsType<YadgCodeBlock>(Assert.Single(disabled.Document!.Blocks));
         var explicitStillWorks = MarkdownDocumentParser.Parse($"```diagram {{#explicit}}\n{NestedBoxes}\n```", "content.md");
         Assert.True(explicitStillWorks.IsValid);
         var asciiCandidate = MarkdownDocumentParser.Parse("```\n+----+\n| A  |\n+----+\n```", "content.md", diagramsAutoDetect: true);
@@ -137,10 +137,10 @@ public sealed class M0014FocusedTests
         var unicodeArrowCandidate = MarkdownDocumentParser.Parse("```\n───→\n```", "content.md", diagramsAutoDetect: true);
         Assert.IsType<YadgDiagram>(Assert.Single(unicodeArrowCandidate.Document!.Blocks));
         var isolatedArrowCandidate = MarkdownDocumentParser.Parse("```\n↓\n```", "content.md", diagramsAutoDetect: true);
-        Assert.Contains(isolatedArrowCandidate.Diagnostics, diagnostic => diagnostic.Code == "YADG-MD-UNSUPPORTED");
+        Assert.IsType<YadgCodeBlock>(Assert.Single(isolatedArrowCandidate.Document!.Blocks));
         Assert.Empty(isolatedArrowCandidate.Document!.Figures);
         var uncovered = MarkdownDocumentParser.Parse($"```\n{UncoveredGap}\n```", "content.md", diagramsAutoDetect: true);
-        Assert.Contains(uncovered.Diagnostics, diagnostic => diagnostic.Code == "YADG-MD-UNSUPPORTED");
+        Assert.IsType<YadgCodeBlock>(Assert.Single(uncovered.Document!.Blocks));
     }
 
     [Fact]

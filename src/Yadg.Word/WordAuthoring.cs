@@ -230,11 +230,12 @@ public static class WordAuthoring
     private static bool HasInlineCode(YadgBlock block) => block switch
     {
         YadgParagraph p => p.Inlines.Any(HasCode),
-        YadgList l => l.Items.Any(i => i.Inlines.Any(HasCode)),
-        YadgTable t => t.Header.Concat(t.Rows.SelectMany(r => r)).Any(c => c.Any(HasCode)),
+        YadgList l => l.Items.Any(i => i.Inlines.Any(HasCode) || (i.NestedLists ?? Array.Empty<YadgList>()).Any(HasInlineCode)),
+        YadgTable t => t.IsGridTable ? (t.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(t.GridRows?.SelectMany(r => r) ?? Array.Empty<YadgTableCell>()).Any(c => c.Paragraphs.SelectMany(p => p).Any(HasCode)) : t.Header.Concat(t.Rows.SelectMany(r => r)).Any(c => c.Any(HasCode)),
+        YadgBlockQuote q => q.Blocks.Any(HasInlineCode),
         _ => false
     };
-    private static bool HasCode(YadgInline i) => i is YadgCode || i is YadgEmphasis e && e.Inlines.Any(HasCode) || i is YadgStrong s && s.Inlines.Any(HasCode);
+    private static bool HasCode(YadgInline i) => i is YadgCode || i is YadgEmphasis e && e.Inlines.Any(HasCode) || i is YadgStrong s && s.Inlines.Any(HasCode) || i is YadgStrike st && st.Inlines.Any(HasCode);
     private static bool IsUsedRoleDegradation(Diagnostic diagnostic, HashSet<string> used)
     {
         if (diagnostic.Code is "YADG-YOLO-LIST-001" or "YADG-YOLO-LIST-002" or "YADG-YOLO-LIST-003") return used.Contains(diagnostic.Message.Contains("unordered", StringComparison.OrdinalIgnoreCase) ? "unordered" : "ordered");
@@ -518,6 +519,8 @@ public static class WordAuthoring
 
     private static void ValidatePrototype(TableRow prototype, YadgTable semantic, string id, string location, List<Diagnostic> diagnostics)
     {
+        if ((semantic.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(semantic.GridRows?.SelectMany(r => r) ?? Array.Empty<YadgTableCell>()).Any(cell => cell.ColumnSpan > 1 || cell.RowSpan > 1 || cell.Paragraphs.Count != 1))
+            diagnostics.Add(new("YADG-PREPARED-010", $"Prepared table '{id}' supports only rectangular single-paragraph cells; merged cells and multiple cell paragraphs are unsupported for prepared row population.", true, location));
         var cells = prototype.Elements<TableCell>().ToArray();
         if (cells.Length != semantic.Header.Count)
             diagnostics.Add(new("YADG-PREPARED-003", $"Prepared table '{id}' prototype has {cells.Length} cells but the semantic table has {semantic.Header.Count} columns.", true, location));
@@ -549,9 +552,13 @@ public static class WordAuthoring
                     if (effective > 9) diagnostics.Add(new("YADG-WORD-HEADING-OVERFLOW", $"Markdown heading level {heading.Level} rebases to unsupported effective Word heading level {effective}.", true, location));
                     else if (presentation.TryGetValue($"heading{effective}", out var headingResolution) && !headingResolution.StrictResolved && !yolo) diagnostics.Add(new("YADG-WORD-STYLE", $"Heading role 'heading{effective}' has no compatible template paragraph style.", true, location));
                     break;
-                case YadgList list: ValidateList(list, styles, numbering, metadata, presentation, location, diagnostics, yolo); break;
+                case YadgList list:
+                    ValidateList(list, styles, numbering, metadata, presentation, location, diagnostics, yolo);
+                    foreach (var nested in list.Items.SelectMany(item => item.NestedLists ?? Array.Empty<YadgList>())) ValidateBlocks(new YadgBlock[] { nested }, styles, numbering, metadata, presentation, anchor, location, diagnostics, contextLevel, selection, rootLevel, yolo);
+                    break;
                 case YadgTable table: ValidateTable(table, styles, metadata, presentation, location, diagnostics, yolo); break;
                 case YadgFigure figure: ValidateFigure(figure, styles, metadata, presentation, anchor, location, diagnostics, yolo); break;
+                case YadgBlockQuote quote: ValidateBlocks(quote.Blocks, styles, numbering, metadata, presentation, anchor, location, diagnostics, contextLevel, selection, rootLevel, yolo); break;
             }
         }
     }
@@ -576,11 +583,12 @@ public static class WordAuthoring
         IEnumerable<YadgInline> allInlines(YadgBlock block) => block switch
         {
             YadgParagraph paragraph => paragraph.Inlines,
-            YadgList list => list.Items.SelectMany(item => item.Inlines),
-            YadgTable table => table.Header.Concat(table.Rows.SelectMany(row => row)).SelectMany(cell => cell),
+            YadgList list => list.Items.SelectMany(item => item.Inlines.Concat((item.NestedLists ?? Array.Empty<YadgList>()).SelectMany(allInlines))),
+            YadgTable table => (table.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(table.GridRows?.SelectMany(row => row) ?? Array.Empty<YadgTableCell>()).SelectMany(cell => cell.Paragraphs).SelectMany(cell => cell),
+            YadgBlockQuote quote => quote.Blocks.SelectMany(allInlines),
             _ => Array.Empty<YadgInline>()
         };
-        IEnumerable<YadgInline> descendants(IEnumerable<YadgInline> inlines) => inlines.SelectMany(inline => inline switch { YadgEmphasis e => new[] { inline }.Concat(descendants(e.Inlines)), YadgStrong s => new[] { inline }.Concat(descendants(s.Inlines)), _ => new[] { inline } });
+        IEnumerable<YadgInline> descendants(IEnumerable<YadgInline> inlines) => inlines.SelectMany(inline => inline switch { YadgEmphasis e => new[] { inline }.Concat(descendants(e.Inlines)), YadgStrong s => new[] { inline }.Concat(descendants(s.Inlines)), YadgStrike st => new[] { inline }.Concat(descendants(st.Inlines)), YadgLink link => new[] { inline }.Concat(descendants(link.Inlines)), _ => new[] { inline } });
         if (!selectedBlocks().SelectMany(allInlines).SelectMany(inline => descendants(new[] { inline })).Any(inline => inline is YadgCode)) return metadata;
         var selector = metadata.Styles.GetValueOrDefault("codeInline", "__missing_codeInline__");
         var stylesMap = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = selector };
@@ -603,13 +611,13 @@ public static class WordAuthoring
         {
             var prototypeId = resolution.SourceId!;
             if (!metadata.ListItemPrototypes.TryGetValue(prototypeId, out var prototype)) { diagnostics.Add(new("YADG-WORD-LIST", $"Configured list prototype '{prototypeId}' is missing.", true, location)); return; }
-            if (ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is not int prototypeNum || ListCapability(styles, numbering, prototypeNum, ParagraphLevel(prototype.Paragraph)) != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet)) diagnostics.Add(new("YADG-WORD-LIST", $"List prototype '{prototypeId}' has no valid effective {(list.Ordered ? "ordered" : "bullet")} numbering.", true, location));
+            if (ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is not int prototypeNum || ListCapability(styles, numbering, prototypeNum, list.Level) != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet)) diagnostics.Add(new("YADG-WORD-LIST", $"List prototype '{prototypeId}' has no valid effective {(list.Ordered ? "ordered" : "bullet")} numbering at level {list.Level + 1}.", true, location));
             return;
         }
         var style = StyleFor(metadata, role, list.Ordered ? "ListNumber" : "ListBullet");
         if (!HasStyle(styles, style)) { if (yolo) diagnostics.Add(new("YADG-YOLO-LIST-001", $"List style '{style}' is unavailable; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.", false, location) { IsDegradation = true }); else diagnostics.Add(new("YADG-WORD-LIST", $"Missing required list style '{style}'. Run yadg inspect styles to discover available styles.", true, location)); return; }
         var numId = ResolveNumberingId(styles!, style, numbering);
-        var capability = numId is int resolvedNum ? GetStyleListCapability(new Styles(styles!.Elements<Style>().Select(s => (Style)s.CloneNode(true))), numbering, style) : ListNumberingCapability.None;
+        var capability = numId is int resolvedNum ? ListCapability(styles, numbering, resolvedNum, list.Level) : ListNumberingCapability.None;
         if (capability != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet)) { if (yolo) diagnostics.Add(new("YADG-YOLO-LIST-002", $"List style '{style}' has no usable {(list.Ordered ? "ordered" : "bullet")} numbering; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.", false, location) { IsDegradation = true }); else diagnostics.Add(new("YADG-WORD-LIST", $"List style '{style}' does not resolve to valid {(list.Ordered ? "ordered" : "bullet")} numbering. Run yadg inspect styles or bind an unorderedListItem/orderedListItem prototype.", true, location)); }
     }
 
@@ -1013,7 +1021,20 @@ public static class WordAuthoring
             case YadgParagraph paragraph: yield return CreateParagraph(paragraph, anchor, metadata, targets); break;
             case YadgList list:
                 var builtins = new Dictionary<bool, int>();
-                foreach (var item in list.Items) yield return CreateListParagraph(item, list.Ordered, metadata, targets, document, yolo, builtins); break;
+                foreach (var element in CreateListElements(list, anchor, document, metadata, targets, yolo, builtins)) yield return element;
+                break;
+            case YadgCodeBlock code:
+                foreach (var line in code.Text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+                {
+                    var paragraph = new Paragraph();
+                    if (anchor.ParagraphProperties is not null) paragraph.Append(anchor.ParagraphProperties.CloneNode(true));
+                    paragraph.Append(new Run(new Text(line) { Space = SpaceProcessingModeValues.Preserve }));
+                    yield return paragraph;
+                }
+                break;
+            case YadgBlockQuote quote:
+                foreach (var child in quote.Blocks) foreach (var element in CreateElements(child, anchor, document, metadata, targets, yolo)) yield return element;
+                break;
             case YadgTable table:
                 yield return CreateTable(table, metadata, targets);
                 if (!string.IsNullOrWhiteSpace(table.Caption)) yield return CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targets);
@@ -1032,6 +1053,17 @@ public static class WordAuthoring
         }
     }
 
+    private static IEnumerable<OpenXmlElement> CreateListElements(YadgList list, Paragraph anchor, WordprocessingDocument document, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets, bool yolo, Dictionary<bool, int> builtins)
+    {
+        if (list.Level > 8) yield break;
+        foreach (var item in list.Items)
+        {
+            yield return CreateListParagraph(item, list.Ordered, list.Level, metadata, targets, document, yolo, builtins);
+            foreach (var nested in item.NestedLists ?? Array.Empty<YadgList>())
+                foreach (var element in CreateListElements(nested, anchor, document, metadata, targets, yolo, builtins)) yield return element;
+        }
+    }
+
     private static Paragraph CreateParagraph(YadgBlock block, Paragraph anchor, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets)
     {
         var paragraph = new Paragraph();
@@ -1046,20 +1078,24 @@ public static class WordAuthoring
         return paragraph;
     }
 
-    private static Paragraph CreateListParagraph(YadgListItem item, bool ordered, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets, WordprocessingDocument document, bool yolo, Dictionary<bool, int> builtins)
+    private static Paragraph CreateListParagraph(YadgListItem item, bool ordered, int level, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets, WordprocessingDocument document, bool yolo, Dictionary<bool, int> builtins)
     {
         var key = ordered ? "orderedListItem" : "unorderedListItem";
         if (metadata.PrototypeBindings.TryGetValue(key, out var prototypeId) && metadata.ListItemPrototypes.TryGetValue(prototypeId, out var prototype))
         {
             var clone = (Paragraph)prototype.Paragraph.CloneNode(true);
             ReplaceListItemPlaceholder(clone, item.Inlines, targets, metadata);
+            if (level > 0) { var props = clone.ParagraphProperties ?? clone.PrependChild(new ParagraphProperties()); var num = props.NumberingProperties ?? props.AppendChild(new NumberingProperties()); num.NumberingLevelReference = new NumberingLevelReference { Val = level }; }
+            if (item.TaskChecked is bool task) clone.PrependChild(new Run(new Text(task ? "☒ " : "☐ ") { Space = SpaceProcessingModeValues.Preserve }));
             return clone;
         }
         var style = StyleFor(metadata, ordered ? "ordered" : "unordered", ordered ? "ListNumber" : "ListBullet");
         var properties = style.StartsWith("builtin:", StringComparison.Ordinal) && yolo
-            ? new ParagraphProperties(new NumberingProperties(new NumberingLevelReference { Val = 0 }, new NumberingId { Val = GetBuiltinNumbering(document, ordered, builtins) }))
-            : new ParagraphProperties(new ParagraphStyleId { Val = style });
-        var paragraph = new Paragraph(properties); AppendInlines(paragraph, item.Inlines, targets, metadata: metadata); return paragraph;
+            ? new ParagraphProperties(new NumberingProperties(new NumberingLevelReference { Val = level }, new NumberingId { Val = GetBuiltinNumbering(document, ordered, builtins) }))
+            : new ParagraphProperties(new ParagraphStyleId { Val = style }, new NumberingProperties(new NumberingLevelReference { Val = level }));
+        var paragraph = new Paragraph(properties);
+        if (item.TaskChecked is bool taskChecked) paragraph.Append(new Run(new Text(taskChecked ? "☒ " : "☐ ") { Space = SpaceProcessingModeValues.Preserve }));
+        AppendInlines(paragraph, item.Inlines, targets, metadata: metadata); return paragraph;
     }
 
     private static int GetBuiltinNumbering(WordprocessingDocument document, bool ordered, Dictionary<bool, int> cache)
@@ -1070,9 +1106,14 @@ public static class WordAuthoring
         var numbering = part.Numbering ??= new Numbering();
         var abstractId = Math.Max(0, numbering.Elements<AbstractNum>().Select(x => (int?)x.AbstractNumberId?.Value).Max() ?? -1) + 1;
         var numId = Math.Max(0, numbering.Elements<NumberingInstance>().Select(x => (int?)x.NumberID?.Value).Max() ?? 0) + 1;
-        var level = new Level { LevelIndex = 0 };
-        level.Append(new StartNumberingValue { Val = 1 }, new NumberingFormat { Val = ordered ? NumberFormatValues.Decimal : NumberFormatValues.Bullet }, new LevelText { Val = ordered ? "%1." : "•" }, new LevelJustification { Val = LevelJustificationValues.Left });
-        numbering.Append(new AbstractNum(level) { AbstractNumberId = abstractId });
+        var abstractNumber = new AbstractNum { AbstractNumberId = abstractId, MultiLevelType = new MultiLevelType { Val = MultiLevelValues.Multilevel } };
+        for (var index = 0; index < 9; index++)
+        {
+            var level = new Level { LevelIndex = index };
+            level.Append(new StartNumberingValue { Val = 1 }, new NumberingFormat { Val = ordered ? NumberFormatValues.Decimal : NumberFormatValues.Bullet }, new LevelText { Val = ordered ? $"%{index + 1}." : "•" }, new LevelJustification { Val = LevelJustificationValues.Left });
+            abstractNumber.Append(level);
+        }
+        numbering.Append(abstractNumber);
         numbering.Append(new NumberingInstance(new AbstractNumId { Val = abstractId }) { NumberID = numId });
         numbering.Save(); cache[ordered] = numId; return numId;
     }
@@ -1127,9 +1168,21 @@ public static class WordAuthoring
         var properties = new TableProperties(new TableLayout { Type = TableLayoutValues.Autofit }, new TableLook { FirstRow = OnOffValue.FromBoolean(true) });
         if (!selectedStyle.StartsWith("builtin:", StringComparison.Ordinal)) properties.Append(new TableStyle { Val = selectedStyle });
         var result = new Table(properties);
-        result.Append(new TableGrid(Enumerable.Range(0, table.Header.Count).Select(_ => new GridColumn())));
-        var header = new TableRow(new TableRowProperties(new TableHeader())); foreach (var cell in table.Header) header.Append(CreateCell(cell, targets, metadata)); result.Append(header);
-        foreach (var row in table.Rows) { var tableRow = new TableRow(); foreach (var cell in row) tableRow.Append(CreateCell(cell, targets, metadata)); result.Append(tableRow); }
+        var gridHeader = table.GridHeader;
+        var gridRows = table.GridRows;
+        var width = gridHeader?.Sum(c => c.ColumnSpan) ?? table.Header.Count;
+        result.Append(new TableGrid(Enumerable.Range(0, width).Select(_ => new GridColumn())));
+        if (gridHeader is not null)
+        {
+            var active = new YadgTableCell?[width];
+            result.Append(CreateGridRow(gridHeader, true, width, active, targets, metadata));
+            if (gridRows is not null) foreach (var row in gridRows) result.Append(CreateGridRow(row, false, width, active, targets, metadata));
+        }
+        else
+        {
+            var header = new TableRow(new TableRowProperties(new TableHeader())); foreach (var cell in table.Header) header.Append(CreateCell(new[] { cell }, null, null, targets, metadata)); result.Append(header);
+            foreach (var row in table.Rows) { var tableRow = new TableRow(); foreach (var cell in row) tableRow.Append(CreateCell(new[] { cell }, null, null, targets, metadata)); result.Append(tableRow); }
+        }
         if (!targets.ContainsKey($"number:{table.Id}") && targets.TryGetValue(table.Id, out var bookmark)) WrapTableAnchor(result, StripSectionPrefix(bookmark));
         return result;
     }
@@ -1140,7 +1193,39 @@ public static class WordAuthoring
         if (paragraph is not null) WrapParagraphBookmark(paragraph, bookmark);
     }
 
-    private static TableCell CreateCell(IReadOnlyList<YadgInline> inlines, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata) { var paragraph = new Paragraph(); AppendInlines(paragraph, inlines, targets, metadata: metadata); return new TableCell(paragraph); }
+    private static TableRow CreateGridRow(IReadOnlyList<YadgTableCell> cells, bool header, int width, YadgTableCell?[] active, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata)
+    {
+        var row = new TableRow(); if (header) row.Append(new TableRowProperties(new TableHeader()));
+        var byColumn = cells.ToDictionary(c => c.StartColumn);
+        for (var col = 0; col < width;)
+        {
+            if (byColumn.TryGetValue(col, out var cell))
+            {
+                var span = Math.Min(cell.ColumnSpan, width - col);
+                row.Append(CreateCell(cell.Paragraphs, span > 1 ? span : null, cell.RowSpan > 1 ? MergedCellValues.Restart : null, targets, metadata));
+                for (var i = col; i < col + span; i++) active[i] = cell.RowSpan > 1 ? cell : null;
+                col += span;
+            }
+            else if (active[col] is { } merged)
+            {
+                var span = 1; while (col + span < width && ReferenceEquals(active[col + span], merged)) span++;
+                row.Append(CreateCell(new[] { Array.Empty<YadgInline>() }, span > 1 ? span : null, MergedCellValues.Continue, targets, metadata));
+                var remainingMerge = merged.RowSpan > 2 ? merged with { RowSpan = merged.RowSpan - 1 } : null;
+                for (var i = col; i < col + span; i++) active[i] = remainingMerge;
+                col += span;
+            }
+            else { row.Append(CreateCell(new[] { Array.Empty<YadgInline>() }, null, null, targets, metadata)); col++; }
+        }
+        return row;
+    }
+
+    private static TableCell CreateCell(IReadOnlyList<IReadOnlyList<YadgInline>> paragraphs, int? columnSpan, MergedCellValues? verticalMerge, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata)
+    {
+        var props = new TableCellProperties(); if (columnSpan is int span) props.Append(new GridSpan { Val = span }); if (verticalMerge is not null) props.Append(new VerticalMerge { Val = verticalMerge });
+        var cell = new TableCell(); if (props.ChildElements.Count > 0) cell.Append(props);
+        foreach (var inlines in paragraphs) { var paragraph = new Paragraph(); AppendInlines(paragraph, inlines, targets, metadata: metadata); cell.Append(paragraph); }
+        if (paragraphs.Count == 0) cell.Append(new Paragraph()); return cell;
+    }
 
     private static Paragraph CreateFigureParagraph(YadgFigure figure, Paragraph anchor, WordprocessingDocument document)
     {
@@ -1234,6 +1319,15 @@ public static class WordAuthoring
                 if (codeProps.ChildElements.Count > 0) codeRun.Append(codeProps); codeRun.Append(new Text(code.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(codeRun); break;
             case YadgEmphasis emphasis: AppendInlines(paragraph, emphasis.Inlines, targets, true, bold, metadata); break;
             case YadgStrong strong: AppendInlines(paragraph, strong.Inlines, targets, italic, true, metadata); break;
+            case YadgStrike strike:
+                var begin = paragraph.ChildElements.Count;
+                AppendInlines(paragraph, strike.Inlines, targets, italic, bold, metadata);
+                foreach (var strikeRun in paragraph.ChildElements.Skip(begin).SelectMany(element => element is Run run ? new[] { run }.Concat(run.Descendants<Run>()) : element.Descendants<Run>()))
+                {
+                    var strikeProps = strikeRun.RunProperties ?? strikeRun.PrependChild(new RunProperties());
+                    if (strikeProps.Strike is null) strikeProps.Append(new Strike());
+                }
+                break;
         }
     }
 
@@ -1613,8 +1707,8 @@ public static class WordAuthoring
 
     private static IEnumerable<YadgReference> ReferencesIn(YadgBlock block)
     {
-        IEnumerable<YadgReference> Inline(IEnumerable<YadgInline> values) => values.SelectMany(i => i switch { YadgReference r => new[] { r }, YadgEmphasis e => Inline(e.Inlines), YadgStrong s => Inline(s.Inlines), _ => Array.Empty<YadgReference>() });
-        return block switch { YadgParagraph p => Inline(p.Inlines), YadgList l => l.Items.SelectMany(i => Inline(i.Inlines)), YadgTable t => t.Header.SelectMany(Inline).Concat(t.Rows.SelectMany(r => r.SelectMany(Inline))), _ => Array.Empty<YadgReference>() };
+        IEnumerable<YadgReference> Inline(IEnumerable<YadgInline> values) => values.SelectMany(i => i switch { YadgReference r => new[] { r }, YadgEmphasis e => Inline(e.Inlines), YadgStrong s => Inline(s.Inlines), YadgStrike st => Inline(st.Inlines), YadgLink l => Inline(l.Inlines), _ => Array.Empty<YadgReference>() });
+        return block switch { YadgParagraph p => Inline(p.Inlines), YadgList l => l.Items.SelectMany(i => Inline(i.Inlines).Concat((i.NestedLists ?? Array.Empty<YadgList>()).SelectMany(ReferencesIn))), YadgTable t => t.Header.SelectMany(Inline).Concat(t.Rows.SelectMany(r => r.SelectMany(Inline))).Concat((t.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(t.GridRows?.SelectMany(r => r) ?? Array.Empty<YadgTableCell>()).SelectMany(c => c.Paragraphs).SelectMany(Inline)), YadgBlockQuote q => q.Blocks.SelectMany(ReferencesIn), _ => Array.Empty<YadgReference>() };
     }
 
     private static IEnumerable<YadgLink> LinksIn(YadgBlock block)
@@ -1624,13 +1718,23 @@ public static class WordAuthoring
             YadgLink link => new[] { link }.Concat(Inline(link.Inlines)),
             YadgEmphasis emphasis => Inline(emphasis.Inlines),
             YadgStrong strong => Inline(strong.Inlines),
+            YadgStrike strike => Inline(strike.Inlines),
             _ => Array.Empty<YadgLink>()
         });
+        IEnumerable<YadgLink> InBlock(YadgBlock value) => value switch
+        {
+            YadgParagraph paragraph => Inline(paragraph.Inlines),
+            YadgList list => list.Items.SelectMany(item => Inline(item.Inlines).Concat((item.NestedLists ?? Array.Empty<YadgList>()).SelectMany(InBlock))),
+            YadgTable table => table.Header.SelectMany(Inline).Concat(table.Rows.SelectMany(row => row.SelectMany(Inline))).Concat((table.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(table.GridRows?.SelectMany(r => r) ?? Array.Empty<YadgTableCell>()).SelectMany(cell => cell.Paragraphs).SelectMany(Inline)),
+            YadgBlockQuote quote => quote.Blocks.SelectMany(InBlock),
+            _ => Array.Empty<YadgLink>()
+        };
         return block switch
         {
             YadgParagraph paragraph => Inline(paragraph.Inlines),
-            YadgList list => list.Items.SelectMany(item => Inline(item.Inlines)),
-            YadgTable table => table.Header.SelectMany(Inline).Concat(table.Rows.SelectMany(row => row.SelectMany(Inline))),
+            YadgList list => list.Items.SelectMany(item => Inline(item.Inlines).Concat((item.NestedLists ?? Array.Empty<YadgList>()).SelectMany(InBlock))),
+            YadgTable table => table.Header.SelectMany(Inline).Concat(table.Rows.SelectMany(row => row.SelectMany(Inline))).Concat((table.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(table.GridRows?.SelectMany(r => r) ?? Array.Empty<YadgTableCell>()).SelectMany(c => c.Paragraphs).SelectMany(Inline)),
+            YadgBlockQuote quote => quote.Blocks.SelectMany(InBlock),
             _ => Array.Empty<YadgLink>()
         };
     }

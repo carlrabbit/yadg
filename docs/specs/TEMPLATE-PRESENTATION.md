@@ -231,6 +231,8 @@ compatible related code/source/monospace character style
 -> ordinary text
 ```
 
+M0017 blockquotes and literal code blocks inherit the insertion-context paragraph presentation; no quotation label or code-language label is fabricated. Nested list paragraphs use the bound list prototype/style and its Word numbering definition at the source nesting level.
+
 ### Value replacement
 
 Existing placeholder-run formatting remains the contextual example.
