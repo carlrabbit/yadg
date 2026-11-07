@@ -21,14 +21,13 @@ public sealed class M0016FocusedTests
     }
 
     [Fact]
-    public void Parser_keeps_unsupported_extension_delimiters_literal_instead_of_giving_them_semantics()
+    public void Parser_uses_gfm_strikethrough_extension()
     {
         var parsed = MarkdownDocumentParser.Parse("# Model {#model}\n\nThis ~~strikethrough~~ syntax is outside the supported CommonMark/GFM subset.", "content.md");
 
         Assert.True(parsed.IsValid, string.Join(Environment.NewLine, parsed.Diagnostics));
         var paragraph = Assert.Single(parsed.Document!.Blocks.OfType<YadgParagraph>());
-        Assert.Contains(paragraph.Inlines.OfType<YadgText>(), text => text.Value.Contains("~~strikethrough~~", StringComparison.Ordinal));
-        Assert.DoesNotContain(paragraph.Inlines, inline => inline is YadgEmphasis or YadgStrong);
+        Assert.Contains(paragraph.Inlines.OfType<YadgStrike>(), strike => InlineText(strike.Inlines) == "strikethrough");
     }
 
     [Fact]
@@ -245,7 +244,7 @@ public sealed class M0016FocusedTests
 
     private static string InlineText(Hyperlink hyperlink) => string.Concat(hyperlink.Descendants<Text>().Select(text => text.Text));
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         public string Root { get; }
         public string Template => Path.Combine(Root, "YadgTemplates", "report.docx");

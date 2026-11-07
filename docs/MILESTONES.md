@@ -18,5 +18,6 @@
 | M0014 | Text diagrams | complete prerequisite | Add built-in character-grid diagrams with vector rendering, conservative box layering/occlusion, and opt-in auto-detection for unlabeled/`text` fences. M0015 execution requires M0014 to be complete, reviewed, and merged. |
 | M0015 | V1.2 release readiness | ready | Prepare the YADG 1.2.0 release candidate, validate both diagramming paths from the installed package, and reorganize public authoring documentation into dedicated Markdown and DOCX-template guides. |
 | M0016 | Canonical Markdown links and configured Word references | ready | Preserve authored words in semantic fragment links, add workspace-wide generated reference display backed by real template caption prototypes, and validate real Word/LibreOffice plus packed-tool behavior. |
+| M0017 | Markdown core completeness and Markdig tables | ready | Support Markdig pipe/grid tables and common Markdown blocks while preserving template-owned Word semantics; validate real renderers, packed-tool use, and blocking artifact review. |
 
 Milestone implementation starts from the active milestone document and its explicitly listed authority.
