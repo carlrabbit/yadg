@@ -16,8 +16,8 @@
 | Documentation sync | separate pass, hint supplied |
 | Focused validation | implementation-owned focused checks; documented assertions below |
 | Repository validation | `./eng/validate.ps1` |
-| Integration validation | real LibreOffice Impress opens output PPTX on authorized Windows interactive host; script/command provided as part of implementation |
-| Validation locus/platform | Windows local, .NET 10 SDK, LibreOffice Impress installed for Tier 3; Office-independent authoring for Tier 1/2 |
+| Integration validation | two origin-specific Tier 3 gates: PowerPoint-origin output opened in real Microsoft PowerPoint and Impress-origin output opened in real LibreOffice Impress; script/command provided as part of implementation |
+| Validation locus/platform | Windows interactive user with activated Microsoft PowerPoint and LibreOffice Impress for origin-specific Tier 3; .NET 10 SDK for Tier 1/2; Office-independent authoring |
 | Environment authority | existing `docs/ENGINEERING.md`; install/host provisioning not authorized by this milestone |
 | Consumer validation | build/package current dotnet tool, install to isolated local tool path and invoke PPTX scenario |
 | Human review | blocking artifact-quality review HR-M0018-01 |
@@ -32,7 +32,7 @@ A user can configure a prepared PPTX template, author slides with level-1 headin
 
 ## Scope and constraints
 
-`docs/specs/PRESENTATION-AUTHORING.md` is the complete normative presentation contract: grammar, sixteen standard layouts, typed regions, plain visible prototype markers, rich-text and prepared-table prototype semantics, error behavior, CLI/workspace integration and strict exclusions. Preserve `docs/ARCHITECTURE.md` core/Office boundary, DOCX compatibility, existing path/asset security, style principles and explicit diagnostics. Implementation may choose internal types, libraries and editing algorithms without changing this contract. No Mandated PowerPoint installation or unmanaged SDK dependency for authoring.
+`docs/specs/PRESENTATION-AUTHORING.md` is the complete normative presentation contract: grammar, sixteen standard layouts, typed regions, plain visible prototype markers, rich-text and prepared-table prototype semantics, error behavior, CLI/workspace integration and strict exclusions. Preserve `docs/ARCHITECTURE.md` core/Office boundary, DOCX compatibility, existing path/asset security, style principles and explicit diagnostics. Implementation may choose internal types, libraries and editing algorithms without changing this contract. No mandatory PowerPoint installation or unmanaged SDK dependency for **production authoring**. Application-origin fixtures and their Tier 3 validation require real desktop Microsoft PowerPoint and real LibreOffice Impress as specified in the presentation spec.
 
 ## M0018 public configuration decision
 
@@ -62,9 +62,12 @@ No renderer-driven post-flight or overflow validation, UNO measurement, font shr
 - **AC-08** — Pre-flight rejects malformed/unknown/missing/duplicate selectors and tags, incompatible region payloads, invalid assets, and invalid/unrepresentable table structures with precise source/slide/region diagnostics and no partial output mutation.
 - **AC-09** — Optional schema-v1 `YADG.md` `presentations` supports one or multiple named declarations with required `id`, `template`, ordered `sources`, unique `output`, allowable reused source/template paths across decks, union-based DOCX discovery isolation, all-decks `check`/`build` behavior and independent atomic whole-set `YadgPresentations/` replacement. The singular mapping fails explicitly; existing DOCX/render/publish semantics remain intact.
 - **AC-10** — Resulting slides are fully editable native PPTX objects, have retained relevant master/theme/media links, and open without repair in real LibreOffice Impress.
-- **AC-11** — Focused positive/negative fixtures and ordinary repository validation exercise the supported presentation contracts, and realistic template fixture provenance is recorded with application/version/hash.
+- **AC-11** — Focused positive/negative fixtures and ordinary repository validation exercise the supported presentation contracts; the exact two committed application-origin canonical fixtures have independently verified provenance, application/version/platform/creation method/date and content hashes.
 - **AC-12** — Current packaged `dotnet tool` is installed and invoked in isolation for an end-to-end presentation sample, with no reliance on a stale globally installed tool.
 - **AC-13** — Standalone `yadg presentation check` and `yadg presentation build` accept explicit template and repeatable ordered source arguments without opening or requiring `YADG.md`; build writes only its explicit output transactionally; direct commands do not invoke DOCX, producers, render or publish and reject malformed CLI options or paths.
+- **AC-14** — Exactly one canonical Microsoft PowerPoint-origin and one canonical LibreOffice Impress-origin committed PPTX template are created through the respective real application document models (not OOXML generation/round-trip), retain native master/theme/layout and default title/body/list/table formatting, and each implement the four fixture layouts `content`, `two-columns`, `text-image`, `table`; provenance and committed SHA-256 are verified.
+- **AC-15** — From each canonical origin template YADG generates an editable representative deck, which reopens without repair in that origin application (PowerPoint for PowerPoint-origin, Impress for Impress-origin), retaining native shapes, static elements, master/theme relationships, and inherited text/table formatting. Real application/version and per-run input/output hashes/results are recorded; the other application's run is not equivalent.
+- **AC-16** — Exactly one designated generated human-review PPTX, `artifacts/review/evidence/M0018/review-sample.pptx`, is produced from the Impress-origin canonical fixture and covers the four representative layouts. A manifest binds the candidate/template/source hashes, revision and Tier 3 evidence. All other generated fixtures are identified as automated-test artifacts rather than review candidates; obsolete duplicates are removed or relabeled after checking consumers.
 - **DOC-01** — Direct user-facing Markdown/template authoring documentation and a minimal working sample explain the full standard layout set, tags, region types, image/table examples, multiple-deck configuration, direct configuration-free commands, diagnostics and known overflow limitation.
 - **REV-01** — HR-M0018-01 is approved by a human based on real Impress rendering and editability examination of representative generated deck(s).
 
@@ -85,24 +88,29 @@ No renderer-driven post-flight or overflow validation, UNO measurement, font shr
 | EC-13b | AC-13 | Direct build with explicit output; output preservation on failure and isolation from configured decks |
 | EC-10a | AC-10 | OOXML/native shape structural inspection |
 | EC-10b | AC-10 | Real Impress open and human-observable editability |
+| EC-14a | AC-14 | PowerPoint-origin application-produced template, native formatting, layout coverage and provenance | 
+| EC-14b | AC-14 | Impress-origin application-produced template, native formatting, layout coverage and provenance |
+| EC-15a | AC-15 | PowerPoint-origin PPTX generated and opened in actual Microsoft PowerPoint |
+| EC-15b | AC-15 | Impress-origin PPTX generated and opened in actual LibreOffice Impress |
 
 ## Validation gates
 
 | Gate | Tier / target | Locus and prerequisites | Command / check | Proves | Evidence |
 |---|---|---|---|---|---|
 | VAL-01 | Tier 1 focused, presentation parser / Open XML package | Windows local, .NET 10 | Focused presentation tests selected from repository test project; executor records exact command | AC-01, AC-02, AC-03, EC-04a, EC-04b, EC-05a, EC-05b, AC-06, AC-07, EC-08a, EC-08b, EC-09a, EC-09c, EC-13a, EC-13b | pass/fail log, fixture hash and assertions |
-| VAL-02 | Tier 2 standard repository | Windows local with existing SDK | `./eng/validate.ps1` | AC-11, EC-09b, DOC-01 | complete output/log and repository revision |
-| VAL-03 | Tier 3 real Impress open | Windows interactive user with installed LibreOffice Impress; isolated profile, temporary copy; no new host installation | implementation adds documented `eng/test-m0018-tier3.ps1` and runs it | EC-10b, AC-10, AC-11 | application/version, input/output SHA-256, open result, screenshots or saved review artifacts, cleanup status |
+| VAL-02 | Tier 2 standard repository | Windows local with existing SDK | `./eng/validate.ps1` | AC-11, EC-09b, DOC-01, AC-16 (manifest consistency) | complete output/log and repository revision; provenance/hash and candidate-manifest consistency checks |
+| VAL-03 | Tier 3 real Impress-origin compatibility | Windows interactive user with LibreOffice Impress; isolated profile, temporary output copy; no host-wide installation | implementer updates `eng/test-m0018-tier3.ps1` (or adds a documented equivalent) to generate from committed Impress-origin fixture and open the result in real Impress | EC-10b, EC-14b, EC-15b, AC-10, AC-11 | fixture provenance and hash, runtime/version, generated output/hash, native theme/format/editability/open result, cleanup receipt |
 | VAL-04 | Tier 4 packaged consumer | Windows local, .NET 10 SDK | `dotnet pack` current tool; `dotnet tool install --tool-path <temp-path> --add-source <current-pack-dir> Yadg` then invoke isolated shim for sample; version/package options adapted to repository | AC-12, AC-09, EC-09a, AC-13, EC-13b | isolated installed command and inspected resulting deck |
-| VAL-05 | Tier 5 human | Windows human reviewer with Impress (PowerPoint optional) | `./eng/review-check.ps1 --milestone M0018` | REV-01, EC-10b | signed/recorded review outcome |
+| VAL-05 | Tier 5 human | Windows human reviewer with Impress | `./eng/review-check.ps1 --milestone M0018` | REV-01, AC-16 | approval bound to the single candidate path/hash, candidate manifest and both current Tier 3 evidence receipts |
+| VAL-06 | Tier 3 real PowerPoint-origin compatibility | Windows interactive user with activated desktop Microsoft PowerPoint, no host-wide provisioning | implementer adds documented `eng/test-m0018-powerpoint-tier3.ps1` (or equivalent named entry point) generating from committed PowerPoint-origin fixture and opening output through real PowerPoint COM | EC-14a, EC-15a, AC-10, AC-11 | application/version, fixture provenance/hash, output/hash, native master/theme/format/editability/open result and cleanup receipt |
 
-VAL-03 is acceptance only after a complete candidate exists and portable focused checks establish its expected semantics. VAL-04 runs on the current candidate package, not a previous release. Focused tests provide inexpensive feedback during implementation. If the real Impress runtime is missing, mark VAL-03 blocked (not passed), preserve available Tier 1/2/4 evidence and request an authorized host; do not install host-wide tools or create CI workflows without permission. A failed Impress open is a product failure rather than a missing-capability waiver. Do not claim automated layout/overflow fit.
+VAL-03 and VAL-06 are separate, required origin-specific acceptance gates; neither is replaced by the other. Both execute once the corresponding generated candidate and application-produced fixture are available, and can run independently. Existing script names can be maintained if the contract remains verifiable. VAL-03 is acceptance only after a complete candidate exists and portable focused checks establish its expected semantics. VAL-04 runs on the current candidate package, not a previous release. Focused tests provide inexpensive feedback during implementation. If Impress is missing, mark VAL-03 blocked; if activated desktop PowerPoint is missing, mark VAL-06 blocked. In either case preserve available independent Tier 1/2/4 evidence and request an authorized Windows interactive host; no host-wide installation or CI workflow creation without permission. The missing native fixture itself also remains blocked if its originating application is unavailable. A failed Impress open is a product failure rather than a missing-capability waiver. Do not claim automated layout/overflow fit.
 
 ## Human review
 
 - Applicability: **blocking**, class: artifact-quality, canonical ID: **HR-M0018-01**, owner: M0018.
-- Subject: at least one representative generated PPTX from an actual editable prototype made in PowerPoint or Impress, covering ordinary text, a multi-region slide, one image and one native table. Review static template preservation, slide order, formatting plausibility, absence of placeholders, editability of picture/table/text, no repair on open, and visible overflows as ordinary quality observations.
-- Record real reviewer decision and evidence under existing `.review/` milestone conventions. Only `approved` satisfies REV-01; `rejected` returns to implementation. No automatic or fabricated approval, and no waiver in this milestone.
+- Subject: **exactly one** canonical generated PPTX at `artifacts/review/evidence/M0018/review-sample.pptx`, from the Impress-origin fixture and containing `content`, `two-columns`, `text-image`, and `table`. All other fixture outputs are automated-test artifacts, not parallel human-review deliverables. Review native application formatting/master retention, title/body/list/table appearance, static shapes, slide order, absence of placeholders, editable text/picture/table, no repair warning, and visible overflow as an ordinary quality observation. A manifest binds its hash, template/source identities, repository revision and both Tier 3 receipts.
+- Record real reviewer decision and evidence under existing `.review/` milestone conventions, bound to the candidate's exact SHA-256 and current Tier 3 receipts. Only `approved` satisfies REV-01; `rejected` returns to implementation. No automatic or fabricated approval, and no waiver in this milestone.
 - Gate: `./eng/review-check.ps1 --milestone M0018` (extend the existing mechanism if required).
 
 ## Documentation policy and sync
@@ -111,7 +119,7 @@ Implementation owns direct authoritative changes to `docs/SPECS.md`, `docs/ARCHI
 
 ## Completion expectation and evidence
 
-Implementation owns bounded work packages, evidence-case/obligation status and durable closure. Re-read this milestone and ledger at completion, reconcile exact obligation/case sets, and append compact evidence to this section before cleaning mutable ledger. Success requires current valid evidence for all required gates and human approval, not merely passing tests.
+The implementation ledger `.execution/M0018.md` must be reconciled with added AC-14, AC-15, AC-16, EC-14a, EC-14b, EC-15a, EC-15b and VAL-06. Preserve existing work-package/evidence history; add individual pending coverage rows and revise validation-gate mappings without fabricating success or retroactively reclassifying prior Impress-only evidence as proving the new PowerPoint path. Implementation owns bounded work packages, evidence-case/obligation status and durable closure. Re-read this milestone and ledger at completion, reconcile exact obligation/case sets, and append compact evidence to this section before cleaning mutable ledger. Success requires current valid evidence for all required gates and human approval, not merely passing tests.
 
 ### Completion Evidence
 
