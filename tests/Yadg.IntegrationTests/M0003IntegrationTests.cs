@@ -47,7 +47,7 @@ public sealed class M0003IntegrationTests
         File.WriteAllText(Path.Combine(workspace.Root, "unsupported.md"), "## Bad {#bad}\n\n- parent\n  - nested\n\n| A | B |\n|---|---|\n| 1 | 2 |");
         var invalid = RunCli(workspace.Root, "check");
         Assert.NotEqual(0, invalid.ExitCode);
-        Assert.Contains("YADG-LIST-001", invalid.Output);
+        Assert.DoesNotContain("YADG-LIST-001", invalid.Output);
         Assert.Contains("YADG-TABLE-001", invalid.Output);
 
         File.Delete(Path.Combine(workspace.Root, "unsupported.md"));

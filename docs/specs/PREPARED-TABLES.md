@@ -10,7 +10,7 @@ Generated Markdown tables remain available when a template delegates complete ta
 
 ## Semantic source
 
-The source is an existing stable-ID Markdown pipe table. Its header defines semantic column count/order; its body rows are repeated data. For prepared-table population the Markdown header is not rendered into Word: template-owned rows provide visible headings.
+The source is an existing stable-ID Markdown pipe or grid table. Its header defines semantic column count/order; its body rows are repeated data. For prepared-table population the Markdown header is not rendered into Word: template-owned rows provide visible headings. Prepared row data remains rectangular, with one paragraph per cell; merged and multi-paragraph grid cells are rejected for this operation. Supported inline semantics in prepared cells include M0017 strikethrough and the configured inline-code policy.
 
 ## Template binding
 
