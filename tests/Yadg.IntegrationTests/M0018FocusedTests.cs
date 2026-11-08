@@ -13,6 +13,52 @@ namespace Yadg.IntegrationTests;
 public sealed class M0018FocusedTests
 {
     [Fact]
+    public void Canonical_native_office_fixtures_bind_four_layouts_to_their_committed_hashes()
+    {
+        var repository = FindRepositoryRoot();
+        var fixtureDirectory = Path.Combine(repository, "tests", "fixtures", "m0018");
+        Assert.Equal(2, Directory.GetFiles(fixtureDirectory, "*-origin.pptx", SearchOption.TopDirectoryOnly).Length);
+        var expectedLayouts = new[] { "content", "two-columns", "text-image", "table" };
+
+        foreach (var id in new[] { "powerpoint-origin", "impress-origin" })
+        {
+            var path = Path.Combine(fixtureDirectory, id + ".pptx");
+            using var provenance = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(fixtureDirectory, id + ".provenance.json")));
+            var record = provenance.RootElement;
+            var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
+            Assert.Equal(digest, record.GetProperty("sha256").GetString());
+            Assert.Equal(id, record.GetProperty("id").GetString());
+            Assert.True(record.GetProperty("createdInApplication").GetBoolean());
+            Assert.True(record.GetProperty("notOpenXmlGeneratedOrRoundTripped").GetBoolean());
+            Assert.True(record.GetProperty("retainedNativeMasterThemeLayouts").GetBoolean());
+            Assert.True(record.GetProperty("syntheticAndRedistributionSafe").GetBoolean());
+            Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("applicationVersion").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("platform").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("creationMethod").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("createdAtUtc").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("saveDateUtc").GetString()));
+            Assert.Equal(expectedLayouts, record.GetProperty("layouts").EnumerateArray().Select(value => value.GetString()));
+
+            using var document = OpenXmlPresentationDocument.Open(path, false);
+            var presentationPart = document.PresentationPart!;
+            var slides = presentationPart.Presentation.SlideIdList!.Elements<P.SlideId>()
+                .Select(slideId => (SlidePart)presentationPart.GetPartById(slideId.RelationshipId!.Value!)).ToArray();
+            Assert.Equal(4, slides.Length);
+            Assert.Single(presentationPart.SlideMasterParts);
+            Assert.NotNull(presentationPart.SlideMasterParts.Single().ThemePart);
+            Assert.Equal(expectedLayouts, slides.Select(slide => Assert.Single(slide.Slide.Descendants<A.Text>(), text => text.Text.StartsWith("{{slide:", StringComparison.Ordinal)).Text[8..^2]));
+            Assert.All(slides, slide => Assert.Contains(slide.Slide.Descendants<P.Shape>(), shape => shape.NonVisualShapeProperties?.NonVisualDrawingProperties?.Name?.Value == "Native template footer"));
+            Assert.Contains(slides[0].Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText.Contains("{{content}}", StringComparison.Ordinal) == true);
+            Assert.Equal(2, slides[1].Slide.Descendants<P.Shape>().Count(shape => shape.TextBody?.InnerText.Contains("{{left}}", StringComparison.Ordinal) == true || shape.TextBody?.InnerText.Contains("{{right}}", StringComparison.Ordinal) == true));
+            Assert.Contains(slides[2].Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText.Contains("{{text}}", StringComparison.Ordinal) == true);
+            Assert.Contains(slides[2].Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText.Contains("{{image}}", StringComparison.Ordinal) == true);
+            var nativeTable = Assert.Single(slides[3].Slide.Descendants<A.Table>());
+            Assert.Equal("{{table}}", nativeTable.Descendants<A.TableCell>().First().InnerText);
+            Assert.Equal(2, nativeTable.Elements<A.TableRow>().Count());
+        }
+    }
+
+    [Fact]
     public void Workspace_presentations_are_an_ordered_sequence_and_allow_cross_deck_sharing()
     {
         var source = "---\nyadg:\n  version: 1\npresentations:\n  - id: overview\n    template: YadgTemplates/main.pptx\n    sources:\n      - slides/a.md\n      - slides/b.md\n    output: overview.pptx\n  - id: details\n    template: YadgTemplates/main.pptx\n    sources:\n      - slides/a.md\n    output: details.pptx\n---\n";
@@ -502,5 +548,12 @@ public sealed class M0018FocusedTests
             return new(root);
         }
         public void Dispose() { try { if (Directory.Exists(Root)) Directory.Delete(Root, true); } catch { } }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+            if (File.Exists(Path.Combine(directory.FullName, "Yadg.slnx"))) return directory.FullName;
+        throw new DirectoryNotFoundException("Could not find the YADG repository root from the integration-test output directory.");
     }
 }

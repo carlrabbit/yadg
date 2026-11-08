@@ -1,76 +1,105 @@
 param(
-    [Parameter(Mandatory=$true)][string] $TemplatePath,
-    [Parameter(Mandatory=$true)][string[]] $SourcePath,
-    [Parameter(Mandatory=$true)][ValidateSet('Microsoft PowerPoint','LibreOffice Impress')][string] $TemplateOriginApplication,
-    [Parameter(Mandatory=$true)][string] $TemplateOriginVersion,
-    [Parameter(Mandatory=$true)][string] $TemplateCreationMethod,
-    [Parameter(Mandatory=$true)][string] $TemplateCreatedAtUtc,
-    [Parameter(Mandatory=$true)][switch] $ConfirmTemplateSyntheticAndRedistributionSafe,
-    [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/review-sample.pptx'),
-    [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/tier3-evidence.json')
+    [string] $TemplatePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/impress-origin.pptx'),
+    [string] $SourcePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/review-source.md'),
+    [string] $CandidatePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/review-sample.pptx'),
+    [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/impress-tier3-evidence.json')
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $template = [IO.Path]::GetFullPath($TemplatePath)
-$sources = @($SourcePath | ForEach-Object { [IO.Path]::GetFullPath($_) })
-$output = [IO.Path]::GetFullPath($OutputPath)
+$source = [IO.Path]::GetFullPath($SourcePath)
+$candidate = [IO.Path]::GetFullPath($CandidatePath)
 $evidence = [IO.Path]::GetFullPath($EvidencePath)
-$cli = Join-Path $repo 'src/Yadg.Cli/bin/Release/net10.0/yadg.dll'
+$provenancePath = Join-Path (Split-Path -Parent $template) 'impress-origin.provenance.json'
+$provenance = Get-Content -LiteralPath $provenancePath -Raw | ConvertFrom-Json -DateKind String
 $soffice = Join-Path $env:ProgramFiles 'LibreOffice/program/soffice.exe'
-if (-not (Test-Path -LiteralPath $template -PathType Leaf) -or [IO.Path]::GetExtension($template) -ine '.pptx') { throw 'M0018 Tier 3 requires an existing PPTX prototype created and saved in PowerPoint or Impress.' }
-if ($sources.Count -eq 0 -or @($sources | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -gt 0) { throw 'M0018 Tier 3 requires one or more existing Markdown sources.' }
-if ([string]::IsNullOrWhiteSpace($TemplateOriginVersion) -or [string]::IsNullOrWhiteSpace($TemplateCreationMethod) -or -not $ConfirmTemplateSyntheticAndRedistributionSafe) { throw 'M0018 Tier 3 requires complete synthetic, redistribution-safe template provenance.' }
-$createdAt = [DateTimeOffset]::MinValue
-if (-not [DateTimeOffset]::TryParse($TemplateCreatedAtUtc, [ref]$createdAt) -or $createdAt.Offset -ne [TimeSpan]::Zero) { throw 'TemplateCreatedAtUtc must be a UTC timestamp with a zero offset.' }
+$python = Join-Path $env:ProgramFiles 'LibreOffice/program/python.exe'
+$cli = Join-Path $repo 'src/Yadg.Cli/bin/Release/net10.0/yadg.dll'
+if (-not (Test-Path -LiteralPath $soffice -PathType Leaf) -or -not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'M0018 Tier 3 is blocked: real LibreOffice Impress and its UNO Python runtime are required.' }
 if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) { throw "Build the Release CLI before Tier 3: $cli" }
-if (-not (Test-Path -LiteralPath $soffice -PathType Leaf)) { throw 'M0018 Tier 3 is blocked: LibreOffice Impress is unavailable in this Windows session.' }
+if ((Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToUpperInvariant() -cne [string]$provenance.sha256) { throw 'Impress-origin fixture bytes do not match their provenance hash.' }
+if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Presentation source is missing: $source" }
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $candidate),(Split-Path -Parent $evidence) | Out-Null
 
-$outputDirectory = Split-Path -Parent $output
-$evidenceDirectory = Split-Path -Parent $evidence
-New-Item -ItemType Directory -Force -Path $outputDirectory, $evidenceDirectory | Out-Null
-$arguments = @($cli, 'presentation', 'check', '--template', $template)
-foreach ($source in $sources) { $arguments += @('--source', $source) }
-& dotnet @arguments
-if ($LASTEXITCODE -ne 0) { throw 'M0018 Tier 3 candidate failed direct presentation pre-flight.' }
-$arguments = @($cli, 'presentation', 'build', '--template', $template)
-foreach ($source in $sources) { $arguments += @('--source', $source) }
-$arguments += @('--output', $output)
-& dotnet @arguments
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'M0018 Tier 3 candidate build failed.' }
-
+$revision = (& git -C $repo rev-parse HEAD).Trim()
+$templateHash = (Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToUpperInvariant()
+$sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToUpperInvariant()
+$version = [Diagnostics.FileVersionInfo]::GetVersionInfo($soffice).ProductVersion
 $profile = Join-Path ([IO.Path]::GetTempPath()) ('yadg-m0018-impress-' + [guid]::NewGuid().ToString('N'))
 $profileUri = ([uri]([IO.Path]::GetFullPath($profile) + [IO.Path]::DirectorySeparatorChar)).AbsoluteUri.TrimEnd('/')
-$version = (& $soffice --version | Out-String).Trim()
-$process = Start-Process -FilePath $soffice -ArgumentList @("-env:UserInstallation=`"$profileUri`"", '--norestore', '--impress', "`"$output`"") -PassThru
-Write-Host 'Inspect the opened presentation in LibreOffice Impress. Confirm it opens without repair and check native text, picture, table, prototype styling and static elements. Do not treat this step as the blocking human review record.'
-$opened = Read-Host 'After closing Impress, enter yes only if you observed a clean open without repair; otherwise enter no'
-if (-not $process.HasExited) { try { $process.WaitForExit(30000) | Out-Null } catch {} }
-$tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-$resolvedProfile = [IO.Path]::GetFullPath($profile)
-if (-not $resolvedProfile.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolvedProfile) -notmatch '^yadg-m0018-impress-[0-9a-f]{32}$') { throw 'Refusing to remove a profile outside the expected M0018 temporary path.' }
-if (Test-Path -LiteralPath $resolvedProfile) { Remove-Item -LiteralPath $resolvedProfile -Recurse -Force }
-if ($opened -cne 'yes') { throw 'M0018 Tier 3 failed: reviewer did not confirm a clean Impress open.' }
+$openCopy = Join-Path ([IO.Path]::GetTempPath()) ('yadg-m0018-impress-output-' + [guid]::NewGuid().ToString('N') + '.pptx')
+$port = Get-Random -Minimum 22000 -Maximum 42000
+$profileCleaned = $false
+$failure = $null
+$result = 'failed'
+$process = $null
+$inspectScript = Join-Path $PSScriptRoot 'inspect-m0018-impress-tier3.py'
+try {
+    & dotnet $cli presentation check --template $template --source $source
+    if ($LASTEXITCODE -ne 0) { throw 'Impress-origin fixture failed presentation preflight.' }
+    & dotnet $cli presentation build --template $template --source $source --output $candidate
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'Impress-origin review candidate build failed.' }
+    Copy-Item -LiteralPath $candidate -Destination $openCopy
 
-$record = [ordered]@{
-    milestone = 'M0018'
-    repositoryRevision = (& git -C $repo rev-parse HEAD).Trim()
-    application = 'LibreOffice Impress'
-    applicationVersion = $version
-    templateOriginApplication = $TemplateOriginApplication
-    templateOriginVersion = $TemplateOriginVersion
-    templateCreationMethod = $TemplateCreationMethod
-    templateCreatedAtUtc = $createdAt.ToString('O')
-    platform = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
-    syntheticAndRedistributionSafe = $true
-    templatePath = [IO.Path]::GetRelativePath($repo, $template)
-    templateSha256 = (Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToUpperInvariant()
-    sourcePaths = @($sources | ForEach-Object { [IO.Path]::GetRelativePath($repo, $_) })
-    sourceSha256 = @($sources | ForEach-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToUpperInvariant() })
-    outputPath = [IO.Path]::GetRelativePath($repo, $output)
-    outputSha256 = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToUpperInvariant()
-    openResult = 'operator-confirmed-open-without-repair'
-    profileCleaned = -not (Test-Path -LiteralPath $resolvedProfile)
+    $process = Start-Process -FilePath $soffice -ArgumentList @("-env:UserInstallation=`"$profileUri`"", '--norestore', "--accept=socket,host=localhost,port=$port;urp;StarOffice.ServiceManager", '--impress') -PassThru
+    $env:YADG_M0018_IMPRESS_PORT = [string]$port
+    $env:YADG_M0018_IMPRESS_VERSION = [string]$version
+    $env:YADG_M0018_PAUSE_FOR_VISUAL_INSPECTION = '1'
+    & $python $inspectScript $template $source $openCopy $candidate $evidence $repo $revision
+    if ($LASTEXITCODE -ne 0) { throw 'Real LibreOffice Impress did not open and inspect the generated candidate cleanly.' }
+    if (-not $process.WaitForExit(30000)) { Stop-Process -Id $process.Id -Force; $process.WaitForExit() }
+
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    $resolvedProfile = [IO.Path]::GetFullPath($profile)
+    if (-not $resolvedProfile.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolvedProfile) -notmatch '^yadg-m0018-impress-[0-9a-f]{32}$') { throw 'Refusing to remove an Impress profile outside the expected M0018 temporary path.' }
+    if (Test-Path -LiteralPath $resolvedProfile) { Remove-Item -LiteralPath $resolvedProfile -Recurse -Force }
+    $profileCleaned = -not (Test-Path -LiteralPath $resolvedProfile)
+    if (-not $profileCleaned) { throw 'Isolated Impress profile cleanup failed.' }
+    Remove-Item -LiteralPath $openCopy -Force
+    $record = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json -DateKind String
+    $record | Add-Member -NotePropertyName profileCleaned -NotePropertyValue $profileCleaned -Force
+    $record | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidence -Encoding utf8
+    $result = [string]$record.result
+    if ($result -ne 'passed') { throw 'LibreOffice Impress candidate inspection returned a failed result.' }
+} catch {
+    $failure = $_.Exception.Message
+    if (Test-Path -LiteralPath $evidence) {
+        try {
+            $record = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json -DateKind String
+            $record.result = 'failed'
+            if ([string]::IsNullOrWhiteSpace([string]$record.failure)) { $record.failure = $failure }
+            elseif ([string]$record.failure -notlike "*$failure*") { $record.failure = "$($record.failure); $failure" }
+            $record.profileCleaned = $profileCleaned
+            $record | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidence -Encoding utf8
+        } catch {}
+    } else {
+        [ordered]@{
+            milestone='M0018'; gate='VAL-03'; result='failed'; failure=$failure
+            repositoryRevision=$revision; application='LibreOffice Impress'; applicationVersion=$version
+            templatePath=[IO.Path]::GetRelativePath($repo,$template); templateSha256=$templateHash
+            sourcePath=[IO.Path]::GetRelativePath($repo,$source); sourceSha256=$sourceHash
+            outputPath=[IO.Path]::GetRelativePath($repo,$candidate)
+            outputSha256=if (Test-Path -LiteralPath $candidate) { (Get-FileHash $candidate -Algorithm SHA256).Hash.ToUpperInvariant() } else { $null }
+            openResult='failed'; profileCleaned=$false
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $evidence -Encoding utf8
+    }
+} finally {
+    Remove-Item Env:YADG_M0018_IMPRESS_PORT -ErrorAction SilentlyContinue
+    Remove-Item Env:YADG_M0018_IMPRESS_VERSION -ErrorAction SilentlyContinue
+    Remove-Item Env:YADG_M0018_PAUSE_FOR_VISUAL_INSPECTION -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $openCopy) { Remove-Item -LiteralPath $openCopy -Force -ErrorAction SilentlyContinue }
+    $profileName = [IO.Path]::GetFileName([IO.Path]::GetFullPath($profile))
+    $ownedProcesses = Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'soffice.bin' -or $_.Name -eq 'soffice.exe') -and $_.CommandLine -and $_.CommandLine.Contains($profileName) }
+    $ownedProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    if ((Test-Path -LiteralPath $profile) -and -not $profileCleaned) {
+        $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        $resolvedProfile = [IO.Path]::GetFullPath($profile)
+        if ($resolvedProfile.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -and [IO.Path]::GetFileName($resolvedProfile) -match '^yadg-m0018-impress-[0-9a-f]{32}$') {
+            Remove-Item -LiteralPath $resolvedProfile -Recurse -Force -ErrorAction SilentlyContinue
+            $profileCleaned = -not (Test-Path -LiteralPath $resolvedProfile)
+        }
+    }
 }
-$record | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $evidence -Encoding utf8
-Write-Output "M0018 real Impress open recorded: $evidence"
+if ($result -ne 'passed') { throw "M0018 Impress Tier 3 failed: $failure. Receipt: $evidence" }
+Write-Output "M0018 Impress-origin Tier 3 passed: $evidence"

@@ -10,6 +10,18 @@ dotnet test "$PSScriptRoot/../Yadg.slnx" --no-build --configuration Release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & "$PSScriptRoot/verify-m0012-fixtures.ps1"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$m0018FixtureVerifier = Join-Path $PSScriptRoot 'verify-m0018-fixtures.ps1'
+if (Test-Path -LiteralPath $m0018FixtureVerifier) {
+    & $m0018FixtureVerifier
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+$m0018Manifest = Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/review-manifest.json'
+if (Test-Path -LiteralPath $m0018Manifest -PathType Leaf) {
+    & (Join-Path $PSScriptRoot 'verify-m0018-review-manifest.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} else {
+    Write-Output 'M0018 review-manifest consistency deferred until origin-specific Tier 3 evidence is generated.'
+}
 $repo = Split-Path -Parent $PSScriptRoot
 $trackedOperational = & git -C $repo ls-files | Where-Object { $_ -match '^(\.execution|\.review|artifacts)/' }
 if ($trackedOperational) { throw "Operational state is tracked: $($trackedOperational -join ', ')" }

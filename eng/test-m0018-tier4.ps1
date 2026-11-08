@@ -18,17 +18,40 @@ $evidenceDirectory = [IO.Path]::GetFullPath($EvidenceRoot)
 New-Item -ItemType Directory -Force -Path $evidenceDirectory | Out-Null
 $evidenceTemplate = Join-Path $evidenceDirectory 'consumer-template.pptx'
 Copy-Item -LiteralPath $template -Destination $evidenceTemplate -Force
-$evidenceSources = @()
-for ($index = 0; $index -lt $sources.Count; $index++) {
-    $evidenceSource = Join-Path $evidenceDirectory ('consumer-source-{0:D2}.md' -f ($index + 1))
-    Copy-Item -LiteralPath $sources[$index] -Destination $evidenceSource -Force
-    $evidenceSources += $evidenceSource
-}
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('yadg-m0018-tier4-' + [guid]::NewGuid().ToString('N'))
 $packageDirectory = Join-Path $scratch 'package'
 $toolDirectory = Join-Path $scratch 'tool'
 $workspace = Join-Path $scratch 'consumer'
 New-Item -ItemType Directory -Force -Path $packageDirectory, $toolDirectory, $workspace | Out-Null
+$evidenceSources = @()
+$toolSources = @()
+for ($index = 0; $index -lt $sources.Count; $index++) {
+    $evidenceSource = Join-Path $evidenceDirectory ('consumer-source-{0:D2}.md' -f ($index + 1))
+    Copy-Item -LiteralPath $sources[$index] -Destination $evidenceSource -Force
+    $evidenceSources += $evidenceSource
+    $toolSource = Join-Path $workspace ('consumer-source-{0:D2}.md' -f ($index + 1))
+    Copy-Item -LiteralPath $sources[$index] -Destination $toolSource -Force
+    $toolSources += $toolSource
+}
+$consumerAssets = [Collections.Generic.List[object]]::new()
+for ($index = 0; $index -lt $sources.Count; $index++) {
+    $sourceText = Get-Content -LiteralPath $sources[$index] -Raw
+    foreach ($match in [regex]::Matches($sourceText, '!\[[^\]]*\]\((?<path>[^)]+)\)')) {
+        $imageReference = $match.Groups['path'].Value.Trim()
+        if ([IO.Path]::IsPathRooted($imageReference) -or [Uri]::IsWellFormedUriString($imageReference, [UriKind]::Absolute)) { throw "M0018 Tier 4 cannot package a non-local image reference: $imageReference" }
+        $imageSource = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $sources[$index]) $imageReference))
+        if (-not (Test-Path -LiteralPath $imageSource -PathType Leaf)) { throw "M0018 Tier 4 source image is missing: $imageSource" }
+        $imageDestination = [IO.Path]::GetFullPath((Join-Path $evidenceDirectory $imageReference))
+        $evidenceRootPrefix = [IO.Path]::GetFullPath($evidenceDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if (-not $imageDestination.StartsWith($evidenceRootPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw "M0018 Tier 4 image reference escapes the evidence workspace: $imageReference" }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $imageDestination) | Out-Null
+        Copy-Item -LiteralPath $imageSource -Destination $imageDestination -Force
+        $toolImage = Join-Path $workspace $imageReference
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $toolImage) | Out-Null
+        Copy-Item -LiteralPath $imageSource -Destination $toolImage -Force
+        $consumerAssets.Add([ordered]@{ path=[IO.Path]::GetRelativePath($evidenceDirectory,$imageDestination); sha256=(Get-FileHash -LiteralPath $imageDestination -Algorithm SHA256).Hash.ToUpperInvariant() })
+    }
+}
 $globalConfig = [ordered]@{ sdk = [ordered]@{ version = $sdkVersion; rollForward = 'disable'; allowPrerelease = $false } }
 $globalConfig | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $scratch 'global.json') -Encoding utf8
 Push-Location -LiteralPath $scratch
@@ -41,12 +64,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'M0018 isolated current-tool installation failed.' }
     $shim = Join-Path $toolDirectory 'yadg.exe'
     $checkArgs = @('presentation','check','--template',$evidenceTemplate)
-    foreach ($source in $evidenceSources) { $checkArgs += @('--source',$source) }
+    foreach ($source in $toolSources) { $checkArgs += @('--source',$source) }
     & $shim @checkArgs
     if ($LASTEXITCODE -ne 0) { throw 'M0018 isolated packaged presentation check failed.' }
     $candidate = Join-Path $workspace 'consumer-sample.pptx'
     $buildArgs = @('presentation','build','--template',$evidenceTemplate)
-    foreach ($source in $evidenceSources) { $buildArgs += @('--source',$source) }
+    foreach ($source in $toolSources) { $buildArgs += @('--source',$source) }
     $buildArgs += @('--output',$candidate)
     & $shim @buildArgs
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'M0018 isolated packaged presentation build failed.' }
@@ -74,6 +97,7 @@ try {
         templateSha256 = (Get-FileHash -LiteralPath $evidenceTemplate -Algorithm SHA256).Hash.ToUpperInvariant()
         sourcePaths = @($evidenceSources | ForEach-Object { [IO.Path]::GetRelativePath($repo, $_) })
         sourceSha256 = @($evidenceSources | ForEach-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToUpperInvariant() })
+        sourceAssets = @($consumerAssets)
         outputPath = [IO.Path]::GetRelativePath($repo, $artifact)
         outputSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToUpperInvariant()
         outputSlideCount = $slideCount

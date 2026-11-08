@@ -1,0 +1,21 @@
+{
+  "id": "powerpoint-origin",
+  "path": "tests\\fixtures\\m0018\\powerpoint-origin.pptx",
+  "originApplication": "Microsoft PowerPoint",
+  "applicationVersion": "16.0.20527.20150",
+  "platform": "Microsoft Windows 10.0.26300",
+  "createdAtUtc": "2026-11-08T15:45:19.5979257+00:00",
+  "saveDateUtc": "2026-11-08T15:45:19.5979257+00:00",
+  "creationMethod": "Created as a new presentation through the real desktop Microsoft PowerPoint COM object model; native default master/theme/layouts and placeholders were retained and the four prototype slides were composed in PowerPoint before saving as PPTX.",
+  "syntheticAndRedistributionSafe": true,
+  "createdInApplication": true,
+  "notOpenXmlGeneratedOrRoundTripped": true,
+  "retainedNativeMasterThemeLayouts": true,
+  "layouts": [
+    "content",
+    "two-columns",
+    "text-image",
+    "table"
+  ],
+  "sha256": "F6E8B8F0AB665A31320888A6B98935D83D0A6B26727434A30D01D51A6443F00E"
+}

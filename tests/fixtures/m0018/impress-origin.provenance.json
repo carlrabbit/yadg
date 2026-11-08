@@ -1,0 +1,21 @@
+{
+  "id": "impress-origin",
+  "path": "tests\\fixtures\\m0018\\impress-origin.pptx",
+  "originApplication": "LibreOffice Impress",
+  "applicationVersion": "26.8.2.2",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "createdAtUtc": "2026-11-08T16:12:25.127318Z",
+  "saveDateUtc": "2026-11-08T16:12:25.127318Z",
+  "creationMethod": "Created as a new presentation through real LibreOffice Impress UNO; native default master, theme, layouts, title/body/list placeholders and a native editable table were authored in the Impress document model before saving as PPTX.",
+  "syntheticAndRedistributionSafe": true,
+  "createdInApplication": true,
+  "notOpenXmlGeneratedOrRoundTripped": true,
+  "retainedNativeMasterThemeLayouts": true,
+  "layouts": [
+    "content",
+    "two-columns",
+    "text-image",
+    "table"
+  ],
+  "sha256": "FB50900ABFB9CB3117881E89BAB8E5E456AB267A9AB904A0E14C26509A0597B6"
+}
