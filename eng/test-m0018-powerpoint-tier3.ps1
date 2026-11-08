@@ -24,12 +24,68 @@ $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToUpper
 $templateHash = (Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToUpperInvariant()
 $app = $null
 $presentation = $null
+$templatePresentation = $null
 $reviewCandidatePresentation = $null
 $appWasRunning = $false
 $failure = $null
 $applicationVersion = $null
 $inspect = $null
+$formattingValidation = $null
 $result = 'failed'
+
+function Get-M0018ShapeByName($document, [int] $slideIndex, [string] $name) {
+    foreach ($shape in $document.Slides.Item($slideIndex).Shapes) {
+        if ([string]$shape.Name -ceq $name) { return $shape }
+    }
+    throw "PowerPoint slide $slideIndex is missing expected shape '$name'."
+}
+
+function Get-M0018Paragraph($shape, [string] $expectedText) {
+    foreach ($paragraph in $shape.TextFrame.TextRange.Paragraphs()) {
+        if ([string]$paragraph.Text.Trim() -ceq $expectedText) { return $paragraph }
+    }
+    throw "PowerPoint shape '$($shape.Name)' is missing formatting exemplar/text '$expectedText'."
+}
+
+function Get-M0018TextFormatting($paragraph) {
+    $font = $paragraph.Font
+    $format = $paragraph.ParagraphFormat
+    $bullet = $format.Bullet
+    return [ordered]@{
+        fontName = [string]$font.Name
+        fontSize = [double]$font.Size
+        bold = [int]$font.Bold
+        italic = [int]$font.Italic
+        underline = [int]$font.Underline
+        colorRgb = [int]$font.Color.RGB
+        alignment = [int]$format.Alignment
+        indentLevel = [int]$paragraph.IndentLevel
+        bulletVisible = [int]$bullet.Visible
+        bulletType = [int]$bullet.Type
+        bulletCharacter = [int]$bullet.Character
+    }
+}
+
+function Compare-M0018Formatting([string]$role, $templateFormatting, $generatedFormatting) {
+    foreach ($key in $templateFormatting.Keys) {
+        if ([string]$templateFormatting[$key] -cne [string]$generatedFormatting[$key]) {
+            throw "PowerPoint generated $role formatting differs from its native template example for '$key': template='$($templateFormatting[$key])', generated='$($generatedFormatting[$key])'."
+        }
+    }
+    return [ordered]@{ role = $role; result = 'matched-template-example'; template = $templateFormatting; generated = $generatedFormatting }
+}
+
+function Get-M0018TableCellFormatting($slide, [int] $row, [int] $column) {
+    foreach ($shape in $slide.Shapes) {
+        try {
+            if ($shape.HasTable -eq -1) {
+                return Get-M0018TextFormatting $shape.Table.Cell($row, $column).Shape.TextFrame.TextRange.Paragraphs(1)
+            }
+        } catch {}
+    }
+    throw "PowerPoint slide $($slide.SlideIndex) has no native table cell at ($row,$column)."
+}
+
 try {
     $arguments = @($cli, 'presentation', 'check', '--template', $template, '--source', $source)
     & dotnet @arguments
@@ -45,6 +101,8 @@ try {
     $applicationVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($process.Path).ProductVersion
     $presentation = $app.Presentations.Open($output, -1, 0, -1)
     if (-not $presentation) { throw 'PowerPoint did not return an opened presentation document.' }
+    $templatePresentation = $app.Presentations.Open($template, -1, 0, 0)
+    if (-not $templatePresentation) { throw 'PowerPoint did not open the canonical template for formatting comparison.' }
 
     $titles = [Collections.Generic.List[string]]::new()
     $staticCount = 0
@@ -76,7 +134,24 @@ try {
     $designCount = $presentation.Designs.Count
     $layoutCount = $presentation.Designs.Item(1).SlideMaster.CustomLayouts.Count
     if ($designCount -lt 1 -or $layoutCount -lt 1) { throw 'The opened output has no native design/master/layout relationship.' }
-    $inspect = [ordered]@{ slideTitles=@($titles); slideCount=$presentation.Slides.Count; staticFooterCount=$staticCount; editablePictureCount=$pictures; nativeTableCount=$tables; editableTextShapeCount=$textShapeCount; designCount=$designCount; nativeLayoutCount=$layoutCount }
+
+    $templateTitle = Get-M0018Paragraph (Get-M0018ShapeByName $templatePresentation 1 'YADG title content') '{{title}}'
+    $outputTitle = Get-M0018Paragraph (Get-M0018ShapeByName $presentation 1 'YADG title content') 'Narrative overview'
+    $templateBody = Get-M0018ShapeByName $templatePresentation 1 'YADG content region'
+    $outputBody = Get-M0018ShapeByName $presentation 1 'YADG content region'
+    $formatComparisons = [Collections.Generic.List[object]]::new()
+    $formatComparisons.Add((Compare-M0018Formatting 'title' (Get-M0018TextFormatting $templateTitle) (Get-M0018TextFormatting $outputTitle)))
+    $formatComparisons.Add((Compare-M0018Formatting 'paragraph' (Get-M0018TextFormatting (Get-M0018Paragraph $templateBody 'ordinary paragraph example')) (Get-M0018TextFormatting (Get-M0018Paragraph $outputBody 'This paragraph was authored in the shared M0018 compatibility source.'))))
+    $formatComparisons.Add((Compare-M0018Formatting 'heading' (Get-M0018TextFormatting (Get-M0018Paragraph $templateBody 'content heading example')) (Get-M0018TextFormatting (Get-M0018Paragraph $outputBody 'Design intent'))))
+    $formatComparisons.Add((Compare-M0018Formatting 'nested-list' (Get-M0018TextFormatting (Get-M0018Paragraph $templateBody 'list formatting example')) (Get-M0018TextFormatting (Get-M0018Paragraph $outputBody 'A nested list remains editable'))))
+    $templateTableHeader = Get-M0018TableCellFormatting $templatePresentation.Slides.Item(4) 1 2
+    $outputTableHeader = Get-M0018TableCellFormatting $presentation.Slides.Item(4) 1 2
+    $formatComparisons.Add((Compare-M0018Formatting 'table-header' $templateTableHeader $outputTableHeader))
+    $templateTableBody = Get-M0018TableCellFormatting $templatePresentation.Slides.Item(4) 2 1
+    $outputTableBody = Get-M0018TableCellFormatting $presentation.Slides.Item(4) 2 1
+    $formatComparisons.Add((Compare-M0018Formatting 'table-body' $templateTableBody $outputTableBody))
+    $formattingValidation = [ordered]@{ result = 'passed'; source = 'Microsoft PowerPoint COM formatting comparison against the canonical PowerPoint-origin template'; comparisons = @($formatComparisons) }
+    $inspect = [ordered]@{ slideTitles=@($titles); slideCount=$presentation.Slides.Count; staticFooterCount=$staticCount; editablePictureCount=$pictures; nativeTableCount=$tables; editableTextShapeCount=$textShapeCount; designCount=$designCount; nativeLayoutCount=$layoutCount; formattingValidation=$formattingValidation }
 
     $reviewCandidatePath = Join-Path $repo 'artifacts/review/evidence/M0018/review-sample.pptx'
     if (Test-Path -LiteralPath $reviewCandidatePath -PathType Leaf) {
@@ -98,6 +173,7 @@ try {
     $presentationClosed = $true
     if ($reviewCandidatePresentation) { try { $reviewCandidatePresentation.Close() } catch { $presentationClosed = $false } }
     if ($presentation) { try { $presentation.Close() } catch { $presentationClosed = $false } }
+    if ($templatePresentation) { try { $templatePresentation.Close() } catch { $presentationClosed = $false } }
     $applicationQuit = $null
     if ($app -and -not $appWasRunning) { $applicationQuit = $true; try { $app.Quit() } catch { $applicationQuit = $false } }
     [GC]::Collect(); [GC]::WaitForPendingFinalizers()
@@ -113,7 +189,7 @@ try {
         outputPath = [IO.Path]::GetRelativePath($repo, $output)
         outputSha256 = if (Test-Path -LiteralPath $output -PathType Leaf) { (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToUpperInvariant() } else { $null }
         openResult = if ($result -eq 'passed') { 'opened-without-repair' } else { 'failed' }
-        inspection = $inspect; reviewCandidatePowerPointOpen = $reviewCandidateCheck
+        inspection = $inspect; formattingValidation = $formattingValidation; reviewCandidatePowerPointOpen = $reviewCandidateCheck
         presentationClosed = $presentationClosed; applicationOwned = (-not $appWasRunning); applicationQuit = $applicationQuit
     }
     $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $evidence -Encoding utf8

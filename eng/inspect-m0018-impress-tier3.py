@@ -29,6 +29,107 @@ def pv(name: str, value: object) -> PropertyValue:
     return result
 
 
+def require_shape(page, name: str):
+    for index in range(page.getCount()):
+        shape = page.getByIndex(index)
+        if shape.getName() == name:
+            return shape
+    raise RuntimeError(f"Expected native Impress shape '{name}' is missing.")
+
+
+def require_title_shape(page):
+    for index in range(page.getCount()):
+        shape = page.getByIndex(index)
+        if "TitleTextShape" in shape.getShapeType():
+            return shape
+    raise RuntimeError("Expected native Impress title placeholder is missing.")
+
+
+def require_text_shape(page, sample: str):
+    for index in range(page.getCount()):
+        shape = page.getByIndex(index)
+        if sample in shape.getString():
+            return shape
+    raise RuntimeError(f"Expected native Impress text region containing '{sample}' is missing.")
+
+
+def select_text(shape, value: str):
+    position = shape.getString().find(value)
+    if position < 0:
+        raise RuntimeError(f"Shape '{shape.getName()}' does not contain formatting sample '{value}'.")
+    cursor = shape.createTextCursor()
+    cursor.gotoStart(False)
+    if position:
+        cursor.goRight(position, False)
+    cursor.goRight(len(value), True)
+    return cursor
+
+
+def formatting_signature(text_range) -> dict:
+    names = (
+        "CharFontName", "CharHeight", "CharColor", "CharWeight", "CharPosture",
+        "ParaAdjust", "ParaLeftMargin", "ParaFirstLineIndent", "NumberingLevel",
+    )
+    signature = {}
+    for name in names:
+        try:
+            value = text_range.getPropertyValue(name)
+        except Exception as error:  # noqa: BLE001 - a missing style property invalidates this comparison
+            raise RuntimeError(f"Native Impress formatting property '{name}' is unavailable.") from error
+        if value is None:
+            signature[name] = None
+            continue
+        if name in ("CharFontName", "CharPosture", "ParaAdjust"):
+            signature[name] = str(value)
+        elif name == "CharHeight":
+            signature[name] = round(float(value), 3)
+        else:
+            signature[name] = int(value)
+    return signature
+
+
+def compare_formatting(role: str, template_signature: dict, generated_signature: dict) -> dict:
+    if template_signature != generated_signature:
+        differing = {
+            key: {"template": template_signature.get(key), "generated": generated_signature.get(key)}
+            for key in template_signature.keys() | generated_signature.keys()
+            if template_signature.get(key) != generated_signature.get(key)
+        }
+        raise RuntimeError(f"Generated {role} formatting differs from its Impress template example: {differing}")
+    return {"role": role, "result": "matched-template-example", "template": template_signature, "generated": generated_signature}
+
+
+def inspect_formatting(desktop, path: Path) -> dict:
+    doc = desktop.loadComponentFromURL(uno.systemPathToFileUrl(str(path)), "_blank", 0, (pv("ReadOnly", True),))
+    if doc is None:
+        raise RuntimeError(f"Impress did not return a document for formatting inspection: {path}.")
+    try:
+        pages = doc.getDrawPages()
+        content_page = pages.getByIndex(0)
+        table_page = pages.getByIndex(3)
+        is_template = path.resolve() == template_path.resolve()
+        title = require_title_shape(content_page)
+        body_sample = "This paragraph was authored in the shared M0018 compatibility source." if not is_template else "ordinary paragraph example"
+        body = require_text_shape(content_page, body_sample)
+        table_shape = next(
+            table_page.getByIndex(index)
+            for index in range(table_page.getCount())
+            if table_page.getByIndex(index).getShapeType() == "com.sun.star.drawing.TableShape"
+        )
+        table = table_shape.Model
+        samples = {
+            "title": formatting_signature(select_text(title, "{{title}}" if is_template else "Narrative overview")),
+            "paragraph": formatting_signature(select_text(body, "ordinary paragraph example" if is_template else "This paragraph was authored in the shared M0018 compatibility source.")),
+            "heading": formatting_signature(select_text(body, "content heading example" if is_template else "Design intent")),
+            "list": formatting_signature(select_text(body, "list formatting example" if is_template else "Readable default body formatting")),
+            "table-header": formatting_signature(table.getCellByPosition(1, 0)),
+            "table-body": formatting_signature(table.getCellByPosition(0, 1)),
+        }
+        return samples
+    finally:
+        doc.close(True)
+
+
 def connect():
     local = uno.getComponentContext()
     resolver = local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local)
@@ -43,7 +144,7 @@ def connect():
     raise RuntimeError("Could not connect to the isolated LibreOffice Impress service.") from last_error
 
 
-def inspect_document(desktop, path: Path) -> dict:
+def inspect_document(desktop, path: Path, generated: bool) -> dict:
     doc = desktop.loadComponentFromURL(uno.systemPathToFileUrl(str(path)), "_blank", 0, (pv("ReadOnly", True),))
     if doc is None:
         raise RuntimeError(f"Impress did not return a document for {path}.")
@@ -69,7 +170,7 @@ def inspect_document(desktop, path: Path) -> dict:
                     title = shape.getString().strip()
                 if "TextShape" in shape_type or "OutlinerShape" in shape_type or "TitleTextShape" in shape_type:
                     text_shapes += 1
-                    if "{{" in shape.getString():
+                    if generated and "{{" in shape.getString():
                         raise RuntimeError(f"Unresolved visible tag in generated slide {index + 1} of {path}.")
                 if "GraphicObjectShape" in shape_type:
                     pictures += 1
@@ -80,7 +181,7 @@ def inspect_document(desktop, path: Path) -> dict:
                     if columns != 2 or rows < 3:
                         raise RuntimeError(f"Expected the editable 2-column, 3-row native table in {path}; found {columns}x{rows}.")
                     cell_text = [model.getCellByPosition(column, row).String for row in range(rows) for column in range(columns)]
-                    if any("{{" in value for value in cell_text):
+                    if generated and any("{{" in value for value in cell_text):
                         raise RuntimeError(f"Unresolved table tag in generated slide {index + 1} of {path}.")
                     tables.append({"rows": rows, "columns": columns, "cells": cell_text})
             if not title:
@@ -117,7 +218,18 @@ try:
     context = connect()
     manager = context.ServiceManager
     desktop = manager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
-    inspection = inspect_document(desktop, open_path)
+    inspection = inspect_document(desktop, open_path, generated=True)
+    template_formatting = inspect_formatting(desktop, template_path)
+    generated_formatting = inspect_formatting(desktop, open_path)
+    formatting_comparisons = [
+        compare_formatting(role, template_formatting[role], generated_formatting[role])
+        for role in ("title", "paragraph", "heading", "list", "table-header", "table-body")
+    ]
+    inspection["formattingValidation"] = {
+        "result": "passed",
+        "source": "LibreOffice Impress UNO formatting comparison against the canonical Impress-origin template",
+        "comparisons": formatting_comparisons,
+    }
     desktop.terminate()
     result = "passed"
 except Exception as error:  # noqa: BLE001 - leave a durable failure receipt

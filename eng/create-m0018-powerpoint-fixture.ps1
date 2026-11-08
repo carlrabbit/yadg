@@ -24,7 +24,16 @@ try {
     $layouts = $master.CustomLayouts
     $presentation.PageSetup.SlideSize = 15 # ppSlideSizeWide, PowerPoint's native widescreen page.
 
-    function Set-RoleSamples($shape, [string] $marker, [bool] $includeHeading, [bool] $includeBullet) {
+    function Copy-TextFormatting($source, $target) {
+        foreach ($property in @('Name', 'Size', 'Bold', 'Italic', 'Underline')) {
+            try { $target.Font.$property = $source.Font.$property }
+            catch { throw "Could not copy native PowerPoint $property formatting from the application exemplar." }
+        }
+        try { $target.Font.Color.RGB = $source.Font.Color.RGB }
+        catch { throw 'Could not copy native PowerPoint font color from the application exemplar.' }
+    }
+
+    function Set-RoleSamples($shape, [string] $marker, $titleExemplar, [bool] $includeHeading, [bool] $includeBullet) {
         $lines = [Collections.Generic.List[string]]::new()
         $lines.Add($marker)
         $lines.Add('ordinary paragraph example')
@@ -32,27 +41,26 @@ try {
         if ($includeBullet) { $lines.Add('list formatting example') }
         $shape.TextFrame.WordWrap = -1
         $shape.TextFrame.TextRange.Text = $lines -join "`r"
-        $paragraph = $shape.TextFrame.TextRange.Paragraphs(2)
-        $paragraph.Font.Size = 18
         if ($includeHeading) {
             $heading = $shape.TextFrame.TextRange.Paragraphs(3)
-            $heading.Font.Size = 28
+            Copy-TextFormatting $titleExemplar $heading
         }
         if ($includeBullet) {
             $bulletIndex = if ($includeHeading) { 4 } else { 3 }
             $bullet = $shape.TextFrame.TextRange.Paragraphs($bulletIndex)
-            $bullet.Font.Size = 18
-            $bulletFormat = $bullet.ParagraphFormat.Bullet
-            $bulletFormat.Visible = $true
-            $bulletFormat.Type = 1
-            $bulletFormat.Character = 42
-            $bullet.IndentLevel = 1
+            # A content placeholder supplies PowerPoint's native outline-level
+            # bullet, indent and font. Use its second level as the nested-list exemplar.
+            $bullet.IndentLevel = 2
+            # Materialize the placeholder's inherited bullet on this paragraph
+            # so the example remains visible to Open XML consumers as well.
+            $bullet.ParagraphFormat.Bullet.Visible = -1
         }
     }
 
     function Set-Title($slide) {
         $title = $slide.Shapes.Placeholders.Item(1)
         $title.TextFrame.TextRange.Text = '{{title}}'
+        return $title
     }
 
     function Add-PrototypeMarker($slide, [string] $layoutId) {
@@ -75,56 +83,69 @@ try {
         $footer.Line.Visible = 0
     }
 
-    function Clear-BodyPlaceholders($slide) {
-        for ($index = $slide.Shapes.Count; $index -ge 1; $index--) {
-            $shape = $slide.Shapes.Item($index)
-            try {
-                if ($shape.Type -eq 14 -and $shape.PlaceholderFormat.Type -ne 1) { $shape.Delete() }
-            } catch {}
+    function Get-BodyPlaceholders($slide) {
+        $result = [Collections.Generic.List[object]]::new()
+        foreach ($shape in $slide.Shapes) {
+            if ($shape.Type -ne 14) { continue }
+            $placeholderType = [int]$shape.PlaceholderFormat.Type
+            if ($placeholderType -in @(2, 7)) { $result.Add($shape) }
         }
+        return $result.ToArray()
     }
 
-    function Add-TextRegion($slide, [string] $name, [string] $marker, [single] $left, [single] $top, [single] $width, [single] $height) {
-        $shape = $slide.Shapes.AddTextbox(1, $left, $top, $width, $height)
+    function Set-TextRegion($shape, [string] $name, [string] $marker, $titleExemplar) {
         $shape.Name = $name
-        Set-RoleSamples $shape $marker $true $true
-        return $shape
+        Set-RoleSamples $shape $marker $titleExemplar.TextFrame.TextRange.Paragraphs(1) $true $true
     }
 
-    function Add-TitleAndContent($layout, [string] $layoutId, [string] $titleText, [bool] $heading, [bool] $bullet) {
+    function Add-TitleAndContent($layout, [string] $layoutId) {
         $slide = $presentation.Slides.AddSlide($presentation.Slides.Count + 1, $layout)
-        Set-Title $slide
+        $title = Set-Title $slide
         $slide.Shapes.Placeholders.Item(1).Name = "YADG title $layoutId"
-        Clear-BodyPlaceholders $slide
+        $body = @(Get-BodyPlaceholders $slide)
+        if ($body.Count -ne 1) { throw "Expected one native PowerPoint body placeholder for layout '$layoutId'; found $($body.Count)." }
+        Set-TextRegion $body[0] "YADG $layoutId region" (('{{' + $layoutId + '}}')) $title
         Add-PrototypeMarker $slide $layoutId
         Add-StaticFooter $slide
-        return $slide
+        return [pscustomobject]@{ Slide = $slide; Title = $title; Body = $body[0] }
     }
 
-    $contentSlide = Add-TitleAndContent $layouts.Item(2) 'content' 'Narrative overview' $true $true
-    Add-TextRegion $contentSlide 'YADG content region' '{{content}}' 48 138 864 315 | Out-Null
+    $contentPrototype = Add-TitleAndContent $layouts.Item(2) 'content'
+    $contentPrototype.Body.Name = 'YADG content region'
 
     $columnsSlide = $presentation.Slides.AddSlide($presentation.Slides.Count + 1, $layouts.Item(4))
-    Set-Title $columnsSlide
+    $columnsTitle = Set-Title $columnsSlide
     $columnsSlide.Shapes.Placeholders.Item(1).Name = 'YADG title two-columns'
-    Clear-BodyPlaceholders $columnsSlide
-    Add-TextRegion $columnsSlide 'YADG left region' '{{left}}' 48 138 420 315 | Out-Null
-    Add-TextRegion $columnsSlide 'YADG right region' '{{right}}' 492 138 420 315 | Out-Null
+    $columnPlaceholders = @(Get-BodyPlaceholders $columnsSlide)
+    if ($columnPlaceholders.Count -ne 2) { throw "Expected two native PowerPoint body placeholders for 'two-columns'; found $($columnPlaceholders.Count)." }
+    Set-TextRegion $columnPlaceholders[0] 'YADG left region' '{{left}}' $columnsTitle
+    Set-TextRegion $columnPlaceholders[1] 'YADG right region' '{{right}}' $columnsTitle
     Add-PrototypeMarker $columnsSlide 'two-columns'
     Add-StaticFooter $columnsSlide
 
-    $visualSlide = Add-TitleAndContent $layouts.Item(2) 'text-image' 'Architecture map' $true $true
-    Add-TextRegion $visualSlide 'YADG text region' '{{text}}' 42 138 420 315 | Out-Null
+    $visualPrototype = Add-TitleAndContent $layouts.Item(2) 'text-image'
+    $visualSlide = $visualPrototype.Slide
+    $visualRegion = $visualPrototype.Body
+    $visualRegion.Name = 'YADG text region'
+    # Keep the native content placeholder and its outline formatting; adjust
+    # only its geometry to make room for the separate editable picture region.
+    $visualRegion.Left = 42
+    $visualRegion.Top = 138
+    $visualRegion.Width = 420
+    $visualRegion.Height = 315
+    Set-RoleSamples $visualRegion '{{text}}' $visualPrototype.Title.TextFrame.TextRange.Paragraphs(1) $true $true
     $image = $visualSlide.Shapes.AddShape(1, 500, 155, 390, 275)
     $image.Name = 'YADG image region'
     $image.TextFrame.TextRange.Text = '{{image}}'
-    $image.TextFrame.TextRange.Font.Size = 18
-    $image.TextFrame.TextRange.ParagraphFormat.Alignment = 2
+    $nativeImageLabelExample = $visualRegion.TextFrame.TextRange.Paragraphs(2)
+    Copy-TextFormatting $nativeImageLabelExample $image.TextFrame.TextRange
+    try { $image.TextFrame.TextRange.ParagraphFormat.Alignment = $nativeImageLabelExample.ParagraphFormat.Alignment }
+    catch { throw 'Could not copy native PowerPoint paragraph alignment to the image-region marker.' }
     $image.Fill.Visible = 0
     $image.Line.Visible = -1
 
     $tableSlide = $presentation.Slides.AddSlide($presentation.Slides.Count + 1, $layouts.Item(6))
-    Set-Title $tableSlide
+    $tableTitle = Set-Title $tableSlide
     $tableSlide.Shapes.Placeholders.Item(1).Name = 'YADG title table'
     Add-PrototypeMarker $tableSlide 'table'
     Add-StaticFooter $tableSlide
@@ -139,7 +160,6 @@ try {
         for ($column = 1; $column -le 2; $column++) {
             $cell = $frame.Table.Cell($row, $column).Shape
             $cell.TextFrame.TextRange.Text = $tableValues[$row - 1][$column - 1]
-            $cell.TextFrame.TextRange.Font.Size = 16
             if ($row -eq 1) { $cell.TextFrame.TextRange.Font.Bold = -1 }
             else { $cell.TextFrame.TextRange.Font.Italic = -1 }
         }
@@ -157,7 +177,7 @@ try {
         platform = [Runtime.InteropServices.RuntimeInformation]::OSDescription
         createdAtUtc = $created
         saveDateUtc = $created
-        creationMethod = 'Created as a new presentation through the real desktop Microsoft PowerPoint COM object model; native default master/theme/layouts and placeholders were retained and the four prototype slides were composed in PowerPoint before saving as PPTX.'
+        creationMethod = 'Created as a new presentation through the real desktop Microsoft PowerPoint COM object model; native default master/theme/layouts and title/body placeholders were retained, heading examples copied native title formatting, a native theme table was authored, and the four prototype slides were saved from PowerPoint as PPTX.'
         syntheticAndRedistributionSafe = $true
         createdInApplication = $true
         notOpenXmlGeneratedOrRoundTripped = $true

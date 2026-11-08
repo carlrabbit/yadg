@@ -309,7 +309,12 @@ public static class PresentationAuthoring
 
     private static A.RunProperties WithBold(A.RunProperties? source) { var result = source is null ? new A.RunProperties() : (A.RunProperties)source.CloneNode(true); result.Bold = true; return result; }
     private static A.RunProperties WithItalic(A.RunProperties? source) { var result = source is null ? new A.RunProperties() : (A.RunProperties)source.CloneNode(true); result.Italic = true; return result; }
-    private static bool IsBulletParagraph(A.Paragraph paragraph) => paragraph.ParagraphProperties?.Elements<A.CharacterBullet>().Any() == true || paragraph.ParagraphProperties?.Elements<A.AutoNumberedBullet>().Any() == true;
+    private static bool IsBulletParagraph(A.Paragraph paragraph)
+    {
+        if (paragraph.ParagraphProperties?.Elements<A.CharacterBullet>().Any() == true || paragraph.ParagraphProperties?.Elements<A.AutoNumberedBullet>().Any() == true) return true;
+        var nativePlaceholder = paragraph.Ancestors<P.Shape>().Any(shape => shape.NonVisualShapeProperties?.ApplicationNonVisualDrawingProperties?.PlaceholderShape is not null);
+        return nativePlaceholder && paragraph.ParagraphProperties?.Level is not null;
+    }
     private static bool RequiresList(IEnumerable<PresentationBlock> blocks) => blocks.OfType<PresentationList>().Any();
     private static bool RequiresHeading(IEnumerable<PresentationBlock> blocks) => blocks.OfType<PresentationParagraph>().Any(block => block.HeadingLevel.HasValue);
     private static bool HasHeadingExample(P.TextBody body, string marker)

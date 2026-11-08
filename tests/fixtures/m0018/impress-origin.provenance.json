@@ -4,9 +4,9 @@
   "originApplication": "LibreOffice Impress",
   "applicationVersion": "26.8.2.2",
   "platform": "Windows-11-10.0.26300-SP0",
-  "createdAtUtc": "2026-11-08T16:12:25.127318Z",
-  "saveDateUtc": "2026-11-08T16:12:25.127318Z",
-  "creationMethod": "Created as a new presentation through real LibreOffice Impress UNO; native default master, theme, layouts, title/body/list placeholders and a native editable table were authored in the Impress document model before saving as PPTX.",
+  "createdAtUtc": "2026-11-08T18:55:17.619926Z",
+  "saveDateUtc": "2026-11-08T18:55:17.619926Z",
+  "creationMethod": "Created as a new presentation through real LibreOffice Impress UNO; native default master, theme, layouts and title/body/list placeholders were retained, heading examples copied native title formatting, a native editable table was authored, and the four prototype slides were saved from Impress as PPTX.",
   "syntheticAndRedistributionSafe": true,
   "createdInApplication": true,
   "notOpenXmlGeneratedOrRoundTripped": true,
@@ -17,5 +17,5 @@
     "text-image",
     "table"
   ],
-  "sha256": "FB50900ABFB9CB3117881E89BAB8E5E456AB267A9AB904A0E14C26509A0597B6"
+  "sha256": "3456E70BCC932B71151A829C0313B33FC3851E9667BBDEE050814B066963E272"
 }

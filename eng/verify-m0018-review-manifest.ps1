@@ -42,6 +42,13 @@ foreach ($spec in $receiptSpecs) {
     $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -DateKind String
     if ([string]$receipt.milestone -cne 'M0018' -or [string]$receipt.gate -cne $spec.gate -or [string]$receipt.result -cne 'passed' -or [string]$receipt.repositoryRevision -cne $revision -or [string]$receipt.application -cne $spec.application) { throw "M0018 $($spec.key) receipt does not represent a current successful origin-specific Tier 3 run." }
     if ([string]::IsNullOrWhiteSpace([string]$receipt.applicationVersion) -or [string]$receipt.openResult -notin @('opened-without-repair','user-confirmed-open-without-repair')) { throw "M0018 $($spec.key) receipt does not establish a real Office open." }
+    $formatting = if ($spec.key -eq 'powerPointTier3') { $receipt.formattingValidation } else { $receipt.inspection.formattingValidation }
+    if ([string]$formatting.result -cne 'passed') { throw "M0018 $($spec.key) receipt does not establish deterministic formatting validation." }
+    $formatRoles = @($formatting.comparisons | ForEach-Object { [string]$_.role })
+    foreach ($role in @('title','paragraph','heading','table-header','table-body')) {
+        if ($formatRoles -cnotcontains $role) { throw "M0018 $($spec.key) formatting receipt is missing the '$role' example comparison." }
+    }
+    if (-not ($formatRoles -ccontains 'list' -or $formatRoles -ccontains 'nested-list')) { throw "M0018 $($spec.key) formatting receipt is missing a representative list comparison." }
     if ($spec.key -eq 'impressTier3') {
         if (([string]$receipt.outputPath).Replace('\', '/') -cne [string]$manifest.candidatePath -or [string]$receipt.outputSha256 -cne $candidateHash -or [string]$receipt.templateSha256 -cne $templateHash -or [string]$receipt.sourceSha256 -cne $sourceHash) { throw 'M0018 Impress-origin receipt does not bind the exact review candidate, source and fixture.' }
         if (-not [bool]$receipt.profileCleaned) { throw 'M0018 Impress-origin receipt does not prove isolated profile cleanup.' }

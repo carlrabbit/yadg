@@ -6,6 +6,7 @@ using DocumentFormat.OpenXml.Validation;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 using OpenXmlPresentationDocument = DocumentFormat.OpenXml.Packaging.PresentationDocument;
+using W = DocumentFormat.OpenXml.Wordprocessing;
 using System.Diagnostics;
 
 namespace Yadg.IntegrationTests;
@@ -184,6 +185,38 @@ public sealed class M0018FocusedTests
         Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "YADG-PPT-MD-010");
         Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "YADG-PPT-MD-005" && diagnostic.Message.Contains("image", StringComparison.Ordinal));
         Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "YADG-PPT-MD-017");
+    }
+
+    [Fact]
+    public void Presentation_preflight_rejects_malformed_source_selectors_and_payloads_without_mutating_output()
+    {
+        using var fixture = PresentationFixture.CreateRich();
+        var sourcePath = Path.Combine(fixture.Root, "invalid.md");
+        var outputPath = Path.Combine(fixture.Root, "preserved.pptx");
+        var sentinel = new byte[] { 9, 8, 7, 6 };
+        File.WriteAllBytes(outputPath, sentinel);
+        var invalidCases = new (string Markdown, string Diagnostic)[]
+        {
+            ("# Unknown {#not-a-layout}\n\nBody.", "YADG-PPT-MD-002"),
+            ("# Multiple {#two-columns}\n\nDirect body.", "YADG-PPT-MD-006"),
+            ("# Multiple {#two-columns}\n\n## Left {#left}\n\nLeft only.", "YADG-PPT-MD-005"),
+            ("# Single {#content}\n\n## Region without selector\n\nText.", "YADG-PPT-MD-009"),
+            ("# Single {#content}\n\n## First {#content}\n\nOne.\n\n## Second {#content}\n\nTwo.", "YADG-PPT-MD-010"),
+            ("# Single {#content}\n\n## Unknown {#other}\n\nText.", "YADG-PPT-MD-007"),
+            ("# Mixed {#text-image}\n\n## Text {#text}\n\n![Image in text](image.png)\n\n## Image {#image}\n\n![First](first.png)\n\n![Second](second.png)", "YADG-PPT-MD-017"),
+            ("# Data {#table}\n\n| Header |\n|---|", "YADG-PPT-MD-013"),
+            ("# Mixed {#text-image}\n\n## Text {#text}\n\n| Header |\n|---|\n| Body |\n\n## Image {#image}\n\n![Image](image.png)", "YADG-PPT-MD-017")
+        };
+
+        foreach (var (markdown, expectedCode) in invalidCases)
+        {
+            File.WriteAllText(sourcePath, markdown);
+            var diagnostics = PresentationAuthoring.Build(fixture.Template, new[] { new PresentationSource(sourcePath, markdown) }, fixture.Root, outputPath);
+            var matchingDiagnostics = diagnostics.Where(item => item.Code == expectedCode).ToArray();
+            Assert.NotEmpty(matchingDiagnostics);
+            Assert.All(matchingDiagnostics, diagnostic => Assert.Contains("invalid.md:", diagnostic.Location, StringComparison.Ordinal));
+            Assert.Equal(sentinel, File.ReadAllBytes(outputPath));
+        }
     }
 
     [Fact]
@@ -411,6 +444,51 @@ public sealed class M0018FocusedTests
             using var presentation = OpenXmlPresentationDocument.Open(Path.Combine(outputDirectory, name), false);
             Assert.Single(presentation.PresentationPart!.Presentation.SlideIdList!.Elements<P.SlideId>());
         }
+    }
+
+    [Fact]
+    public void Configured_docx_and_pptx_result_sets_commit_independently()
+    {
+        using var workspace = WorkspaceFixture.Create();
+        var templates = Path.Combine(workspace.Root, "YadgTemplates");
+        Directory.CreateDirectory(templates);
+        CreateDocxTemplate(Path.Combine(templates, "report.docx"), "{{content:document}}");
+        File.WriteAllText(Path.Combine(templates, "broken.pptx"), "not a PowerPoint package");
+        File.WriteAllText(Path.Combine(workspace.Root, "document.md"), "# Document {#document}\n\nFresh DOCX output.");
+        File.WriteAllText(Path.Combine(workspace.Root, "slides.md"), "# Slide\n\nPPTX source excluded from DOCX discovery.");
+        File.WriteAllText(Path.Combine(workspace.Root, "YADG.md"), "---\nyadg:\n  version: 1\npresentations:\n  - id: overview\n    template: YadgTemplates/broken.pptx\n    sources:\n      - slides.md\n    output: overview.pptx\n---\n");
+
+        var docxOutput = Path.Combine(workspace.Root, "YadgPreWords", "report.docx");
+        Directory.CreateDirectory(Path.GetDirectoryName(docxOutput)!);
+        File.WriteAllText(docxOutput, "old DOCX sentinel");
+        var pptxOutput = Path.Combine(workspace.Root, "YadgPresentations");
+        Directory.CreateDirectory(pptxOutput);
+        File.WriteAllText(Path.Combine(pptxOutput, "old.pptx"), "old PPTX sentinel");
+
+        var result = RunCli(workspace.Root, "build", "--workspace", workspace.Root);
+
+        Assert.NotEqual(0, result.ExitCode);
+        using (var authored = WordprocessingDocument.Open(docxOutput, false))
+            Assert.Contains(authored.MainDocumentPart!.Document.Body!.Descendants<W.Text>(), text => text.Text == "Fresh DOCX output.");
+        Assert.Single(Directory.EnumerateFiles(Path.GetDirectoryName(docxOutput)!, "*.docx", SearchOption.TopDirectoryOnly));
+        Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(docxOutput)!, "slides.docx")));
+        Assert.Equal("old PPTX sentinel", File.ReadAllText(Path.Combine(pptxOutput, "old.pptx")));
+        Assert.Single(Directory.EnumerateFiles(pptxOutput, "*.pptx", SearchOption.TopDirectoryOnly));
+    }
+
+    private static void CreateDocxTemplate(string path, string contentTag)
+    {
+        using var document = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
+        var main = document.AddMainDocumentPart();
+        var styles = main.AddNewPart<StyleDefinitionsPart>();
+        styles.Styles = new W.Styles(new W.Style { Type = W.StyleValues.Paragraph, StyleId = "BodyText" });
+        styles.Styles.Append(Enumerable.Range(1, 6).Select(index => new W.Style { Type = W.StyleValues.Paragraph, StyleId = $"Heading{index}" }));
+        styles.Styles.Save();
+        main.Document = new W.Document(new W.Body(
+            new W.Paragraph(new W.ParagraphProperties(new W.ParagraphStyleId { Val = "Heading1" }, new W.OutlineLevel { Val = 0 }), new W.Run(new W.Text("Template heading"))),
+            new W.Paragraph(new W.ParagraphProperties(new W.ParagraphStyleId { Val = "BodyText" }), new W.Run(new W.Text(contentTag))),
+            new W.Paragraph(new W.Run(new W.Text("Template static paragraph")))));
+        main.Document.Save();
     }
 
     private static (int ExitCode, string StandardOutput, string StandardError) RunCli(string workingDirectory, params string[] arguments)

@@ -45,31 +45,20 @@ def add_text_shape(doc, page, name: str, text: str, x: int, y: int, width: int, 
     return shape
 
 
-def replace_placeholder_with_text_shape(doc, page, placeholder, name: str, x: int, y: int, width: int, height: int, style_source=None):
-    """Materialize inherited body text as an ordinary, template-positioned text shape."""
-    shape = doc.createInstance("com.sun.star.drawing.TextShape")
-    page.add(shape)
-    shape.Name = name
-    style_source = style_source or placeholder
-    try:
-        shape.Style = style_source.Style
-    except Exception:  # noqa: BLE001 - some native layout styles are not assignable to ordinary shapes
-        pass
-    for property_name in (
-        "CharFontName", "CharHeight", "CharColor", "CharWeight", "CharPosture",
-        "ParaAdjust", "ParaTopMargin", "ParaBottomMargin", "ParaLeftMargin",
-        "ParaRightMargin", "TextWordWrap", "TextAutoGrowHeight", "TextAutoGrowWidth",
-    ):
-        try:
-            shape.setPropertyValue(property_name, style_source.getPropertyValue(property_name))
-        except Exception:  # noqa: BLE001 - property availability depends on the native placeholder type
-            pass
+def set_position_size(shape, x: int, y: int, width: int, height: int) -> None:
     shape.setPosition(uno.createUnoStruct("com.sun.star.awt.Point", x, y))
     shape.setSize(uno.createUnoStruct("com.sun.star.awt.Size", width, height))
-    shape.FillStyle = 0
-    shape.LineStyle = 0
-    page.remove(placeholder)
-    return shape
+
+
+def copy_native_text_format(source, target) -> None:
+    for property_name in (
+        "CharFontName", "CharHeight", "CharColor", "CharWeight", "CharPosture",
+        "ParaAdjust", "ParaLeftMargin", "ParaFirstLineIndent",
+    ):
+        try:
+            target.setPropertyValue(property_name, source.getPropertyValue(property_name))
+        except Exception as error:  # noqa: BLE001 - native exemplar transfer must not silently fail
+            raise RuntimeError(f"Could not transfer native Impress {property_name} formatting.") from error
 
 
 def add_marker(doc, page, layout: str) -> None:
@@ -95,7 +84,7 @@ def get_placeholders(page):
     return result
 
 
-def fill_example(shape, marker: str, *, include_heading: bool, include_list: bool) -> None:
+def fill_example(shape, marker: str, title_exemplar, *, include_heading: bool, include_list: bool) -> None:
     lines = [marker, "ordinary paragraph example"]
     if include_heading:
         lines.append("content heading example")
@@ -109,30 +98,38 @@ def fill_example(shape, marker: str, *, include_heading: bool, include_list: boo
     if include_heading:
         cursor.goRight(len(marker) + 1 + len("ordinary paragraph example") + 1, False)
         cursor.goRight(len("content heading example"), True)
-        cursor.CharHeight = 26
+        copy_native_text_format(title_exemplar, cursor)
     if include_list:
         cursor.gotoStart(False)
         cursor.goRight(len("\n".join(lines[:-1])) + 1, False)
         cursor.NumberingLevel = 0
 
 
-def set_title(page, layout_id: str) -> None:
+def set_title(page, layout_id: str):
     for index in range(page.getCount()):
         shape = page.getByIndex(index)
         if "TitleTextShape" in shape.getShapeType():
             shape.Name = f"YADG title {layout_id}"
             shape.String = "{{title}}"
-            return
+            return shape
     raise RuntimeError(f"Native title placeholder is missing for {layout_id}.")
 
 
 def add_slide(doc, pages, layout: int, layout_id: str):
     page = pages.insertNewByIndex(pages.getCount())
     page.Layout = layout
-    set_title(page, layout_id)
+    title = set_title(page, layout_id)
     add_marker(doc, page, layout_id)
     add_footer(doc, page)
-    return page
+    return page, title
+
+
+def get_native_content_placeholders(page):
+    return [
+        page.getByIndex(index)
+        for index in range(page.getCount())
+        if "OutlinerShape" in page.getByIndex(index).getShapeType()
+    ]
 
 
 def connect():
@@ -172,24 +169,46 @@ def main() -> None:
         set_title(content, "content")
         add_marker(doc, content, "content")
         add_footer(doc, content)
-        fill_example(get_placeholders(content)["content"], "{{content}}", include_heading=True, include_list=True)
+        content_title = next(content.getByIndex(index) for index in range(content.getCount()) if "TitleTextShape" in content.getByIndex(index).getShapeType())
+        content_region = get_native_content_placeholders(content)
+        if len(content_region) != 1:
+            raise RuntimeError(f"Expected one native Impress content placeholder, found {len(content_region)}.")
+        content_region[0].Name = "YADG content region"
+        fill_example(content_region[0], "{{content}}", content_title, include_heading=True, include_list=True)
 
-        columns = add_slide(doc, pages, 4, "two-columns")
-        outliners = [columns.getByIndex(i) for i in range(columns.getCount()) if "OutlinerShape" in columns.getByIndex(i).getShapeType()]
+        columns, columns_title = add_slide(doc, pages, 4, "two-columns")
+        outliners = get_native_content_placeholders(columns)
         if len(outliners) != 2:
             raise RuntimeError(f"Expected two native content placeholders, found {len(outliners)}.")
-        left_region = replace_placeholder_with_text_shape(doc, columns, outliners[0], "YADG left region", 1000, 3600, 12000, 10000)
-        right_region = replace_placeholder_with_text_shape(doc, columns, outliners[1], "YADG right region", 14500, 3600, 12000, 10000, left_region)
-        fill_example(left_region, "{{left}}", include_heading=True, include_list=True)
-        fill_example(right_region, "{{right}}", include_heading=True, include_list=True)
+        # The imported Impress "Two Content" master serializes both native
+        # outliners with the same full-width geometry. Keep the placeholders
+        # and their native text styles, but give each region distinct bounds.
+        set_position_size(outliners[0], 1000, 3600, 11800, 9500)
+        set_position_size(outliners[1], 14600, 3600, 11800, 9500)
+        outliners[0].Name = "YADG left region"
+        outliners[1].Name = "YADG right region"
+        fill_example(outliners[0], "{{left}}", columns_title, include_heading=True, include_list=True)
+        fill_example(outliners[1], "{{right}}", columns_title, include_heading=True, include_list=True)
 
-        visual = add_slide(doc, pages, 8, "text-image")
-        visual_content = next(visual.getByIndex(i) for i in range(visual.getCount()) if "OutlinerShape" in visual.getByIndex(i).getShapeType())
-        visual_region = replace_placeholder_with_text_shape(doc, visual, visual_content, "YADG text region", 1000, 3600, 10500, 10500)
-        fill_example(visual_region, "{{text}}", include_heading=True, include_list=True)
-        add_text_shape(doc, visual, "YADG image region", "{{image}}", 12500, 4100, 12000, 10500)
+        visual, visual_title = add_slide(doc, pages, 8, "text-image")
+        visual_content = get_native_content_placeholders(visual)
+        if len(visual_content) != 1:
+            raise RuntimeError(f"Expected one native Impress text-image placeholder, found {len(visual_content)}.")
+        visual_region = visual_content[0]
+        visual_region.Name = "YADG text region"
+        set_position_size(visual_region, 1000, 3600, 10500, 10500)
+        fill_example(visual_region, "{{text}}", visual_title, include_heading=True, include_list=True)
+        image_region = add_text_shape(doc, visual, "YADG image region", "{{image}}", 12500, 4100, 12000, 10500)
+        source_style = visual_region.createTextCursor()
+        source_style.gotoStart(False)
+        source_style.goRight(len("{{text}}") + 1, False)
+        source_style.goRight(len("ordinary paragraph example"), True)
+        target_style = image_region.createTextCursor()
+        target_style.gotoStart(False)
+        target_style.goRight(len("{{image}}"), True)
+        copy_native_text_format(source_style, target_style)
 
-        table_page = add_slide(doc, pages, 19, "table")
+        table_page, _ = add_slide(doc, pages, 19, "table")
         doc.getCurrentController().setCurrentPage(table_page)
         frame = doc.getCurrentController().getFrame()
         dispatch = manager.createInstanceWithContext("com.sun.star.frame.DispatchHelper", context)
@@ -210,7 +229,6 @@ def main() -> None:
             for column in range(2):
                 cell = table.getCellByPosition(column, row)
                 cell.String = values[row][column]
-                cell.CharHeight = 16
                 if row == 0:
                     cell.CharWeight = 150.0
                 else:
@@ -245,7 +263,7 @@ def main() -> None:
         "platform": platform.platform(),
         "createdAtUtc": now,
         "saveDateUtc": now,
-        "creationMethod": "Created as a new presentation through real LibreOffice Impress UNO; native default master, theme, layouts, title/body/list placeholders and a native editable table were authored in the Impress document model before saving as PPTX.",
+        "creationMethod": "Created as a new presentation through real LibreOffice Impress UNO; native default master, theme, layouts and title/body/list placeholders were retained, heading examples copied native title formatting, a native editable table was authored, and the four prototype slides were saved from Impress as PPTX.",
         "syntheticAndRedistributionSafe": True,
         "createdInApplication": True,
         "notOpenXmlGeneratedOrRoundTripped": True,
