@@ -4,6 +4,14 @@
 
 Office-independent transformation of workspace/Markdown semantics and prepared templates into `YadgPreWords/*.docx`.
 
+## Presentation prototype
+
+An editable PowerPoint slide identified by a visible `{{slide:<layout-id>}}` marker. It owns the presentation geometry and formatting examples used to generate a logical layout.
+
+## Presentation result set
+
+The complete YADG-owned `YadgPresentations/*.pptx` output set. Its successful replacement is independent of DOCX/PDF output commits.
+
 ## Template outline context
 
 The nearest preceding prepared-template body paragraph with an effective Word outline level, used by M0010 to rebase headings for a `section`/`content` placement.

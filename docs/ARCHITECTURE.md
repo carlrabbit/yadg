@@ -8,6 +8,7 @@ YADG separates:
 workspace/content semantics
 -> built-in/external content production
 -> Office-independent DOCX authoring
+-> Office-independent PPTX authoring
 -> renderer-specific finalization
 -> explicit publication
 ```
@@ -35,6 +36,10 @@ The internally generated SVG path does not authorize arbitrary source-file SVG f
 Owns prepared DOCX inspection/transformation through Open XML.
 
 It creates structurally complete DOCX artifacts without requiring an Office renderer.
+
+## PowerPoint authoring
+
+M0018 adds a separate Office-independent PPTX authoring path. Presentation Markdown is parsed in a presentation-scoped model so repeated layout/region selectors do not enter DOCX semantic identity. Prepared PPTX prototype slides own geometry, styling, static elements and role examples. The authoring boundary clones selected prototypes and creates native editable text, picture and table objects through Open XML. It does not measure post-flight visual overflow or require an Office runtime to generate output.
 
 M0010 makes two template-sensitive authoring concerns explicit:
 

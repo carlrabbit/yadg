@@ -425,7 +425,9 @@ public sealed class M0012FocusedTests
             try
             {
                 File.CreateSymbolicLink(link, outside);
-                var linkedModel = Parse("![Linked](linked.png){#linked}"); var linkedDiagnostics = new List<Diagnostic>();
+                var linkedParse = MarkdownDocumentParser.Parse("![Linked](linked.png){#linked}", Path.Combine(fixture.Root, "content.md"));
+                Assert.True(linkedParse.IsValid, string.Join(Environment.NewLine, linkedParse.Diagnostics));
+                var linkedModel = linkedParse.Document!; var linkedDiagnostics = new List<Diagnostic>();
                 var linkedResult = AssetValidation.AttachAndValidate(linkedModel, fixture.Root, linkedDiagnostics, yolo: true);
                 Assert.DoesNotContain(linkedDiagnostics, d => d.IsError);
                 Assert.NotNull(linkedResult.FindFigure("linked")?.Asset);

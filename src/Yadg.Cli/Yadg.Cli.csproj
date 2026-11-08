@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Yadg.Word\Yadg.Word.csproj" />
     <ProjectReference Include="..\Yadg.Renderer\Yadg.Renderer.csproj" />
     <ProjectReference Include="..\Yadg.WordRenderer\Yadg.WordRenderer.csproj" />
+    <ProjectReference Include="..\Yadg.Presentation\Yadg.Presentation.csproj" />
     <PackageReference Include="System.CommandLine" Version="2.0.0" />
   </ItemGroup>
   <ItemGroup>

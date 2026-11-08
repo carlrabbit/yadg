@@ -10,6 +10,7 @@ Other root mappings are specialized by:
 - `producers` -> `docs/specs/CONTENT-PRODUCERS.md`
 - `diagrams` -> `docs/specs/TEXT-DIAGRAMS.md`
 - `publish` -> `docs/specs/PUBLISHING.md`
+- `presentations` -> `docs/specs/PRESENTATION-AUTHORING.md` (M0018)
 
 Document-wide visible-text replacement behavior is specialized by:
 
@@ -19,7 +20,7 @@ Document-wide visible-text replacement behavior is specialized by:
 
 `YADG.md` remains the workspace marker. It may contain optional YAML front matter followed by human-facing notes that are not document source.
 
-A file without front matter remains valid and defines empty values, no producers, diagram auto-detection disabled, and no publication default.
+A file without front matter remains valid and defines empty values, no producers, diagram auto-detection disabled, no publication default, and no presentations declaration.
 
 ## Front-matter syntax
 
@@ -49,11 +50,14 @@ markdown
 producers
 diagrams
 publish
+presentations
 ```
 
-`markdown` is an optional schema-v1 mapping specialized by `AUTHORING-EXPERIENCE.md`. It accepts only `thematicBreak: error|ignore` and `codeInline: error|ignore|style`; both default to `error`. Unknown keys and modes are errors.
+`markdown` is an optional schema-v1 mapping specialized by `AUTHORING-EXPERIENCE.md`. It accepts only `thematicBreak: error|ignore` and `codeInline: error|ignore|style`; `thematicBreak` defaults to `error`; `codeInline` defaults to `style` per M0017.
 
 `diagrams` is an optional schema-v1 mapping specialized by `TEXT-DIAGRAMS.md`; it accepts only boolean `autoDetect`, default `false`.
+
+`presentations` is an optional non-empty **sequence** of named deck mappings, specialized by `PRESENTATION-AUTHORING.md`. Every entry requires exactly `id`, `template`, `sources`, and `output`; `sources` is a non-empty ordered sequence. Declaration IDs and output basenames are unique in their respective defined comparisons. The same source or template may be used by multiple declarations. The old singular `presentation` key is invalid; no automatic migration. See the presentation specification for path, source discovery, command, and complete PPTX result-set semantics. There is no presentation by default. Configuration-free `yadg presentation check/build` commands do not read `YADG.md` at all.
 
 `yadg` is required whenever front matter is present.
 
@@ -115,7 +119,7 @@ Publication configuration is filesystem destination configuration and defines no
 
 ## Compatibility
 
-Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid. M0012 adds the optional `markdown` mapping and M0014 adds the optional `diagrams` mapping without changing the schema version. Diagram auto-detection defaults to off.
+Existing schema-v1 workspaces containing only `yadg`, `values`, and/or `producers` remain valid. M0012 adds the optional `markdown` mapping and M0014 adds the optional `diagrams` mapping without changing the schema version. Diagram auto-detection defaults to off. M0018 adds the optional `presentations` sequence without changing the schema version; its declared sources are excluded from DOCX discovery.
 
 M0010 changes where existing `{{value:<id>}}` tags are supported; it does not add new workspace value syntax.
 

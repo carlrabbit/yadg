@@ -15,6 +15,7 @@ When a focused specification explicitly states that it supersedes an earlier rul
 - `docs/specs/STRUCTURED-CONTENT.md` — lists, tables, figures, assets, captions, and float-like placement; list-style details are specialized/superseded by `TEMPLATE-STYLES.md`.
 - `docs/specs/PREPARED-TABLES.md` — prepared Word table-row population.
 - `docs/specs/TEXT-DIAGRAMS.md` — built-in character-grid diagrams, vector rendering, containment/occlusion, and opt-in fenced-block auto-detection.
+- `docs/specs/PRESENTATION-AUTHORING.md` — M0018 editable PowerPoint authoring, named deck configuration, prototype slides, typed regions, direct CLI, and rendering exclusions.
 
 ## Template presentation and Word structures
 

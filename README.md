@@ -4,6 +4,8 @@ YADG is a template-first document authoring tool. Maintain semantic content in M
 
 YADG authors DOCX without Office, can finalize documents through Microsoft Word or LibreOffice, and explicitly publishes finalized DOCX files to a filesystem destination.
 
+YADG also creates editable PowerPoint presentations from Markdown and prepared slide prototypes. See [PowerPoint presentations](docs/user/PRESENTATIONS.md) for named deck configuration, the sixteen layouts, template markers, and standalone commands.
+
 ## Install
 
 The YADG 1.2.0 candidate is a framework-dependent .NET 10 tool. After it is available from your NuGet source, install it with:
