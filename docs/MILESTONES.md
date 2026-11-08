@@ -19,5 +19,6 @@
 | M0015 | V1.2 release readiness | ready | Prepare the YADG 1.2.0 release candidate, validate both diagramming paths from the installed package, and reorganize public authoring documentation into dedicated Markdown and DOCX-template guides. |
 | M0016 | Canonical Markdown links and configured Word references | ready | Preserve authored words in semantic fragment links, add workspace-wide generated reference display backed by real template caption prototypes, and validate real Word/LibreOffice plus packed-tool behavior. |
 | M0017 | Markdown core completeness and Markdig tables | ready | Support Markdig pipe/grid tables and common Markdown blocks while preserving template-owned Word semantics; validate real renderers, packed-tool use, and blocking artifact review. |
+| M0018 | Template-based editable PowerPoint presentations | complete | Author editable PPTX slides from Markdown and prepared prototypes while preserving the established DOCX contract; both Office-origin validation paths and blocking artifact review are complete. |
 
 Milestone implementation starts from the active milestone document and its explicitly listed authority.

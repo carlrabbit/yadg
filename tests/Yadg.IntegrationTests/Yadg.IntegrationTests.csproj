@@ -4,6 +4,7 @@
     <ProjectReference Include="..\..\src\Yadg.Core\Yadg.Core.csproj" />
     <ProjectReference Include="..\..\src\Yadg.Word\Yadg.Word.csproj" />
     <ProjectReference Include="..\..\src\Yadg.Cli\Yadg.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Yadg.Presentation\Yadg.Presentation.csproj" />
     <ProjectReference Include="..\..\src\Yadg.WordRenderer\Yadg.WordRenderer.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />

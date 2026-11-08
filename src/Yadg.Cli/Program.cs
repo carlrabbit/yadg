@@ -7,6 +7,7 @@ using Yadg.Core;
 using Yadg.Word;
 using Yadg.Renderer;
 using Yadg.WordRenderer;
+using Yadg.Presentation;
 using WordRendererEngine = Yadg.WordRenderer.WordRenderer;
 
 namespace Yadg.Cli;
@@ -29,6 +30,7 @@ public static class Program
         root.Add(CreateBuildCommand(() => handlerExitCode = 2));
         root.Add(CreateRenderCommand(() => handlerExitCode = 2));
         root.Add(CreatePublishCommand(() => handlerExitCode = 2));
+        root.Add(CreatePresentationCommand(() => handlerExitCode = 2));
         var commandExitCode = root.Parse(args).Invoke();
         return handlerExitCode == 0 ? commandExitCode : handlerExitCode;
     }
@@ -52,14 +54,14 @@ public static class Program
             try
             {
                 var validation = ValidateTemplates(loaded, useYolo);
-                var diagnostics = validation.Diagnostics;
+                var diagnostics = validation.Diagnostics.Concat(ValidatePresentations(loaded)).ToArray();
                 if (parseResult.GetValue(list)) PrintInventory(loaded);
                 PrintDiagnostics(diagnostics, loaded.Root);
                 var refs = loaded.Document.References.Count + loaded.Document.Tables.Count + loaded.Document.Figures.Count;
-                if (diagnostics.Any(d => d.IsError)) { Console.WriteLine($"check: invalid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {refs} reference(s))"); fail(); return; }
-                if (useYolo && validation.UsableTemplates == 0) { Console.Error.WriteLine("error YADG-YOLO-OUTPUT-001: No usable template remains for a useful build."); fail(); return; }
+                if (diagnostics.Any(d => d.IsError)) { Console.WriteLine($"check: invalid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {loaded.Presentations.Count} presentation(s), {refs} reference(s))"); fail(); return; }
+                if (useYolo && validation.UsableTemplates == 0 && loaded.Presentations.Count == 0) { Console.Error.WriteLine("error YADG-YOLO-OUTPUT-001: No usable template remains for a useful build."); fail(); return; }
                 var degradeCount = diagnostics.Count(d => d.IsDegradation);
-                Console.WriteLine($"check: valid ({loaded.Sources.Count} source(s), {loaded.Templates.Count} template(s), {refs} reference(s)){(useYolo ? $"; degradations={degradeCount}" : "")}");
+                Console.WriteLine($"check: valid ({loaded.Sources.Count} DOCX source(s), {loaded.Templates.Count} DOCX template(s), {loaded.Presentations.Count} presentation(s), {refs} reference(s)){(useYolo ? $"; degradations={degradeCount}" : "")}");
             }
             finally { loaded.CleanupTemporaryProducerFiles(); }
         });
@@ -81,35 +83,47 @@ public static class Program
             {
                 PrintDiagnostics(loaded.Diagnostics, loaded.Root);
                 if (loaded.Diagnostics.Any(d => d.IsError)) { fail(); return; }
-                var output = Path.Combine(loaded.Root, "YadgPreWords");
                 stageRoot = Path.Combine(loaded.Root, ".yadg-build-stage-" + Guid.NewGuid().ToString("N"));
                 var stageOutput = Path.Combine(stageRoot, "YadgPreWords");
-                Directory.CreateDirectory(stageOutput);
+                var output = Path.Combine(loaded.Root, "YadgPreWords");
                 var written = 0; var degradationCount = loaded.Diagnostics.Count(d => d.IsDegradation);
-                foreach (var template in loaded.Templates)
+                if (loaded.Sources.Count > 0)
                 {
-                    TemplateAnalysis analysis;
-                    try { analysis = WordAuthoring.Analyze(template, loaded.Document, loaded.Values.Values, useYolo); }
-                    catch (Exception ex)
+                    Directory.CreateDirectory(stageOutput);
+                    foreach (var template in loaded.Templates)
                     {
-                        var recoverable = IsRecoverableTemplateFailure(ex);
-                        if (useYolo && recoverable)
+                        TemplateAnalysis analysis;
+                        try { analysis = WordAuthoring.Analyze(template, loaded.Document, loaded.Values.Values, useYolo); }
+                        catch (Exception ex)
                         {
-                            Console.Error.WriteLine($"degradation YADG-YOLO-TEMPLATE-001 {Path.GetRelativePath(loaded.Root, template)}: file-local access failure; fallback: skip this template. Reason: {ex.Message}");
-                            degradationCount++;
-                            continue;
+                            var recoverable = IsRecoverableTemplateFailure(ex);
+                            if (useYolo && recoverable)
+                            {
+                                Console.Error.WriteLine($"degradation YADG-YOLO-TEMPLATE-001 {Path.GetRelativePath(loaded.Root, template)}: file-local access failure; fallback: skip this template. Reason: {ex.Message}");
+                                degradationCount++;
+                                continue;
+                            }
+                            PrintDiagnostics(new[] { new Diagnostic("YADG-WORD-OPEN", $"Template inspection failed; no template skip was applied. Reason: {ex.Message}", true, template) }, loaded.Root);
+                            fail(); return;
                         }
-                        PrintDiagnostics(new[] { new Diagnostic("YADG-WORD-OPEN", $"Template inspection failed; no template skip was applied. Reason: {ex.Message}", true, template) }, loaded.Root);
+                        PrintDiagnostics(analysis.Diagnostics, loaded.Root);
+                        if (analysis.Diagnostics.Any(d => d.IsError)) { fail(); return; }
+                        degradationCount += analysis.Diagnostics.Count(d => d.IsDegradation);
+                        WordAuthoring.Author(template, Path.Combine(stageOutput, Path.GetFileName(template)), loaded.Document, loaded.Values.Values, useYolo); written++;
+                    }
+                    if (written == 0) { Console.Error.WriteLine("error YADG-BUILD-001: No requested DOCX template produced an authored output."); fail(); return; }
+                    CommitPreWordOutputs(stageOutput, output);
+                    Console.WriteLine($"build: wrote {written} DOCX template output(s) to {output}{(useYolo ? $"; degradations={degradationCount}" : "")}");
+                }
+                if (loaded.Presentations.Count > 0)
+                {
+                    if (!BuildConfiguredPresentations(loaded, stageRoot, out var presentationError))
+                    {
+                        PrintDiagnostics(presentationError, loaded.Root);
                         fail(); return;
                     }
-                    PrintDiagnostics(analysis.Diagnostics, loaded.Root);
-                    if (analysis.Diagnostics.Any(d => d.IsError)) { fail(); return; }
-                    degradationCount += analysis.Diagnostics.Count(d => d.IsDegradation);
-                    WordAuthoring.Author(template, Path.Combine(stageOutput, Path.GetFileName(template)), loaded.Document, loaded.Values.Values, useYolo); written++;
+                    Console.WriteLine($"build: wrote {loaded.Presentations.Count} presentation(s) to {Path.Combine(loaded.Root, "YadgPresentations")}");
                 }
-                if (written == 0) { Console.Error.WriteLine("error YADG-YOLO-OUTPUT-001: No requested template produced a useful authored DOCX."); fail(); return; }
-                CommitPreWordOutputs(stageOutput, output);
-                Console.WriteLine($"build: wrote {written} template output(s) to {output}{(useYolo ? $"; degradations={degradationCount}" : "")}");
             }
             catch (Exception ex) { Console.Error.WriteLine(new Diagnostic("YADG-BUILD-001", $"Unable to author workspace output: {ex.Message}", true, loaded.Root)); fail(); }
             finally
@@ -200,6 +214,208 @@ public static class Program
             Console.WriteLine($"publish: copied {result.PublishedCount} finalized DOCX file(s) to {result.Destination}");
         });
         return command;
+    }
+
+    private static Command CreatePresentationCommand(Action fail)
+    {
+        var command = new Command("presentation", "Validate or build an editable PowerPoint presentation without workspace configuration.");
+        var check = new Command("check", "Validate explicit Markdown sources against one PowerPoint template.");
+        var checkTemplate = RepeatedOption("--template", "PowerPoint .pptx template path.");
+        var checkSource = RepeatedOption("--source", "Markdown slide source path; repeat to preserve source order.");
+        var checkOutput = RepeatedOption("--output", "Not valid with presentation check.");
+        check.Add(checkTemplate); check.Add(checkSource); check.Add(checkOutput);
+        check.SetAction(result =>
+        {
+            var templates = result.GetValue(checkTemplate) ?? Array.Empty<string>();
+            var sources = result.GetValue(checkSource) ?? Array.Empty<string>();
+            var output = result.GetValue(checkOutput) ?? Array.Empty<string>();
+            if (output.Length > 0) { Console.Error.WriteLine("error YADG-PPT-CLI-001: presentation check does not accept --output."); fail(); return; }
+            var analysis = AnalyzeDirectPresentation(templates, sources);
+            PrintDiagnostics(analysis.Diagnostics);
+            if (!analysis.IsValid) { Console.WriteLine("presentation check: invalid"); fail(); return; }
+            Console.WriteLine($"presentation check: valid ({analysis.Document.Slides.Count} slide(s))");
+        });
+
+        var build = new Command("build", "Build one editable PowerPoint deck from explicit Markdown sources.");
+        var buildTemplate = RepeatedOption("--template", "PowerPoint .pptx template path.");
+        var buildSource = RepeatedOption("--source", "Markdown slide source path; repeat to preserve source order.");
+        var buildOutput = RepeatedOption("--output", "Explicit output .pptx path.");
+        build.Add(buildTemplate); build.Add(buildSource); build.Add(buildOutput);
+        build.SetAction(result =>
+        {
+            var templates = result.GetValue(buildTemplate) ?? Array.Empty<string>();
+            var sources = result.GetValue(buildSource) ?? Array.Empty<string>();
+            var outputs = result.GetValue(buildOutput) ?? Array.Empty<string>();
+            var analysis = AnalyzeDirectPresentation(templates, sources);
+            if (!analysis.IsValid)
+            {
+                PrintDiagnostics(analysis.Diagnostics);
+                Console.WriteLine("presentation build: invalid");
+                fail(); return;
+            }
+            if (outputs.Length != 1) { Console.Error.WriteLine("error YADG-PPT-CLI-002: presentation build requires exactly one --output."); fail(); return; }
+            if (!TryResolveDirectOutput(outputs[0], templates[0], sources, out var outputPath, out var outputError))
+            { Console.Error.WriteLine($"error YADG-PPT-CLI-003: {outputError}"); fail(); return; }
+            var directory = Path.GetDirectoryName(outputPath)!;
+            var temporary = Path.Combine(directory, $".{Path.GetFileName(outputPath)}.yadg-stage-{Guid.NewGuid():N}.pptx");
+            try
+            {
+                Directory.CreateDirectory(directory);
+                var sourcesLoaded = ReadDirectSources(sources, out var sourceError);
+                if (sourcesLoaded is null) { Console.Error.WriteLine($"error YADG-PPT-CLI-004: {sourceError}"); fail(); return; }
+                var diagnostics = PresentationAuthoring.Build(Path.GetFullPath(templates[0]), sourcesLoaded, Directory.GetCurrentDirectory(), temporary);
+                PrintDiagnostics(diagnostics);
+                if (diagnostics.Any(diagnostic => diagnostic.IsError)) { fail(); return; }
+                File.Move(temporary, outputPath, true);
+                Console.WriteLine($"presentation build: wrote {outputPath}");
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"error YADG-PPT-CLI-005: Unable to build presentation: {ex.Message}"); fail(); }
+            finally { if (File.Exists(temporary)) try { File.Delete(temporary); } catch { } }
+        });
+
+        command.Add(check); command.Add(build);
+        return command;
+    }
+
+    private static Option<string[]?> RepeatedOption(string name, string description) =>
+        new(name) { Description = description, AllowMultipleArgumentsPerToken = false };
+
+    private static PresentationAnalysis AnalyzeDirectPresentation(string[] templates, string[] sources)
+    {
+        var diagnostics = new List<Diagnostic>();
+        if (templates.Length != 1) diagnostics.Add(new("YADG-PPT-CLI-001", "Presentation command requires exactly one --template."));
+        if (sources.Length == 0) diagnostics.Add(new("YADG-PPT-CLI-001", "Presentation command requires one or more --source arguments."));
+        if (diagnostics.Count > 0) return new(new(Array.Empty<PresentationSlide>(), diagnostics), diagnostics);
+        if (!ValidateDirectInputs(templates[0], sources, out var templatePath, out var sourcePaths, out var error))
+        {
+            diagnostics.Add(new("YADG-PPT-CLI-004", error!));
+            return new(new(Array.Empty<PresentationSlide>(), diagnostics), diagnostics);
+        }
+        var content = ReadDirectSources(sourcePaths, out error);
+        if (content is null)
+        {
+            diagnostics.Add(new("YADG-PPT-CLI-004", error!));
+            return new(new(Array.Empty<PresentationSlide>(), diagnostics), diagnostics);
+        }
+        return PresentationAuthoring.Analyze(templatePath, content, Directory.GetCurrentDirectory());
+    }
+
+    private static bool ValidateDirectInputs(string template, string[] sources, out string templatePath, out string[] sourcePaths, out string? error)
+    {
+        templatePath = string.Empty; sourcePaths = Array.Empty<string>(); error = null;
+        if (IsRemoteOrPattern(template) || Directory.Exists(template) || !Path.GetExtension(template).Equals(".pptx", StringComparison.OrdinalIgnoreCase)) { error = "--template must identify one local .pptx file path."; return false; }
+        templatePath = Path.GetFullPath(template);
+        if (!File.Exists(templatePath)) { error = $"PowerPoint template does not exist: '{template}'."; return false; }
+        var resolved = new List<string>();
+        foreach (var source in sources)
+        {
+            if (IsRemoteOrPattern(source) || Directory.Exists(source) || !Path.GetExtension(source).Equals(".md", StringComparison.OrdinalIgnoreCase)) { error = $"--source must identify a local .md file path: '{source}'."; return false; }
+            var full = Path.GetFullPath(source);
+            if (!File.Exists(full)) { error = $"Markdown source does not exist: '{source}'."; return false; }
+            resolved.Add(full);
+        }
+        sourcePaths = resolved.ToArray();
+        return true;
+    }
+
+    private static IReadOnlyList<PresentationSource>? ReadDirectSources(string[] paths, out string? error)
+    {
+        error = null;
+        try { return paths.Select(path => new PresentationSource(Path.GetFullPath(path), File.ReadAllText(path))).ToArray(); }
+        catch (Exception ex) { error = ex.Message; return null; }
+    }
+
+    private static bool TryResolveDirectOutput(string output, string template, string[] sources, out string outputPath, out string? error)
+    {
+        outputPath = string.Empty; error = null;
+        if (IsRemoteOrPattern(output) || Directory.Exists(output) || !Path.GetExtension(output).Equals(".pptx", StringComparison.OrdinalIgnoreCase)) { error = "--output must be a local .pptx file path."; return false; }
+        outputPath = Path.GetFullPath(output);
+        var resolvedOutput = outputPath;
+        if (new[] { template }.Concat(sources).Any(path => string.Equals(Path.GetFullPath(path), resolvedOutput, StringComparison.OrdinalIgnoreCase))) { error = "--output must not overwrite the template or a Markdown source."; return false; }
+        return true;
+    }
+
+    private static bool IsRemoteOrPattern(string path) => Uri.TryCreate(path, UriKind.Absolute, out var uri) && !uri.IsFile || path.Contains('*') || path.Contains('?');
+
+    private static IReadOnlyList<Diagnostic> ValidatePresentations(YadgWorkspace workspace)
+    {
+        var diagnostics = new List<Diagnostic>();
+        foreach (var deck in workspace.Presentations)
+        {
+            try
+            {
+                var sources = deck.SourcePaths.Select(path => new PresentationSource(path, File.ReadAllText(path))).ToArray();
+                var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy);
+                diagnostics.AddRange(analysis.Diagnostics.Select(diagnostic => diagnostic with { Message = $"Presentation '{deck.Declaration.Id}': {diagnostic.Message}" }));
+            }
+            catch (Exception ex) { diagnostics.Add(new("YADG-PPT-WORKSPACE-001", $"Presentation '{deck.Declaration.Id}' cannot be checked: {ex.Message}", true, deck.TemplatePath)); }
+        }
+        return diagnostics;
+    }
+
+    private static bool BuildConfiguredPresentations(YadgWorkspace workspace, string stageRoot, out IReadOnlyList<Diagnostic> diagnostics)
+    {
+        var allDiagnostics = new List<Diagnostic>();
+        var loaded = new List<(WorkspaceLoader.ResolvedPresentation Deck, IReadOnlyList<PresentationSource> Sources)>();
+        foreach (var deck in workspace.Presentations)
+        {
+            try
+            {
+                var sources = deck.SourcePaths.Select(path => new PresentationSource(path, File.ReadAllText(path))).ToArray();
+                var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy);
+                allDiagnostics.AddRange(analysis.Diagnostics.Select(diagnostic => diagnostic with { Message = $"Presentation '{deck.Declaration.Id}': {diagnostic.Message}" }));
+                loaded.Add((deck, sources));
+            }
+            catch (Exception ex) { allDiagnostics.Add(new("YADG-PPT-WORKSPACE-001", $"Presentation '{deck.Declaration.Id}' cannot be checked: {ex.Message}", true, deck.TemplatePath)); }
+        }
+        if (allDiagnostics.Any(diagnostic => diagnostic.IsError)) { diagnostics = allDiagnostics; return false; }
+
+        var staged = Path.Combine(stageRoot, "YadgPresentations");
+        Directory.CreateDirectory(staged);
+        try
+        {
+            foreach (var (deck, sources) in loaded)
+            {
+                var target = Path.Combine(staged, deck.Declaration.Output);
+                allDiagnostics.AddRange(PresentationAuthoring.Build(deck.TemplatePath, sources, workspace.Root, target, workspace.Values.CodeInlinePolicy)
+                    .Select(diagnostic => diagnostic with { Message = $"Presentation '{deck.Declaration.Id}': {diagnostic.Message}" }));
+                if (allDiagnostics.Any(diagnostic => diagnostic.IsError)) { diagnostics = allDiagnostics; return false; }
+            }
+            CommitPresentationOutputs(staged, Path.Combine(workspace.Root, "YadgPresentations"));
+        }
+        catch (Exception ex) { allDiagnostics.Add(new("YADG-PPT-BUILD-001", $"Unable to stage or commit the presentation set: {ex.Message}", true, workspace.Root)); diagnostics = allDiagnostics; return false; }
+        diagnostics = allDiagnostics;
+        return true;
+    }
+
+    private static void CommitPresentationOutputs(string staged, string outputDirectory)
+    {
+        Directory.CreateDirectory(outputDirectory);
+        var backup = Path.Combine(Path.GetDirectoryName(staged)!, "previous-presentations");
+        Directory.CreateDirectory(backup);
+        var moved = new List<(string Original, string Backup)>();
+        var committed = new List<string>();
+        try
+        {
+            foreach (var existing in Directory.EnumerateFiles(outputDirectory, "*.pptx", SearchOption.TopDirectoryOnly).ToArray())
+            {
+                var saved = Path.Combine(backup, Path.GetFileName(existing));
+                File.Move(existing, saved, true);
+                moved.Add((existing, saved));
+            }
+            foreach (var stagedFile in Directory.EnumerateFiles(staged, "*.pptx", SearchOption.TopDirectoryOnly))
+            {
+                var destination = Path.Combine(outputDirectory, Path.GetFileName(stagedFile));
+                File.Move(stagedFile, destination, true);
+                committed.Add(destination);
+            }
+        }
+        catch
+        {
+            foreach (var file in committed) if (File.Exists(file)) File.Delete(file);
+            foreach (var (original, saved) in moved) if (File.Exists(saved)) File.Move(saved, original, true);
+            throw;
+        }
     }
 
     private sealed record TemplateValidation(IReadOnlyList<Diagnostic> Diagnostics, int UsableTemplates);
