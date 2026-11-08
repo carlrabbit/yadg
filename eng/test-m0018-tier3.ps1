@@ -35,6 +35,15 @@ $failure = $null
 $result = 'failed'
 $process = $null
 $inspectScript = Join-Path $PSScriptRoot 'inspect-m0018-impress-tier3.py'
+$profileName = [IO.Path]::GetFileName([IO.Path]::GetFullPath($profile))
+function Get-M0018OwnedImpressProcesses {
+    @(Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'soffice.bin' -or $_.Name -eq 'soffice.exe') -and $_.CommandLine -and $_.CommandLine.Contains($profileName) })
+}
+function Stop-M0018OwnedImpressProcesses {
+    Get-M0018OwnedImpressProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while (@(Get-M0018OwnedImpressProcesses).Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
+}
 try {
     & dotnet $cli presentation check --template $template --source $source
     if ($LASTEXITCODE -ne 0) { throw 'Impress-origin fixture failed presentation preflight.' }
@@ -49,6 +58,8 @@ try {
     & $python $inspectScript $template $source $openCopy $candidate $evidence $repo $revision
     if ($LASTEXITCODE -ne 0) { throw 'Real LibreOffice Impress did not open and inspect the generated candidate cleanly.' }
     if (-not $process.WaitForExit(30000)) { Stop-Process -Id $process.Id -Force; $process.WaitForExit() }
+    Stop-M0018OwnedImpressProcesses
+    if (@(Get-M0018OwnedImpressProcesses).Count -gt 0) { throw 'The isolated Impress process did not exit after inspection.' }
 
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
     $resolvedProfile = [IO.Path]::GetFullPath($profile)
@@ -63,6 +74,7 @@ try {
     $result = [string]$record.result
     if ($result -ne 'passed') { throw 'LibreOffice Impress candidate inspection returned a failed result.' }
 } catch {
+    $result = 'failed'
     $failure = $_.Exception.Message
     if (Test-Path -LiteralPath $evidence) {
         try {
@@ -89,9 +101,7 @@ try {
     Remove-Item Env:YADG_M0018_IMPRESS_VERSION -ErrorAction SilentlyContinue
     Remove-Item Env:YADG_M0018_PAUSE_FOR_VISUAL_INSPECTION -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $openCopy) { Remove-Item -LiteralPath $openCopy -Force -ErrorAction SilentlyContinue }
-    $profileName = [IO.Path]::GetFileName([IO.Path]::GetFullPath($profile))
-    $ownedProcesses = Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'soffice.bin' -or $_.Name -eq 'soffice.exe') -and $_.CommandLine -and $_.CommandLine.Contains($profileName) }
-    $ownedProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Stop-M0018OwnedImpressProcesses
     if ((Test-Path -LiteralPath $profile) -and -not $profileCleaned) {
         $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
         $resolvedProfile = [IO.Path]::GetFullPath($profile)
@@ -99,6 +109,22 @@ try {
             Remove-Item -LiteralPath $resolvedProfile -Recurse -Force -ErrorAction SilentlyContinue
             $profileCleaned = -not (Test-Path -LiteralPath $resolvedProfile)
         }
+    }
+    $profileCleaned = -not (Test-Path -LiteralPath $profile)
+    if (Test-Path -LiteralPath $evidence) {
+        try {
+            $record = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json -DateKind String
+            $record.profileCleaned = $profileCleaned
+            if (-not $profileCleaned) {
+                $record.result = 'failed'
+                $record.failure = 'The isolated Impress profile could not be removed after process cleanup.'
+                $result = 'failed'
+            } elseif ($result -eq 'failed') {
+                $record.result = 'failed'
+                if ([string]::IsNullOrWhiteSpace([string]$record.failure)) { $record.failure = $failure }
+            }
+            $record | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidence -Encoding utf8
+        } catch { $result = 'failed' }
     }
 }
 if ($result -ne 'passed') { throw "M0018 Impress Tier 3 failed: $failure. Receipt: $evidence" }
