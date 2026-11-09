@@ -140,7 +140,7 @@ public sealed class M0019FocusedTests
         AssertFailedProducerIsCleaned("YADG-PRODUCER-013", new("powershell.exe", new[] { "-NoProfile", "-File", invalidScript }), directory.Path);
         AssertFailedProducerIsCleaned("YADG-PRODUCER-013", new("powershell.exe", new[] { "-NoProfile", "-File", missingScript }), directory.Path);
         AssertFailedProducerIsCleaned("YADG-PRODUCER-010", new("powershell.exe", new[] { "-NoProfile", "-File", missingScript }), Path.Combine(directory.Path, "missing-working-directory"));
-        AssertFailedProducerIsCleaned("YADG-PRODUCER-011", new("powershell.exe", new[] { "-NoProfile", "-File", sleepScript }), directory.Path);
+        AssertFailedProducerIsCleaned("YADG-PRODUCER-011", new("powershell.exe", new[] { "-NoProfile", "-File", sleepScript }), directory.Path, 100);
     }
 
     [Fact]
@@ -275,11 +275,14 @@ public sealed class M0019FocusedTests
         }
     }
 
-    private static void AssertFailedProducerIsCleaned(string expectedDiagnostic, MermaidProducerConfiguration configuration, string workspaceRoot)
+    private static void AssertFailedProducerIsCleaned(string expectedDiagnostic, MermaidProducerConfiguration configuration, string workspaceRoot, int? timeoutMilliseconds = null)
     {
         var temporaryDirectories = new List<string>();
         var diagnostics = new List<Diagnostic>();
-        var image = MermaidProducer.RenderSource("cleanup-test", "flowchart LR\nA-->B", Path.Combine(workspaceRoot, "source.md"), configuration, workspaceRoot, diagnostics, temporaryDirectories);
+        var sourcePath = Path.Combine(workspaceRoot, "source.md");
+        var image = timeoutMilliseconds is int timeout
+            ? MermaidProducer.RenderSource("cleanup-test", "flowchart LR\nA-->B", sourcePath, configuration, workspaceRoot, diagnostics, temporaryDirectories, timeout)
+            : MermaidProducer.RenderSource("cleanup-test", "flowchart LR\nA-->B", sourcePath, configuration, workspaceRoot, diagnostics, temporaryDirectories);
         Assert.Null(image);
         Assert.Contains(diagnostics, diagnostic => diagnostic.Code == expectedDiagnostic && diagnostic.IsError);
         var ownedDirectory = Assert.Single(temporaryDirectories);

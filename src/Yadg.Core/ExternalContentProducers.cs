@@ -18,7 +18,7 @@ public static class MermaidProducer
                 replacements[figure.Id] = figure;
                 continue;
             }
-            var rendered = RenderOne(figure, config, workspaceRoot, diagnostics, temporaryPaths);
+            var rendered = RenderOne(figure, config, workspaceRoot, diagnostics, temporaryPaths, TimeoutMilliseconds);
             if (rendered is null) { replacements[figure.Id] = figure; continue; }
             replacements[figure.Id] = figure with { AssetPath = rendered.FullPath, Asset = rendered };
         }
@@ -34,6 +34,9 @@ public static class MermaidProducer
     }
 
     public static ImageAsset? RenderSource(string id, string source, string location, MermaidProducerConfiguration? config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths)
+        => RenderSource(id, source, location, config, workspaceRoot, diagnostics, temporaryPaths, TimeoutMilliseconds);
+
+    internal static ImageAsset? RenderSource(string id, string source, string location, MermaidProducerConfiguration? config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths, int timeoutMilliseconds)
     {
         var figure = new YadgFigure(id, string.Empty, "<generated-mermaid.png>", location, null, source);
         if (config is null)
@@ -41,11 +44,11 @@ public static class MermaidProducer
             diagnostics.Add(new("YADG-PRODUCER-007", $"Mermaid source '{id}' requires configured producers.mermaid.", true, location));
             return null;
         }
-        var rendered = RenderOne(figure, config, workspaceRoot, diagnostics, temporaryPaths);
+        var rendered = RenderOne(figure, config, workspaceRoot, diagnostics, temporaryPaths, timeoutMilliseconds);
         return rendered;
     }
 
-    private static ImageAsset? RenderOne(YadgFigure figure, MermaidProducerConfiguration config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths)
+    private static ImageAsset? RenderOne(YadgFigure figure, MermaidProducerConfiguration config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths, int timeoutMilliseconds)
     {
         var directory = Path.Combine(Path.GetTempPath(), "yadg-mermaid-" + Guid.NewGuid().ToString("N"));
         // Register ownership before any operation that can fail. Failed renders
@@ -66,10 +69,11 @@ public static class MermaidProducer
             if (process is null) { Fail(diagnostics, "YADG-PRODUCER-010", "Unable to start Mermaid producer.", figure); return null; }
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
-            if (!process.WaitForExit(TimeoutMilliseconds))
+            if (!process.WaitForExit(timeoutMilliseconds))
             {
                 try { process.Kill(true); process.WaitForExit(5_000); } catch { }
-                Fail(diagnostics, "YADG-PRODUCER-011", "Mermaid producer timed out after 60 seconds.", figure);
+                var timeout = timeoutMilliseconds == TimeoutMilliseconds ? "60 seconds" : $"{timeoutMilliseconds} milliseconds";
+                Fail(diagnostics, "YADG-PRODUCER-011", $"Mermaid producer timed out after {timeout}.", figure);
                 return null;
             }
             var detail = Bound(stderr.GetAwaiter().GetResult());
