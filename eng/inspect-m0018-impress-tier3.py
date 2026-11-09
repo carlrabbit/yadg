@@ -150,8 +150,8 @@ def inspect_document(desktop, path: Path, generated: bool) -> dict:
         raise RuntimeError(f"Impress did not return a document for {path}.")
     try:
         pages = doc.getDrawPages()
-        if pages.getCount() != 4:
-            raise RuntimeError(f"Expected four generated slides in {path}; found {pages.getCount()}.")
+        if pages.getCount() not in (4, 5):
+            raise RuntimeError(f"Expected four compatibility slides and an optional recovery slide in {path}; found {pages.getCount()}.")
         titles: list[str] = []
         footers = 0
         text_shapes = 0
@@ -187,10 +187,23 @@ def inspect_document(desktop, path: Path, generated: bool) -> dict:
             if not title:
                 raise RuntimeError(f"Generated slide {index + 1} has no editable native title in {path}.")
             titles.append(title)
-        if titles != ["Narrative overview", "Audience choices", "Architecture map", "Measures"]:
+        expected_titles = ["Narrative overview", "Audience choices", "Architecture map", "Measures"]
+        if pages.getCount() == 5:
+            expected_titles.append("YOLO recovery")
+        if titles != expected_titles:
             raise RuntimeError(f"Generated slide order differs from Markdown in {path}: {titles}")
-        if footers != 4 or pictures < 1 or len(tables) != 1 or text_shapes < 4:
+        if footers != pages.getCount() or pictures < 1 or len(tables) != 1 or text_shapes < 4:
             raise RuntimeError(f"Native content/static inspection failed in {path}: footer={footers}, picture={pictures}, table={len(tables)}, text={text_shapes}.")
+        if generated and pages.getCount() == 5:
+            recovery = pages.getByIndex(4)
+            recovery_text = []
+            for shape_index in range(recovery.getCount()):
+                try:
+                    recovery_text.append(recovery.getByIndex(shape_index).getString())
+                except Exception:
+                    pass
+            if not any("YADG image unavailable" in value for value in recovery_text):
+                raise RuntimeError("The designated YOLO recovery slide has no visible image placeholder.")
         masters = doc.getMasterPages().getCount()
         if masters < 1:
             raise RuntimeError(f"No native Impress master page remains in {path}.")

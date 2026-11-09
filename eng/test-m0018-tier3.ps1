@@ -2,7 +2,10 @@ param(
     [string] $TemplatePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/impress-origin.pptx'),
     [string] $SourcePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/review-source.md'),
     [string] $CandidatePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/review-sample.pptx'),
-    [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/impress-tier3-evidence.json')
+    [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/impress-tier3-evidence.json'),
+    [string] $ConfigPath,
+    [switch] $Yolo,
+    [switch] $AutomatedReviewOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,16 +48,22 @@ function Stop-M0018OwnedImpressProcesses {
     while (@(Get-M0018OwnedImpressProcesses).Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
 }
 try {
-    & dotnet $cli presentation check --template $template --source $source
+    $checkArgs = @('presentation','check','--template',$template,'--source',$source)
+    if ($ConfigPath) { $checkArgs += @('--config',[IO.Path]::GetFullPath($ConfigPath)) }
+    if ($Yolo) { $checkArgs += '--yolo' }
+    & dotnet $cli @checkArgs
     if ($LASTEXITCODE -ne 0) { throw 'Impress-origin fixture failed presentation preflight.' }
-    & dotnet $cli presentation build --template $template --source $source --output $candidate
+    $buildArgs = @('presentation','build','--template',$template,'--source',$source,'--output',$candidate)
+    if ($ConfigPath) { $buildArgs += @('--config',[IO.Path]::GetFullPath($ConfigPath)) }
+    if ($Yolo) { $buildArgs += '--yolo' }
+    & dotnet $cli @buildArgs
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'Impress-origin review candidate build failed.' }
     Copy-Item -LiteralPath $candidate -Destination $openCopy
 
     $process = Start-Process -FilePath $soffice -ArgumentList @("-env:UserInstallation=`"$profileUri`"", '--norestore', "--accept=socket,host=localhost,port=$port;urp;StarOffice.ServiceManager", '--impress') -PassThru
     $env:YADG_M0018_IMPRESS_PORT = [string]$port
     $env:YADG_M0018_IMPRESS_VERSION = [string]$version
-    $env:YADG_M0018_PAUSE_FOR_VISUAL_INSPECTION = '1'
+    if (-not $AutomatedReviewOnly) { $env:YADG_M0018_PAUSE_FOR_VISUAL_INSPECTION = '1' }
     & $python $inspectScript $template $source $openCopy $candidate $evidence $repo $revision
     if ($LASTEXITCODE -ne 0) { throw 'Real LibreOffice Impress did not open and inspect the generated candidate cleanly.' }
     if (-not $process.WaitForExit(30000)) { Stop-Process -Id $process.Id -Force; $process.WaitForExit() }

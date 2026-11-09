@@ -34,6 +34,20 @@ public static class MermaidProducer
         return document with { Blocks = blocks, References = sections, Figures = figures };
     }
 
+    public static ImageAsset? RenderSource(string id, string source, string location, MermaidProducerConfiguration? config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths)
+    {
+        var figure = new YadgFigure(id, string.Empty, "<generated-mermaid.png>", location, null, source);
+        if (config is null)
+        {
+            diagnostics.Add(new("YADG-PRODUCER-007", $"Mermaid source '{id}' requires configured producers.mermaid.", true, location));
+            return null;
+        }
+        var rendered = RenderOne(figure, config, workspaceRoot, diagnostics);
+        if (rendered is null) return null;
+        temporaryPaths.Add(rendered.Value.Directory);
+        return rendered.Value.Asset;
+    }
+
     private static (ImageAsset Asset, string Directory)? RenderOne(YadgFigure figure, MermaidProducerConfiguration config, string workspaceRoot, List<Diagnostic> diagnostics)
     {
         var directory = Path.Combine(Path.GetTempPath(), "yadg-mermaid-" + Guid.NewGuid().ToString("N"));

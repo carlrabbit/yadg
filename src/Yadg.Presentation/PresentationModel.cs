@@ -4,7 +4,8 @@ public enum PresentationRegionType { Text, Image, Table }
 public sealed record PresentationLayout(string Id, IReadOnlyDictionary<string, PresentationRegionType> Regions);
 public abstract record PresentationInline;
 public sealed record PresentationText(string Value) : PresentationInline;
-public sealed record PresentationEmphasis(IReadOnlyList<PresentationInline> Children, bool Strong) : PresentationInline;
+public sealed record PresentationEmphasis(IReadOnlyList<PresentationInline> Children, bool Strong, bool Italic = false) : PresentationInline;
+public sealed record PresentationStrike(IReadOnlyList<PresentationInline> Children) : PresentationInline;
 public sealed record PresentationCode(string Value) : PresentationInline;
 public sealed record PresentationLink(string Destination, IReadOnlyList<PresentationInline> Children) : PresentationInline;
 public sealed record PresentationBreak(bool Hard) : PresentationInline;
@@ -13,10 +14,13 @@ public abstract record PresentationBlock;
 public sealed record PresentationParagraph(IReadOnlyList<PresentationInline> Inlines, int? HeadingLevel = null) : PresentationBlock;
 public sealed record PresentationList(bool Ordered, IReadOnlyList<PresentationListItem> Items) : PresentationBlock;
 public sealed record PresentationListItem(IReadOnlyList<PresentationBlock> Blocks);
-public sealed record PresentationImage(string Alt, string Path, string SourcePath) : PresentationBlock;
+public sealed record PresentationImage(string Alt, string Path, string SourcePath, string? GeneratedSource = null, string? Id = null, string? Caption = null, string? FailureReason = null) : PresentationBlock;
 public sealed record PresentationTable(IReadOnlyList<IReadOnlyList<PresentationInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<PresentationInline>>> Rows) : PresentationBlock;
 public sealed record PresentationRegion(string Id, PresentationRegionType Type, IReadOnlyList<PresentationBlock> Blocks);
-public sealed record PresentationSlide(string Id, string Title, string Layout, string SourcePath, int SourceOrdinal, IReadOnlyList<PresentationRegion> Regions);
+public sealed record PresentationSlide(string Id, string Title, string Layout, string SourcePath, int SourceOrdinal, IReadOnlyList<PresentationRegion> Regions)
+{
+    public IReadOnlyList<PresentationInline> TitleInlines { get; init; } = Array.Empty<PresentationInline>();
+}
 public sealed record PresentationDocument(IReadOnlyList<PresentationSlide> Slides, IReadOnlyList<Yadg.Core.Diagnostic> Diagnostics)
 {
     public bool IsValid => Diagnostics.All(diagnostic => !diagnostic.IsError);

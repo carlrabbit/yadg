@@ -395,6 +395,107 @@ public sealed class M0018FocusedTests
     }
 
     [Fact]
+    public void Direct_document_commands_author_one_atomic_unfinalized_output_with_explicit_config()
+    {
+        using var workspace = WorkspaceFixture.Create();
+        var template = Path.Combine(workspace.Root, "template.docx");
+        CreateDocxTemplate(template, "{{content:document}}");
+        var source = Path.Combine(workspace.Root, "content.md");
+        File.WriteAllText(source, "# Document {#document}\n\nHello {{value:name}}.");
+        var config = Path.Combine(workspace.Root, "authoring.yaml");
+        File.WriteAllText(config, "yadg:\n  version: 1\nvalues:\n  name: \"Ada\"\n");
+        var output = Path.Combine(workspace.Root, "out", "report.docx");
+        File.WriteAllText(Path.Combine(workspace.Root, "YADG.md"), "malformed ambient workspace marker");
+
+        var check = RunCli(workspace.Root, "document", "check", "--template", template, "--source", source, "--config", config);
+        Assert.Equal(0, check.ExitCode);
+        Assert.False(File.Exists(output));
+
+        var build = RunCli(workspace.Root, "document", "build", "--template", template, "--source", source, "--output", output, "--config", config);
+        Assert.True(build.ExitCode == 0, build.StandardOutput + Environment.NewLine + build.StandardError);
+        Assert.Contains("unfinalized DOCX", build.StandardOutput, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(workspace.Root, "YadgPreWords")));
+        byte[] previous = File.ReadAllBytes(output);
+        using (var authored = WordprocessingDocument.Open(output, false))
+            Assert.Contains(authored.MainDocumentPart!.Document.Body!.Descendants<W.Text>(), text => text.Text.Contains("Hello Ada.", StringComparison.Ordinal));
+
+        File.WriteAllText(source, "# Document {#document}\n\n![missing](missing.png){#figure}");
+        var failed = RunCli(workspace.Root, "document", "build", "--template", template, "--source", source, "--output", output, "--config", config);
+        Assert.NotEqual(0, failed.ExitCode);
+        Assert.Equal(previous, File.ReadAllBytes(output));
+    }
+
+    [Fact]
+    public void Selected_presentation_checks_and_builds_only_the_named_deck()
+    {
+        using var fixture = PresentationFixture.Create();
+        var templates = Path.Combine(fixture.Root, "YadgTemplates");
+        Directory.CreateDirectory(templates);
+        File.Copy(fixture.Template, Path.Combine(templates, "main.pptx"));
+        var source = Path.Combine(fixture.Root, "slides.md");
+        File.WriteAllText(source, "# Selected\n\nSelected content.");
+        File.WriteAllText(Path.Combine(fixture.Root, "YADG.md"), "---\nyadg:\n  version: 1\npresentations:\n  - id: selected\n    template: YadgTemplates/main.pptx\n    sources:\n      - slides.md\n    output: selected.pptx\n  - id: unrelated\n    template: YadgTemplates/missing.pptx\n    sources:\n      - missing.md\n    output: unrelated.pptx\n---\n");
+        var outputDirectory = Path.Combine(fixture.Root, "YadgPresentations");
+        Directory.CreateDirectory(outputDirectory);
+        var selectedOutput = Path.Combine(outputDirectory, "selected.pptx");
+        File.WriteAllText(selectedOutput, "old selected deck");
+        var unrelatedOutput = Path.Combine(outputDirectory, "unrelated.pptx");
+        File.WriteAllText(unrelatedOutput, "unrelated deck stays byte-identical");
+        var unrelatedBefore = File.ReadAllBytes(unrelatedOutput);
+
+        var check = RunCli(fixture.Root, "presentation", "check", "--id", "selected", "--workspace", fixture.Root);
+        Assert.True(check.ExitCode == 0, check.StandardOutput + Environment.NewLine + check.StandardError);
+        var build = RunCli(fixture.Root, "presentation", "build", "--id", "selected", "--workspace", fixture.Root);
+        Assert.True(build.ExitCode == 0, build.StandardOutput + Environment.NewLine + build.StandardError);
+        Assert.NotEqual("old selected deck", File.ReadAllText(selectedOutput));
+        Assert.Equal(unrelatedBefore, File.ReadAllBytes(unrelatedOutput));
+        Assert.NotEqual(0, RunCli(fixture.Root, "presentation", "check", "--id", "not-declared", "--workspace", fixture.Root).ExitCode);
+    }
+
+    [Fact]
+    public void Pptx_yolo_missing_image_uses_a_visible_region_placeholder()
+    {
+        using var fixture = PresentationFixture.CreateRich();
+        var source = Path.Combine(fixture.Root, "slides.md");
+        File.WriteAllText(source, "# Diagram {#text-image}\n\n## Notes {#text}\n\nDiagram follows.\n\n## Picture {#image}\n\n![overview](missing.png)");
+        var output = Path.Combine(fixture.Root, "out", "placeholder.pptx");
+
+        var strict = RunCli(fixture.Root, "presentation", "build", "--template", fixture.Template, "--source", source, "--output", output);
+        Assert.NotEqual(0, strict.ExitCode);
+        Assert.False(File.Exists(output));
+
+        var recovered = RunCli(fixture.Root, "presentation", "build", "--template", fixture.Template, "--source", source, "--output", output, "--yolo");
+        Assert.True(recovered.ExitCode == 0, recovered.StandardOutput + Environment.NewLine + recovered.StandardError);
+        Assert.Contains("degradations=1", recovered.StandardOutput, StringComparison.Ordinal);
+        using var deck = OpenXmlPresentationDocument.Open(output, false);
+        Assert.Contains(deck.PresentationPart!.SlideParts.Single().Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText.Contains("YADG image unavailable", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void Mermaid_image_region_uses_direct_configured_producer_and_builds_a_native_picture()
+    {
+        using var fixture = PresentationFixture.CreateRich();
+        var source = Path.Combine(fixture.Root, "slides.md");
+        File.WriteAllText(source, "# Diagram {#text-image}\n\n## Notes {#text}\n\nDiagram follows.\n\n## Picture {#image}\n\n```mermaid {#architecture caption=\"Architecture\"}\nflowchart LR\n  A --> B\n```");
+        var script = Path.Combine(fixture.Root, "emit-png.ps1");
+        File.WriteAllText(script, "param([string]$i,[string]$o)\n[IO.File]::WriteAllBytes($o, [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='))\n");
+        var config = Path.Combine(fixture.Root, "authoring.yaml");
+        var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "WindowsPowerShell", "v1.0", "powershell.exe").Replace('\\', '/');
+        File.WriteAllText(config, $"yadg:\n  version: 1\nproducers:\n  mermaid:\n    executable: \"{powershell}\"\n    arguments:\n      - \"-NoProfile\"\n      - \"-File\"\n      - \"emit-png.ps1\"\n");
+        var output = Path.Combine(fixture.Root, "out", "mermaid.pptx");
+
+        var check = RunCli(fixture.Root, "presentation", "check", "--template", fixture.Template, "--source", source, "--config", config);
+        Assert.True(check.ExitCode == 0, check.StandardOutput + Environment.NewLine + check.StandardError);
+        Assert.False(File.Exists(output));
+        var build = RunCli(fixture.Root, "presentation", "build", "--template", fixture.Template, "--source", source, "--output", output, "--config", config);
+        Assert.True(build.ExitCode == 0, build.StandardOutput + Environment.NewLine + build.StandardError);
+        using var deck = OpenXmlPresentationDocument.Open(output, false);
+        var slide = deck.PresentationPart!.SlideParts.Single();
+        Assert.Single(slide.Slide.Descendants<P.Picture>());
+        Assert.DoesNotContain(slide.Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText.Contains("Architecture", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public void Configured_build_failure_preserves_the_complete_previous_presentation_set()
     {
         using var workspace = WorkspaceFixture.Create();
