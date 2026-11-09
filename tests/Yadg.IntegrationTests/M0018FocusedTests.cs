@@ -397,6 +397,33 @@ public sealed class M0018FocusedTests
     }
 
     [Fact]
+    public void Presentation_check_rejects_native_table_frame_outside_slide_before_output_mutation()
+    {
+        using var fixture = PresentationFixture.CreateRich();
+        var source = Path.Combine(fixture.Root, "table.md");
+        var output = Path.Combine(fixture.Root, "existing.pptx");
+        var sentinel = new byte[] { 7, 6, 5, 4 };
+        File.WriteAllText(source, "# Measures {#table}\n\n| Measure | Value |\n|---|---|\n| Coverage | Four layouts |");
+        File.WriteAllBytes(output, sentinel);
+
+        using (var template = OpenXmlPresentationDocument.Open(fixture.Template, true))
+        {
+            var prototype = template.PresentationPart!.SlideParts.Single(slide => slide.Slide.InnerText.Contains("{{slide:table}}", StringComparison.Ordinal));
+            var frame = Assert.Single(prototype.Slide.Descendants<P.GraphicFrame>());
+            frame.Transform!.Offset!.X = 4_000_000L;
+            prototype.Slide.Save();
+        }
+
+        var check = RunCli(fixture.Root, "presentation", "check", "--template", fixture.Template, "--source", source);
+        Assert.NotEqual(0, check.ExitCode);
+        Assert.Contains("YADG-PPT-TABLE-003", check.StandardError + check.StandardOutput, StringComparison.Ordinal);
+
+        var build = PresentationAuthoring.Build(fixture.Template, new[] { new PresentationSource(source, File.ReadAllText(source)) }, fixture.Root, output);
+        Assert.Contains(build, diagnostic => diagnostic.Code == "YADG-PPT-TABLE-003" && diagnostic.IsError);
+        Assert.Equal(sentinel, File.ReadAllBytes(output));
+    }
+
+    [Fact]
     public void Direct_presentation_commands_ignore_malformed_workspace_config_and_preserve_output_on_failure()
     {
         using var fixture = PresentationFixture.Create();

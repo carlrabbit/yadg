@@ -289,7 +289,16 @@ public static class PresentationAuthoring
                             diagnostics.Add(new("YADG-PPT-TEMPLATE-016", "Merged prototype table cells are unsupported.", true, templatePath));
                         else
                         {
-                            var shapeExtent = frame!.Transform?.Extents?.Cy?.Value;
+                            var tableFrame = frame!;
+                            var pageWidth = package.Presentation.SlideSize?.Cx?.Value ?? 0L;
+                            var pageHeight = package.Presentation.SlideSize?.Cy?.Value ?? 0L;
+                            var frameX = tableFrame.Transform?.Offset?.X?.Value ?? -1L;
+                            var frameY = tableFrame.Transform?.Offset?.Y?.Value ?? -1L;
+                            var frameWidth = tableFrame.Transform?.Extents?.Cx?.Value ?? 0L;
+                            var frameHeight = tableFrame.Transform?.Extents?.Cy?.Value ?? 0L;
+                            if (pageWidth <= 0 || pageHeight <= 0 || frameX < 0 || frameY < 0 || frameWidth <= 0 || frameHeight <= 0 || frameWidth > pageWidth || frameHeight > pageHeight || frameX > pageWidth - frameWidth || frameY > pageHeight - frameHeight)
+                                diagnostics.Add(new("YADG-PPT-TABLE-003", "Native table frame must have positive geometry wholly within the template slide bounds.", true, templatePath));
+                            var shapeExtent = tableFrame.Transform?.Extents?.Cy?.Value;
                             var headerHeight = rows[0].Height?.Value ?? 0;
                             var bodyHeight = rows[1].Height?.Value ?? 0;
                             if (shapeExtent is > 0 && headerHeight > 0 && bodyHeight > 0 && headerHeight + bodyHeight * content.Rows.Count > shapeExtent.Value)

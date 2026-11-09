@@ -4,9 +4,9 @@
   "originApplication": "Microsoft PowerPoint",
   "applicationVersion": "16.0.20527.20150",
   "platform": "Microsoft Windows 10.0.26300",
-  "createdAtUtc": "2026-11-08T18:55:09.3910498+00:00",
-  "saveDateUtc": "2026-11-08T18:55:09.3910498+00:00",
-  "creationMethod": "Created as a new presentation through the real desktop Microsoft PowerPoint COM object model; native default master/theme/layouts and title/body placeholders were retained, heading examples copied native title formatting, a native theme table was authored, and the four prototype slides were saved from PowerPoint as PPTX.",
+  "createdAtUtc": "2026-11-09T17:12:01.4976588+00:00",
+  "saveDateUtc": "2026-11-09T17:12:01.4976588+00:00",
+  "creationMethod": "Created as a new presentation through the real desktop Microsoft PowerPoint COM object model with a 960 x 540 pt custom widescreen canvas matching the authored native shape geometry; native default master/theme/layouts and title/body placeholders were retained, heading examples copied native title formatting, a native theme table was authored, and the four prototype slides were saved from PowerPoint as PPTX.",
   "syntheticAndRedistributionSafe": true,
   "createdInApplication": true,
   "notOpenXmlGeneratedOrRoundTripped": true,
@@ -17,5 +17,5 @@
     "text-image",
     "table"
   ],
-  "sha256": "DDD2171C6AA1FB41979BBC0A434E56F0129D8F89E17809A2025D8BDA6FA2C759"
+  "sha256": "4AECC1CDBE6767ED9CCD741F0B3E4FA5A48D58C6B8FC5DA2D390F76058A85629"
 }
