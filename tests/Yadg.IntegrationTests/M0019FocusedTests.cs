@@ -81,6 +81,112 @@ public sealed class M0019FocusedTests
     }
 
     [Fact]
+    public void Source_values_substitute_figure_captions_without_changing_figure_or_reference_identity()
+    {
+        const string mermaidSource = "flowchart LR\n  A[\"{{value:caption}}\"] --> B";
+        var markdown = "# Figures {#figures}\n\n![System {{value:caption}}](images/system.png){#system-figure}\n\nFigure [@system-figure].\n\n| Name | Value |\n|---|---|\n| A | B |\n{#system-table caption=\"Table {{value:caption}}\"}\n\n```mermaid {#generated-figure caption=\"Generated {{value:caption}}\"}\n" + mermaidSource + "\n```";
+        var parsed = MarkdownDocumentParser.Parse(markdown, "source.md");
+        Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.IsError);
+        var diagnostics = new List<Diagnostic>();
+        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["caption"] = "Q4 {{value:later}}" };
+        var document = ValueSubstitution.ApplyToDocument(parsed.Document!, values, false, diagnostics, "source.md");
+
+        var fileFigure = Assert.IsType<YadgFigure>(document.FindFigure("system-figure"));
+        Assert.Equal("System Q4 {{value:later}}", fileFigure.AltText);
+        Assert.Equal("system-figure", fileFigure.Id);
+        Assert.Equal("images/system.png", fileFigure.AssetPath);
+        Assert.Same(fileFigure, Assert.IsType<YadgFigure>(document.Blocks.Single(block => block is YadgFigure { Id: "system-figure" })));
+        Assert.Equal("Table Q4 {{value:later}}", Assert.IsType<YadgTable>(document.FindTable("system-table")).Caption);
+        Assert.Contains(document.Blocks.OfType<YadgParagraph>().SelectMany(paragraph => paragraph.Inlines), inline => inline is YadgReference { Id: "system-figure" });
+
+        var generatedFigure = Assert.IsType<YadgFigure>(document.FindFigure("generated-figure"));
+        Assert.Equal("Generated Q4 {{value:later}}", generatedFigure.AltText);
+        Assert.Equal(mermaidSource, generatedFigure.GeneratedSource);
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public void Source_figure_caption_missing_values_are_fatal_or_visible_yolo_degradations()
+    {
+        var parsed = MarkdownDocumentParser.Parse("![Missing {{value:unknown}}](figure.png){#figure-id}", "figures.md");
+        Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.IsError);
+
+        var strictDiagnostics = new List<Diagnostic>();
+        var strict = ValueSubstitution.ApplyToDocument(parsed.Document!, new Dictionary<string, string>(), false, strictDiagnostics, "figures.md");
+        Assert.Equal("Missing {{value:unknown}}", Assert.IsType<YadgFigure>(strict.FindFigure("figure-id")).AltText);
+        Assert.Single(strictDiagnostics, diagnostic => diagnostic.Code == "YADG-VALUE-004" && diagnostic.IsError && diagnostic.Location!.Contains("figure caption", StringComparison.Ordinal));
+
+        var yoloDiagnostics = new List<Diagnostic>();
+        var yolo = ValueSubstitution.ApplyToDocument(parsed.Document!, new Dictionary<string, string>(), true, yoloDiagnostics, "figures.md");
+        Assert.Equal("Missing {{value:unknown}}", Assert.IsType<YadgFigure>(yolo.FindFigure("figure-id")).AltText);
+        Assert.Single(yoloDiagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-VALUE-001" && diagnostic.IsDegradation && !diagnostic.IsError);
+    }
+
+    [Fact]
+    public void Mermaid_failed_producer_paths_clean_owned_directories_including_timeout_and_exceptions()
+    {
+        using var directory = new TemporaryDirectory();
+        var exitScript = Path.Combine(directory.Path, "exit.ps1");
+        var invalidScript = Path.Combine(directory.Path, "invalid.ps1");
+        var missingScript = Path.Combine(directory.Path, "missing.ps1");
+        var sleepScript = Path.Combine(directory.Path, "sleep.ps1");
+        File.WriteAllText(exitScript, "exit 7");
+        File.WriteAllText(invalidScript, "[IO.File]::WriteAllText($args[3], 'not a png')");
+        File.WriteAllText(missingScript, "exit 0");
+        File.WriteAllText(sleepScript, "Start-Sleep -Seconds 90");
+
+        AssertFailedProducerIsCleaned("YADG-PRODUCER-010", new("yadg-missing-producer-" + Guid.NewGuid().ToString("N"), Array.Empty<string>()), directory.Path);
+        AssertFailedProducerIsCleaned("YADG-PRODUCER-012", new("powershell.exe", new[] { "-NoProfile", "-File", exitScript }), directory.Path);
+        AssertFailedProducerIsCleaned("YADG-PRODUCER-013", new("powershell.exe", new[] { "-NoProfile", "-File", invalidScript }), directory.Path);
+        AssertFailedProducerIsCleaned("YADG-PRODUCER-013", new("powershell.exe", new[] { "-NoProfile", "-File", missingScript }), directory.Path);
+        AssertFailedProducerIsCleaned("YADG-PRODUCER-010", new("powershell.exe", new[] { "-NoProfile", "-File", missingScript }), Path.Combine(directory.Path, "missing-working-directory"));
+        AssertFailedProducerIsCleaned("YADG-PRODUCER-011", new("powershell.exe", new[] { "-NoProfile", "-File", sleepScript }), directory.Path);
+    }
+
+    [Fact]
+    public void Mermaid_producer_failure_preserves_strict_output_and_yolo_build_keeps_visible_placeholder()
+    {
+        using var directory = new TemporaryDirectory();
+        var template = Path.Combine(FindRepositoryRoot(), "tests", "fixtures", "m0018", "impress-origin.pptx");
+        var source = new PresentationSource(Path.Combine(directory.Path, "slides.md"), "# Failed diagram {#text-image}\n\n## Notes {#text}\n\nProducer recovery test.\n\n## Diagram {#image}\n\n```mermaid {#producer-failure caption=\"Failure\"}\nflowchart LR\n  A --> B\n```");
+        var producers = new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal)
+        {
+            ["mermaid"] = new("cmd.exe", new[] { "/d", "/c", "exit 7" })
+        };
+        var output = Path.Combine(directory.Path, "committed.pptx");
+        File.WriteAllText(output, "committed sentinel");
+
+        var strict = PresentationAuthoring.Build(template, new[] { source }, directory.Path, output, producers: producers);
+        Assert.Contains(strict, diagnostic => diagnostic.Code == "YADG-PRODUCER-012" && diagnostic.IsError);
+        Assert.Equal("committed sentinel", File.ReadAllText(output));
+
+        var yolo = PresentationAuthoring.Build(template, new[] { source }, directory.Path, output, yolo: true, producers: producers);
+        Assert.DoesNotContain(yolo, diagnostic => diagnostic.IsError);
+        Assert.Single(yolo, diagnostic => diagnostic.Code == "YADG-YOLO-PRODUCER-001" && diagnostic.IsDegradation);
+        using var presentation = DocumentFormat.OpenXml.Packaging.PresentationDocument.Open(output, false);
+        Assert.Contains(presentation.PresentationPart!.SlideParts.SelectMany(slide => slide.Slide.Descendants<DocumentFormat.OpenXml.Drawing.Text>()), text => text.Text?.Contains("YADG image unavailable", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void Successful_mermaid_output_remains_owned_until_caller_cleanup()
+    {
+        using var directory = new TemporaryDirectory();
+        var script = Path.Combine(directory.Path, "valid.ps1");
+        File.WriteAllText(script, "[IO.File]::WriteAllBytes($args[3], [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='))");
+        var ownedDirectories = new List<string>();
+        var diagnostics = new List<Diagnostic>();
+        var asset = MermaidProducer.RenderSource("figure", "flowchart LR\nA-->B", Path.Combine(directory.Path, "source.md"), new("powershell.exe", new[] { "-NoProfile", "-File", script }), directory.Path, diagnostics, ownedDirectories);
+
+        Assert.NotNull(asset);
+        var ownedDirectory = Assert.Single(ownedDirectories);
+        Assert.True(Directory.Exists(ownedDirectory));
+        Assert.True(File.Exists(asset.FullPath));
+        Directory.Delete(ownedDirectory, true);
+        Assert.False(Directory.Exists(ownedDirectory));
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
     public void Presentation_mermaid_image_regions_require_stable_deck_unique_ids()
     {
         var source = new PresentationSource("slides.md", "# Diagram {#image}\n\n```mermaid {#architecture caption=\"Architecture\"}\nflowchart LR\n  A --> B\n```");
@@ -167,6 +273,17 @@ public sealed class M0019FocusedTests
                 File.WriteAllText(receiptPath, System.Text.Json.JsonSerializer.Serialize(receipt, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
             }
         }
+    }
+
+    private static void AssertFailedProducerIsCleaned(string expectedDiagnostic, MermaidProducerConfiguration configuration, string workspaceRoot)
+    {
+        var temporaryDirectories = new List<string>();
+        var diagnostics = new List<Diagnostic>();
+        var image = MermaidProducer.RenderSource("cleanup-test", "flowchart LR\nA-->B", Path.Combine(workspaceRoot, "source.md"), configuration, workspaceRoot, diagnostics, temporaryDirectories);
+        Assert.Null(image);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == expectedDiagnostic && diagnostic.IsError);
+        var ownedDirectory = Assert.Single(temporaryDirectories);
+        Assert.False(Directory.Exists(ownedDirectory), $"Failed producer left temporary directory '{ownedDirectory}'.");
     }
 
     private static string FindRepositoryRoot()

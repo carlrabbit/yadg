@@ -49,14 +49,23 @@ public static class ValueSubstitution
                 GridHeader = table.GridHeader?.Select(cell => cell with { Paragraphs = cell.Paragraphs.Select(paragraph => (IReadOnlyList<YadgInline>)paragraph.Select(inline => Inline(inline, $"{sourcePath}: grid-table cell")).ToArray()).ToArray() }).ToArray(),
                 GridRows = table.GridRows?.Select(row => (IReadOnlyList<YadgTableCell>)row.Select(cell => cell with { Paragraphs = cell.Paragraphs.Select(paragraph => (IReadOnlyList<YadgInline>)paragraph.Select(inline => Inline(inline, $"{sourcePath}: grid-table cell")).ToArray()).ToArray() }).ToArray()).ToArray()
             },
+            YadgFigure figure => ResolveFigure(figure),
             YadgCodeBlock code => code with { Text = Resolve(code.Text, values, $"{sourcePath}: code block", yolo, diagnostics) },
             YadgBlockQuote quote => quote with { Blocks = quote.Blocks.Select(Block).ToArray() },
             _ => block
         };
+        var resolvedFigures = new Dictionary<string, YadgFigure>(StringComparer.Ordinal);
+        YadgFigure ResolveFigure(YadgFigure figure)
+        {
+            if (resolvedFigures.TryGetValue(figure.Id, out var resolved)) return resolved;
+            resolved = figure with { AltText = Resolve(figure.AltText, values, $"{figure.SourcePath}: figure caption '{figure.Id}'", yolo, diagnostics) };
+            resolvedFigures.Add(figure.Id, resolved);
+            return resolved;
+        }
         var blocks = document.Blocks.Select(Block).ToArray();
         var sections = new Dictionary<string, YadgSection>(StringComparer.Ordinal);
         var tables = new Dictionary<string, YadgTable>(StringComparer.Ordinal);
-        var figures = new Dictionary<string, YadgFigure>(document.Figures, StringComparer.Ordinal);
+        var figures = document.Figures.ToDictionary(pair => pair.Key, pair => ResolveFigure(pair.Value), StringComparer.Ordinal);
         for (var i = 0; i < blocks.Length; i++)
         {
             if (blocks[i] is YadgHeading { Id: not null } heading)

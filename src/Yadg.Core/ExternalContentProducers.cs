@@ -18,10 +18,9 @@ public static class MermaidProducer
                 replacements[figure.Id] = figure;
                 continue;
             }
-            var rendered = RenderOne(figure, config, workspaceRoot, diagnostics);
+            var rendered = RenderOne(figure, config, workspaceRoot, diagnostics, temporaryPaths);
             if (rendered is null) { replacements[figure.Id] = figure; continue; }
-            replacements[figure.Id] = figure with { AssetPath = rendered.Value.Asset.FullPath, Asset = rendered.Value.Asset };
-            temporaryPaths.Add(rendered.Value.Directory);
+            replacements[figure.Id] = figure with { AssetPath = rendered.FullPath, Asset = rendered };
         }
 
         YadgBlock Map(YadgBlock block) => block is YadgFigure figure && replacements.TryGetValue(figure.Id, out var replacement) ? replacement : block;
@@ -42,17 +41,19 @@ public static class MermaidProducer
             diagnostics.Add(new("YADG-PRODUCER-007", $"Mermaid source '{id}' requires configured producers.mermaid.", true, location));
             return null;
         }
-        var rendered = RenderOne(figure, config, workspaceRoot, diagnostics);
-        if (rendered is null) return null;
-        temporaryPaths.Add(rendered.Value.Directory);
-        return rendered.Value.Asset;
+        var rendered = RenderOne(figure, config, workspaceRoot, diagnostics, temporaryPaths);
+        return rendered;
     }
 
-    private static (ImageAsset Asset, string Directory)? RenderOne(YadgFigure figure, MermaidProducerConfiguration config, string workspaceRoot, List<Diagnostic> diagnostics)
+    private static ImageAsset? RenderOne(YadgFigure figure, MermaidProducerConfiguration config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths)
     {
         var directory = Path.Combine(Path.GetTempPath(), "yadg-mermaid-" + Guid.NewGuid().ToString("N"));
+        // Register ownership before any operation that can fail. Failed renders
+        // are also removed here, while the caller's normal cleanup remains safe.
+        temporaryPaths.Add(directory);
         var input = Path.Combine(directory, "input.mmd");
         var output = Path.Combine(directory, "output.png");
+        var succeeded = false;
         try
         {
             Directory.CreateDirectory(directory);
@@ -67,7 +68,7 @@ public static class MermaidProducer
             var stderr = process.StandardError.ReadToEndAsync();
             if (!process.WaitForExit(TimeoutMilliseconds))
             {
-                try { process.Kill(true); } catch { }
+                try { process.Kill(true); process.WaitForExit(5_000); } catch { }
                 Fail(diagnostics, "YADG-PRODUCER-011", "Mermaid producer timed out after 60 seconds.", figure);
                 return null;
             }
@@ -76,9 +77,14 @@ public static class MermaidProducer
             if (process.ExitCode != 0) { Fail(diagnostics, "YADG-PRODUCER-012", $"Mermaid producer exited with code {process.ExitCode}." + (detail.Length == 0 ? string.Empty : $" stderr: {detail}"), figure); return null; }
             var dimensions = ReadPng(output);
             if (dimensions is null) { Fail(diagnostics, "YADG-PRODUCER-013", "Mermaid producer did not create a valid non-empty PNG.", figure); return null; }
-            return (new ImageAsset(output, "PNG", dimensions.Value.Width, dimensions.Value.Height), directory);
+            succeeded = true;
+            return new ImageAsset(output, "PNG", dimensions.Value.Width, dimensions.Value.Height);
         }
         catch (Exception ex) { Fail(diagnostics, "YADG-PRODUCER-010", $"Unable to run Mermaid producer: {ex.Message}", figure); return null; }
+        finally
+        {
+            if (!succeeded && Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
     }
 
     private static string ResolveExecutable(string executable, string workspaceRoot)
