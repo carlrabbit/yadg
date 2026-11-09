@@ -19,6 +19,10 @@ public sealed class M0019FocusedTests
         var paragraphs = Assert.IsType<PresentationRegion>(Assert.Single(Assert.Single(ignored.Slides).Regions)).Blocks
             .OfType<PresentationParagraph>().Select(paragraph => string.Concat(paragraph.Inlines.OfType<PresentationText>().Select(text => text.Value))).ToArray();
         Assert.Equal(new[] { "Before.", "After." }, paragraphs);
+
+        var recovered = PresentationMarkdownParser.Parse(new[] { source }, thematicBreakPolicy: "error", yolo: true);
+        Assert.DoesNotContain(recovered.Diagnostics, diagnostic => diagnostic.IsError);
+        Assert.Contains(recovered.Diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-MD-001" && diagnostic.IsDegradation);
     }
 
     [Fact]
@@ -34,6 +38,23 @@ public sealed class M0019FocusedTests
         Assert.Contains(bold.Children, inline => inline is PresentationEmphasis { Italic: true });
         Assert.Contains(bold.Children, inline => inline is PresentationStrike);
         Assert.Contains(bold.Children, inline => inline is PresentationLink { Destination: "https://example.test/path" });
+    }
+
+    [Fact]
+    public void Presentation_inline_code_obeys_error_ignore_and_style_policies()
+    {
+        var source = new PresentationSource("slides.md", "# Slide\n\nA `literal` span.");
+        var strict = PresentationMarkdownParser.Parse(new[] { source }, inlineCodePolicy: "error");
+        Assert.Contains(strict.Diagnostics, diagnostic => diagnostic.Code == "YADG-PPT-MD-020" && diagnostic.IsError);
+
+        var ignored = PresentationMarkdownParser.Parse(new[] { source }, inlineCodePolicy: "ignore");
+        Assert.DoesNotContain(ignored.Diagnostics, diagnostic => diagnostic.IsError);
+        var ignoredParagraph = Assert.IsType<PresentationParagraph>(Assert.Single(Assert.Single(ignored.Slides).Regions).Blocks.Single());
+        Assert.Contains(ignoredParagraph.Inlines, inline => inline is PresentationText { Value: "literal" });
+
+        var styled = PresentationMarkdownParser.Parse(new[] { source }, inlineCodePolicy: "style");
+        var styledParagraph = Assert.IsType<PresentationParagraph>(Assert.Single(Assert.Single(styled.Slides).Regions).Blocks.Single());
+        Assert.Contains(styledParagraph.Inlines, inline => inline is PresentationCode { Value: "literal" });
     }
 
     [Fact]
@@ -53,6 +74,10 @@ public sealed class M0019FocusedTests
         var yolo = ValueSubstitution.Resolve("{{value:missing}}", values, "source.md", true, diagnostics);
         Assert.Equal("{{value:missing}}", yolo);
         Assert.Single(diagnostics, diagnostic => diagnostic.Code == "YADG-YOLO-VALUE-001" && diagnostic.IsDegradation);
+
+        diagnostics.Clear();
+        ValueSubstitution.Resolve("{{value:bad id}}", values, "source.md", true, diagnostics);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "YADG-VALUE-003" && diagnostic.IsError);
     }
 
     [Fact]

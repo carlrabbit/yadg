@@ -233,11 +233,11 @@ public static class PresentationAuthoring
             var slideMarkers = markers.Select(text => SlideMarker.Match(text)).Where(match => match.Success).ToArray();
             if (slideMarkers.Length == 0)
             {
-                if (markers.Any(text => AnyControl.IsMatch(text))) diagnostics.Add(new("YADG-PPT-TEMPLATE-003", $"Malformed or unknown presentation control marker in template slide: {string.Join(", ", markers)}.", true, templatePath));
+                if (markers.Any(text => AnyControl.IsMatch(text) && text != "{{codeInline}}" && !ValueToken.IsMatch(text))) diagnostics.Add(new("YADG-PPT-TEMPLATE-003", $"Malformed or unknown presentation control marker in template slide: {string.Join(", ", markers)}.", true, templatePath));
                 continue;
             }
             var slideMarkerShapeIsDedicated = slidePart.Slide.Descendants<P.Shape>().Any(shape => SlideMarker.IsMatch(shape.TextBody?.InnerText ?? string.Empty));
-            if (slideMarkers.Length != 1 || !slideMarkerShapeIsDedicated || markers.Any(text => AnyControl.IsMatch(text) && !SlideMarker.IsMatch(text) && text != "{{title}}" && !RegionMarker.IsMatch(text)))
+            if (slideMarkers.Length != 1 || !slideMarkerShapeIsDedicated || markers.Any(text => AnyControl.IsMatch(text) && !SlideMarker.IsMatch(text) && text != "{{title}}" && text != "{{codeInline}}" && !RegionMarker.IsMatch(text) && !ValueToken.IsMatch(text)))
             {
                 diagnostics.Add(new("YADG-PPT-TEMPLATE-004", "Each prototype slide must contain exactly one dedicated {{slide:<layout-id>}} marker and only plain title/region markers.", true, templatePath));
                 continue;
@@ -318,7 +318,7 @@ public static class PresentationAuthoring
                     }
                 }
             }
-            if (texts.Any(text => AnyControl.IsMatch(text) && text is not "{{title}}" && !RegionMarker.IsMatch(text) && !SlideMarker.IsMatch(text)))
+            if (texts.Any(text => AnyControl.IsMatch(text) && text is not "{{title}}" and not "{{codeInline}}" && !RegionMarker.IsMatch(text) && !SlideMarker.IsMatch(text) && !ValueToken.IsMatch(text)))
                 diagnostics.Add(new("YADG-PPT-TEMPLATE-003", $"Layout '{slide.Layout}' contains a malformed or unknown control marker.", true, templatePath));
         }
     }
@@ -494,7 +494,7 @@ public static class PresentationAuthoring
         }
         void AddRun(string value, A.RunProperties? extra)
         {
-            var properties = (A.RunProperties?)(extra ?? baseProperties?.CloneNode(true)) ?? new A.RunProperties();
+            var properties = extra is not null ? (A.RunProperties)extra.CloneNode(true) : (A.RunProperties?)(baseProperties?.CloneNode(true)) ?? new A.RunProperties();
             if (extra is not null && baseProperties is not null)
             {
                 if (baseProperties.Bold is not null) properties.Bold = baseProperties.Bold;

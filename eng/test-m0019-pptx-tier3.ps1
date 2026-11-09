@@ -15,7 +15,7 @@ $config = Join-Path $EvidenceRoot 'authoring.yaml'
 $runner = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'test-m0019-run-mermaid.ps1')).Replace('\','/')
 $runnerArgument = '      - "' + $runner + '"'
 $content = Get-Content -LiteralPath $sourceFixture -Raw
-$content = $content.Replace('This paragraph was authored in the shared M0018 compatibility source.','This paragraph was authored in the shared M0018 compatibility source. Review period: {{value:period}}.')
+$content = $content.Replace('This paragraph was authored in the shared M0018 compatibility source.','This paragraph was authored in the shared M0018 compatibility source. Review period: {{value:period}}. ~~legacy~~ [support link](https://example.test/support).')
 $mermaid = @'
 ```mermaid {#generated-flow caption="Generated flow"}
 flowchart LR

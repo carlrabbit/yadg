@@ -54,20 +54,34 @@ try {
         $docxOutput = Join-Path $workspace 'authored.docx'
         & $shim document build --template $template --source $source --output $docxOutput --config $config
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $docxOutput)) { throw 'Installed tool direct DOCX build failed.' }
+        $yoloSource = Join-Path $workspace 'consumer-yolo.md'
+        Set-Content -LiteralPath $yoloSource -Encoding utf8 -Value @('# YOLO report {#report}','','Unresolved token: {{value:missing}}.')
+        $yoloDocx = Join-Path $workspace 'authored-yolo.docx'
+        $yoloDocxSummary = (& $shim document build --template $template --source $yoloSource --output $yoloDocx --config $config --yolo 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $yoloDocx) -or $yoloDocxSummary -notmatch 'degradations=1') { throw 'Installed tool direct DOCX YOLO value recovery failed or reported an inaccurate count.' }
         & $shim presentation check --template (Join-Path $workspace 'YadgTemplates/impress.pptx') --source (Join-Path $workspace 'slides.md') --config $config
         if ($LASTEXITCODE -ne 0) { throw 'Installed tool direct PPTX check with explicit config failed.' }
         $pptxOutput = Join-Path $workspace 'direct.pptx'
         & $shim presentation build --template (Join-Path $workspace 'YadgTemplates/impress.pptx') --source (Join-Path $workspace 'slides.md') --output $pptxOutput --config $config
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pptxOutput)) { throw 'Installed tool direct PPTX build failed.' }
+        $yoloPresentationSource = Join-Path $workspace 'slides-yolo.md'
+        $reviewMarkdown = Get-Content -LiteralPath (Join-Path $workspace 'slides.md') -Raw
+        $reviewMarkdown = [regex]::Replace($reviewMarkdown,'!\[[^\]]*\]\([^\)]+\)','![missing](images/not-present.png)')
+        Set-Content -LiteralPath $yoloPresentationSource -Encoding utf8 -Value $reviewMarkdown
+        $yoloPptx = Join-Path $workspace 'direct-yolo.pptx'
+        $yoloPptxSummary = (& $shim presentation build --template (Join-Path $workspace 'YadgTemplates/impress.pptx') --source $yoloPresentationSource --output $yoloPptx --config $config --yolo 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $yoloPptx) -or $yoloPptxSummary -notmatch 'degradations=1') { throw 'Installed tool direct PPTX YOLO image recovery failed or reported an inaccurate count.' }
         & $shim presentation check --id overview --workspace $workspace
         if ($LASTEXITCODE -ne 0) { throw 'Installed tool selected-deck check failed.' }
         & $shim presentation build --id overview --workspace $workspace
         if ($LASTEXITCODE -ne 0) { throw 'Installed tool selected-deck build failed.' }
+        $inventory = (& $shim check --list --workspace $workspace 2>&1) -join "`n"
+        if ($inventory -notmatch 'overview' -or $inventory -notmatch 'slides.md' -or $inventory -notmatch 'overview.pptx') { throw "Installed tool presentation inventory did not list the configured deck declaration. Output: $inventory" }
 
         $docHash = (Get-FileHash -LiteralPath $docxOutput -Algorithm SHA256).Hash.ToUpperInvariant()
         $pptHash = (Get-FileHash -LiteralPath $pptxOutput -Algorithm SHA256).Hash.ToUpperInvariant()
         Copy-Item -LiteralPath $package -Destination (Join-Path $EvidenceRoot "Yadg.$version.nupkg") -Force
-        $record = [ordered]@{ milestone='M0019'; gate='VAL-06'; result='passed'; repositoryRevision=(& git -C $repo rev-parse HEAD).Trim(); packageId='Yadg'; packageVersion=$version; sdkVersion=$sdkVersion; packagePath="artifacts/review/evidence/M0019/Yadg.$version.nupkg"; packageSha256=(Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToUpperInvariant(); isolatedToolPath='temporary dotnet tool path'; commands=@('document check/build --config','presentation check/build --config','presentation check/build --id'); authoredDocxSha256=$docHash; directPptxSha256=$pptHash; selectedPptxSha256=(Get-FileHash -LiteralPath (Join-Path $workspace 'YadgPresentations/overview.pptx') -Algorithm SHA256).Hash.ToUpperInvariant() }
+        $record = [ordered]@{ milestone='M0019'; gate='VAL-06'; result='passed'; repositoryRevision=(& git -C $repo rev-parse HEAD).Trim(); packageId='Yadg'; packageVersion=$version; sdkVersion=$sdkVersion; packagePath="artifacts/review/evidence/M0019/Yadg.$version.nupkg"; packageSha256=(Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToUpperInvariant(); isolatedToolPath='temporary dotnet tool path'; commands=@('document check/build --config','document build --config --yolo','presentation check/build --config','presentation build --config --yolo','presentation check/build --id','presentation build --id','check --list'); authoredDocxSha256=$docHash; yoloDocxSha256=(Get-FileHash -LiteralPath $yoloDocx -Algorithm SHA256).Hash.ToUpperInvariant(); directPptxSha256=$pptHash; yoloPptxSha256=(Get-FileHash -LiteralPath $yoloPptx -Algorithm SHA256).Hash.ToUpperInvariant(); selectedPptxSha256=(Get-FileHash -LiteralPath (Join-Path $workspace 'YadgPresentations/overview.pptx') -Algorithm SHA256).Hash.ToUpperInvariant() }
         $record | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'tier4-evidence.json') -Encoding utf8
         Write-Output "M0019 isolated Yadg $version Tier 4 commands passed."
     } finally { Pop-Location }

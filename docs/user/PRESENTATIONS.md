@@ -25,7 +25,7 @@ presentations:
 ---
 ```
 
-Sources and templates may be shared between named decks. Presentation sources are excluded from DOCX source discovery. `yadg check` validates every configured deck; `yadg build` builds every deck and replaces the complete `YadgPresentations/*.pptx` result set after all decks succeed. DOCX, PDF and presentation outputs use separate result sets. `render` and `publish` remain DOCX-only.
+Sources and templates may be shared between named decks. Presentation sources are excluded from DOCX source discovery. `yadg check --list` includes the declared deck IDs, templates, ordered source paths and outputs. `yadg check` validates every configured deck; `yadg build` builds every deck and replaces the complete `YadgPresentations/*.pptx` result set after all decks succeed. DOCX, PDF and presentation outputs use separate result sets. `render` and `publish` remain DOCX-only.
 
 ## Author slides
 

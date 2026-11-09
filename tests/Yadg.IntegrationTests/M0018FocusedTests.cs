@@ -263,6 +263,13 @@ public sealed class M0018FocusedTests
     public void Presentation_authoring_emits_native_text_picture_and_table_objects()
     {
         using var fixture = PresentationFixture.CreateRich();
+        using (var template = OpenXmlPresentationDocument.Open(fixture.Template, true))
+        {
+            var prototype = template.PresentationPart!.SlideParts.Single(slide => slide.Slide.InnerText.Contains("{{slide:text-image}}", StringComparison.Ordinal));
+            var staticText = prototype.Slide.Descendants<P.Shape>().Single(shape => shape.TextBody?.InnerText == "static template element").TextBody!.Descendants<A.Text>().Single();
+            staticText.Text = "static {{value:period}} element";
+            prototype.Slide.Save();
+        }
         var exportPath = Environment.GetEnvironmentVariable("YADG_M0018_TEST_TEMPLATE_EXPORT");
         if (!string.IsNullOrWhiteSpace(exportPath))
         {
@@ -273,10 +280,10 @@ public sealed class M0018FocusedTests
         Directory.CreateDirectory(imageDirectory);
         File.WriteAllBytes(Path.Combine(imageDirectory, "pixel.png"), Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
         var source = Path.Combine(fixture.Root, "slides.md");
-        File.WriteAllText(source, "# Mixed {#text-image}\n\n## Copy {#text}\n\nEditable text.\n\n### Insight\n\nA heading example.\n\n- Parent **bold**\n  - Child *italic*\n\n## Picture {#image}\n\n![Pixel](images/pixel.png)\n\n# Data {#table}\n\n| Name | Value |\n|---|---|\n| Alpha | 1 |\n| Beta | 2 |");
+        File.WriteAllText(source, "# Mixed {#text-image}\n\n## Copy {#text}\n\nEditable text {{value:period}}.\n\n### Insight\n\nA heading example.\n\n- Parent **bold** and ~~struck~~ [external link](https://example.test/path)\n  - Child *italic*\n\n## Picture {#image}\n\n![Pixel](images/pixel.png)\n\n# Data {#table}\n\n| Name | Value |\n|---|---|\n| Alpha | 1 |\n| Beta | 2 |");
         var output = Path.Combine(fixture.Root, "generated.pptx");
 
-        var diagnostics = PresentationAuthoring.Build(fixture.Template, new[] { new PresentationSource(source, File.ReadAllText(source)) }, fixture.Root, output);
+        var diagnostics = PresentationAuthoring.Build(fixture.Template, new[] { new PresentationSource(source, File.ReadAllText(source)) }, fixture.Root, output, values: new Dictionary<string, string>(StringComparer.Ordinal) { ["period"] = "Q4 2026" });
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.IsError);
         using var document = OpenXmlPresentationDocument.Open(output, false);
@@ -286,18 +293,22 @@ public sealed class M0018FocusedTests
         Assert.Equal(2, slides.Length);
         Assert.Single(document.PresentationPart.SlideMasterParts);
         Assert.All(slides, slide => Assert.Single(slide.GetPartsOfType<SlideLayoutPart>()));
-        Assert.Contains(slides[0].Slide.Descendants<A.Text>(), text => text.Text == "Editable text.");
+        var renderedTextShapes = slides[0].Slide.Descendants<P.Shape>().Select(shape => shape.TextBody?.InnerText).ToArray();
+        Assert.Contains(renderedTextShapes, shapeText => shapeText?.Contains("Editable text Q4 2026.", StringComparison.Ordinal) == true);
         Assert.Contains(slides[0].Slide.Descendants<A.Text>(), text => text.Text == "Insight");
         Assert.DoesNotContain(slides[0].Slide.Descendants<A.Text>(), text => text.Text is "Copy" or "Picture" or "Data");
-        var textShape = slides[0].Slide.Descendants<P.Shape>().Single(shape => shape.TextBody?.InnerText.Contains("Editable text.", StringComparison.Ordinal) == true);
+        var textShape = slides[0].Slide.Descendants<P.Shape>().Single(shape => shape.TextBody?.InnerText.Contains("Editable text", StringComparison.Ordinal) == true);
         var generatedParagraphs = textShape.TextBody!.Elements<A.Paragraph>().ToArray();
         Assert.Contains(generatedParagraphs, paragraph => paragraph.InnerText == "Insight" && paragraph.Descendants<A.RunProperties>().Any(properties => properties.FontSize?.Value == 2800));
-        Assert.Contains(generatedParagraphs, paragraph => paragraph.InnerText == "Editable text." && paragraph.Descendants<A.RunProperties>().Any(properties => properties.FontSize?.Value == 1800));
+        Assert.Contains(generatedParagraphs, paragraph => paragraph.InnerText == "Editable text Q4 2026." && paragraph.Descendants<A.RunProperties>().Any(properties => properties.FontSize?.Value == 1800));
         var parentBullet = Assert.Single(generatedParagraphs, paragraph => paragraph.InnerText.Contains("Parent", StringComparison.Ordinal));
         var childBullet = Assert.Single(generatedParagraphs, paragraph => paragraph.InnerText.Contains("Child", StringComparison.Ordinal));
         Assert.Equal(0, parentBullet.ParagraphProperties?.Level?.Value);
         Assert.Equal(1, childBullet.ParagraphProperties?.Level?.Value);
         Assert.Contains(parentBullet.Descendants<A.RunProperties>(), properties => properties.Bold?.Value == true);
+        Assert.Contains(parentBullet.Descendants<A.RunProperties>(), properties => properties.Strike is not null);
+        Assert.Contains(slides[0].HyperlinkRelationships, relationship => relationship.Uri.ToString() == "https://example.test/path");
+        Assert.Contains(slides[0].Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText == "static Q4 2026 element");
         Assert.Contains(childBullet.Descendants<A.RunProperties>(), properties => properties.Italic?.Value == true);
         var picture = Assert.Single(slides[0].Slide.Descendants<P.Picture>());
         var pictureExtents = picture.ShapeProperties!.Transform2D!.Extents!;
@@ -313,6 +324,44 @@ public sealed class M0018FocusedTests
         Assert.All(generatedTable.Elements<A.TableRow>().First().Elements<A.TableCell>(), cell => Assert.Contains(cell.Descendants<A.RunProperties>(), properties => properties.Bold?.Value == true));
         Assert.All(generatedTable.Elements<A.TableRow>().Skip(1).SelectMany(row => row.Elements<A.TableCell>()), cell => Assert.Contains(cell.Descendants<A.RunProperties>(), properties => properties.Italic?.Value == true));
         Assert.All(slides, slide => Assert.DoesNotContain(slide.Slide.Descendants<A.Text>(), text => text.Text.Contains("{{", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Presentation_inline_code_uses_a_scoped_template_run_and_yolo_falls_back_plain()
+    {
+        using var fixture = PresentationFixture.CreateRich();
+        var source = Path.Combine(fixture.Root, "code.md");
+        File.WriteAllText(source, "# Code example {#text-image}\n\n## Copy {#text}\n\nAn `inline code` sample.\n\n## Picture {#image}\n\n![pixel](images/pixel.png)");
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "images"));
+        File.WriteAllBytes(Path.Combine(fixture.Root, "images", "pixel.png"), Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        using (var template = OpenXmlPresentationDocument.Open(fixture.Template, true))
+        {
+            var prototype = template.PresentationPart!.SlideParts.Single(slide => slide.Slide.InnerText.Contains("{{slide:text-image}}", StringComparison.Ordinal));
+            var textShape = prototype.Slide.Descendants<P.Shape>().Single(shape => shape.TextBody?.InnerText.Contains("{{text}}", StringComparison.Ordinal) == true);
+            textShape.TextBody!.AppendChild(new A.Paragraph(new A.ParagraphProperties(), new A.Run(new A.RunProperties(new A.LatinFont { Typeface = "Consolas" }), new A.Text("{{codeInline}}"))));
+            prototype.Slide.Save();
+        }
+
+        var output = Path.Combine(fixture.Root, "styled-code.pptx");
+        var styled = PresentationAuthoring.Build(fixture.Template, new[] { new PresentationSource(source, File.ReadAllText(source)) }, fixture.Root, output);
+        Assert.DoesNotContain(styled, diagnostic => diagnostic.IsError);
+        using (var deck = OpenXmlPresentationDocument.Open(output, false))
+        {
+            var slide = deck.PresentationPart!.SlideParts.Single();
+            Assert.Contains(slide.Slide.Descendants<A.Run>(), run => run.InnerText == "inline code" && run.RunProperties?.GetFirstChild<A.LatinFont>()?.Typeface == "Consolas");
+            Assert.DoesNotContain(slide.Slide.Descendants<A.Text>(), text => text.Text.Contains("{{codeInline}}", StringComparison.Ordinal));
+        }
+
+        using var withoutSample = PresentationFixture.CreateRich();
+        var strictPath = Path.Combine(withoutSample.Root, "strict.pptx");
+        var strict = PresentationAuthoring.Build(withoutSample.Template, new[] { new PresentationSource(source, File.ReadAllText(source)) }, fixture.Root, strictPath);
+        Assert.Contains(strict, diagnostic => diagnostic.Code == "YADG-PPT-CODE-001" && diagnostic.IsError);
+        Assert.False(File.Exists(strictPath));
+        var yoloPath = Path.Combine(withoutSample.Root, "yolo.pptx");
+        var recovered = PresentationAuthoring.Build(withoutSample.Template, new[] { new PresentationSource(source, File.ReadAllText(source)) }, fixture.Root, yoloPath, yolo: true);
+        Assert.Contains(recovered, diagnostic => diagnostic.Code == "YADG-YOLO-CODE-002" && diagnostic.IsDegradation);
+        using var yolo = OpenXmlPresentationDocument.Open(yoloPath, false);
+        Assert.Contains(yolo.PresentationPart!.SlideParts.Single().Slide.Descendants<A.Text>(), text => text.Text == "inline code");
     }
 
     [Fact]
@@ -450,6 +499,10 @@ public sealed class M0018FocusedTests
         Assert.NotEqual("old selected deck", File.ReadAllText(selectedOutput));
         Assert.Equal(unrelatedBefore, File.ReadAllBytes(unrelatedOutput));
         Assert.NotEqual(0, RunCli(fixture.Root, "presentation", "check", "--id", "not-declared", "--workspace", fixture.Root).ExitCode);
+        var inventory = RunCli(fixture.Root, "check", "--list", "--workspace", fixture.Root);
+        Assert.Contains("selected", inventory.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("slides.md", inventory.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("selected.pptx", inventory.StandardOutput, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -655,7 +708,8 @@ public sealed class M0018FocusedTests
                     new A.Paragraph(new A.Run(new A.RunProperties { FontSize = 1800 }, new A.Text("paragraph example"))),
                     new A.Paragraph(new A.Run(new A.RunProperties { FontSize = 2800 }, new A.Text("heading example"))),
                     new A.Paragraph(new A.ParagraphProperties(new A.CharacterBullet { Char = "•" }), new A.Run(new A.RunProperties { FontSize = 1800 }, new A.Text("bullet example")))),
-                Shape(5, "image", "{{image}}", 5500000, 1000000, 4000000, 4500000)
+                Shape(5, "image", "{{image}}", 5500000, 1000000, 4000000, 4500000),
+                Shape(6, "static", "static template element", 0, 6000000, 1000000, 300000)
             });
             AddPrototype(presentationPart, layoutPart, "table", new OpenXmlElement[]
             {
