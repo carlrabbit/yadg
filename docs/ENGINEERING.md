@@ -240,6 +240,16 @@ Never commit confidential/bank templates or document content.
 
 Tracked changes must be accepted in the realistic fixture templates before they become fixture authority.
 
+## M0019 cross-format integration and review specialization
+
+M0019 retains the authoritative Windows local/interactive Office capability described above and the M0018 PowerPoint/Impress origin-specific fixture policy. DOCX Tier 3 uses real desktop Microsoft Word and LibreOffice Writer, including application-produced committed DOCX templates, and requires serial Word COM automation and isolated LibreOffice profiles. PPTX Tier 3 uses real activated PowerPoint and real Impress with their respective application-origin committed templates; editable native objects, template styling and absence of repair must be verified at the application boundary. A different authorized *existing* interactive Windows machine with the same applications is evidence-equivalent when its host, versions, source revision and fixture identities are recorded. Headless, simulated or structural-only checks are not substitutes for real Office acceptance.
+
+Mermaid Tier 3 invokes the configured external process through the existing package-manager-neutral command adapter, with pinned Bun and Mermaid CLI test versions from `eng/test-tools.json`. Record process command class, exit, executable/runtime identity, validated PNG hashes and temp cleanup. Neither normal check nor build silently installs Bun, downloads a diagram producer, or uses a persistent generated image cache; process behavior may access network according to the configured executable. The product treats executable config as trusted authoring configuration, not a sandboxed plugin.
+
+M0019 validation scripts and evidence location are described in its ready milestone. Implementers may run existing SDK tools, authorized desktop applications, controlled external tools and isolated temporary `dotnet tool` installations. They may restore declared .NET dependencies. No machine-wide or persistent Office/Bun/runtime provisioning, new CI runners/workflows/secrets, or noninteractive Office automation is authorized by M0019. An absent prerequisite blocks the corresponding Tier 3 gate; do not claim a surrogate target as passed.
+
+M0019 human review covers exactly two synthetic, redistribution-safe candidates: a real Word-finalized DOCX and a generated/reopened Impress-origin PPTX, bound to the current milestone's evidence manifest and SHA-256. Automated source/template tests do not replace this artifact-quality review. The ongoing application-origin test fixture policy and repository hygiene (ignored `.execution/`, `.review/`, `artifacts/`) are unchanged.
+
 ## Existing M0009 validation
 
 M0009 Word renderer/publish behavior remains in force.
