@@ -254,9 +254,19 @@ ignore
 style
 ```
 
-Default is `error`.
+The workspace schema default is `style`.
 
 `ignore` preserves code text as ordinary text. `style` requires a suitable template character-style role.
+
+YADG also supports literal, nonrecursive source values in either output format:
+
+```markdown
+# Report {{value:period}}
+
+Revenue for {{value:period}} was {{value:revenue}}.
+```
+
+Values come from the workspace `values` mapping or an explicitly supplied direct-authoring config. Missing values are errors in strict mode. YOLO retains a valid unresolved token visibly and records a degradation; malformed value tokens remain errors.
 
 Ordinary fenced and indented code blocks are emitted as literal code. Explicit `mermaid` fences and the supported text-diagram fence forms described below retain their diagram behavior.
 

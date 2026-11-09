@@ -1,12 +1,13 @@
 param(
-    [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/powerpoint-origin.pptx')
+    [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/powerpoint-origin.pptx'),
+    [string] $ProvenancePath
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $output = [IO.Path]::GetFullPath($OutputPath)
 $fixtureDirectory = Join-Path $repo 'tests/fixtures/m0018'
-$provenancePath = Join-Path $fixtureDirectory 'powerpoint-origin.provenance.json'
+$provenancePath = if ([string]::IsNullOrWhiteSpace($ProvenancePath)) { Join-Path (Split-Path -Parent $output) 'powerpoint-origin.provenance.json' } else { [IO.Path]::GetFullPath($ProvenancePath) }
 if (Test-Path -LiteralPath $output) { throw "Refusing to overwrite an existing canonical fixture: $output" }
 if (Test-Path -LiteralPath $provenancePath) { throw "Refusing to overwrite existing fixture provenance: $provenancePath" }
 New-Item -ItemType Directory -Force -Path $fixtureDirectory | Out-Null
@@ -22,7 +23,12 @@ try {
     $presentation = $app.Presentations.Add(-1)
     $master = $presentation.Designs.Item(1).SlideMaster
     $layouts = $master.CustomLayouts
-    $presentation.PageSetup.SlideSize = 15 # ppSlideSizeWide, PowerPoint's native widescreen page.
+    # The prototype coordinates below are authored for a 960 x 540 pt widescreen
+    # canvas. Set explicit custom dimensions instead of relying on enum 15, which
+    # PowerPoint interprets as a smaller 720 x 405 pt page on this Office build.
+    $presentation.PageSetup.SlideSize = 7 # ppSlideSizeCustom
+    $presentation.PageSetup.SlideWidth = 960
+    $presentation.PageSetup.SlideHeight = 540
 
     function Copy-TextFormatting($source, $target) {
         foreach ($property in @('Name', 'Size', 'Bold', 'Italic', 'Underline')) {
@@ -177,7 +183,7 @@ try {
         platform = [Runtime.InteropServices.RuntimeInformation]::OSDescription
         createdAtUtc = $created
         saveDateUtc = $created
-        creationMethod = 'Created as a new presentation through the real desktop Microsoft PowerPoint COM object model; native default master/theme/layouts and title/body placeholders were retained, heading examples copied native title formatting, a native theme table was authored, and the four prototype slides were saved from PowerPoint as PPTX.'
+        creationMethod = 'Created as a new presentation through the real desktop Microsoft PowerPoint COM object model with a 960 x 540 pt custom widescreen canvas matching the authored native shape geometry; native default master/theme/layouts and title/body placeholders were retained, heading examples copied native title formatting, a native theme table was authored, and the four prototype slides were saved from PowerPoint as PPTX.'
         syntheticAndRedistributionSafe = $true
         createdInApplication = $true
         notOpenXmlGeneratedOrRoundTripped = $true

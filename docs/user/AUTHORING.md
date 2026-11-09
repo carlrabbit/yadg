@@ -7,4 +7,6 @@ YADG authoring is now documented as two explicit disciplines:
 
 For the end-to-end workflow, start with [Getting started](GETTING-STARTED.md).
 
+For one-off authoring without a workspace, `yadg document check/build` accepts an explicit DOCX template and ordered Markdown sources. `document build` writes one authored, unfinalized DOCX. Both `document` and `presentation` commands accept an optional explicit `--config` and invocation-local `--yolo`; neither reads an ambient `YADG.md`. See the format guides for command examples and the direct-config trust boundary.
+
 This path is retained so existing links to `docs/user/AUTHORING.md` continue to lead to useful current documentation.

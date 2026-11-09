@@ -97,6 +97,16 @@ Mermaid output becomes an ordinary semantic figure before Word authoring.
 
 Text diagrams are not external producers.
 
+## M0019 shared authoring service boundary
+
+Common Markdown policy interpretation, source-authored value resolution, configured Mermaid process execution, validated transient PNG asset ownership, strict/YOLO degradation classification, and structured diagnostics belong to reusable authoring services that do not depend on either Office package format or Office automation. These services may be called by the existing Word and presentation parsers without imposing a shared document/slide AST.
+
+DOCX continues to own section-level semantics, global semantic identities, Word references/captions, story-wide template value substitution, and Word-specific figure/diagram placement. PPTX continues to own slide-scoped selectors, named typed regions, editable native slide/text/picture/table objects, and template prototype formatting. The PPTX image region can consume a validated generated Mermaid PNG through the same asset boundary as Word figure authoring; it does not become a Word semantic figure or a new PPTX layout.
+
+Direct document/presentation commands resolve explicitly supplied sources/templates and optional authoring configuration without workspace discovery. Configured selected-deck commands read only needed declaration/target authoring inputs, while workspace-wide commands retain ordinary discovery and independent output result-set ownership. The existing renderer/finalization and publisher boundaries do not become part of direct authoring.
+
+Refer to `docs/specs/CROSS-FORMAT-AUTHORING.md` for scope, configuration, source values, YOLO and direct/selected behavior.
+
 ## Renderer boundary
 
 Renderers consume `YadgPreWords/*.docx` and produce finalized workspace artifacts.

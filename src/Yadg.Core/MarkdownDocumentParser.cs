@@ -101,7 +101,7 @@ public static class MarkdownDocumentParser
         var sections = new Dictionary<string, YadgSection>(StringComparer.Ordinal);
         var tables = new Dictionary<string, YadgTable>(StringComparer.Ordinal);
         var figures = new Dictionary<string, YadgFigure>(StringComparer.Ordinal);
-        foreach (var (location, result) in sources.OrderBy(s => s.Location, StringComparer.Ordinal))
+        foreach (var (location, result) in sources)
         {
             diagnostics.AddRange(result.Diagnostics);
             if (result.Document is null) continue;
