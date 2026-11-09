@@ -4,6 +4,8 @@
 
 Authoritative for external content producers and inline Mermaid diagrams introduced by M0008.
 
+**M0019 specialization:** `docs/specs/CROSS-FORMAT-AUTHORING.md` extends this existing external-process/PNG contract to PPTX image regions and explicitly configured direct authoring. Earlier Word-only producer placement statements remain Word-specific, not a prohibition on the additional PPTX adapter. The producer CLI, trust boundary and Bun-neutrality do not change.
+
 ## Purpose
 
 Some maintainable document content is more naturally authored in a source representation other than ordinary Markdown text.
