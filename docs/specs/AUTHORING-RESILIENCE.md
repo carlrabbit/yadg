@@ -6,6 +6,8 @@ Authoritative for YADG 1.1 resilience after M0012 corrections.
 
 Strict mode remains default and authoritative when `--yolo` is absent.
 
+**M0019 specialization:** `docs/specs/CROSS-FORMAT-AUTHORING.md` extends invocation-local strict/YOLO policy to configured PPTX and direct document/presentation commands with an explicitly enumerated PPTX fallback and fatal-boundary catalog. Legacy DOCX and renderer fallback behavior remains in force. The DOCX-only success wording in earlier sections does not prohibit valid presentation-only workspaces.
+
 ## Purpose
 
 Strict asks:
