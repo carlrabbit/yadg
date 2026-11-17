@@ -39,7 +39,7 @@ try {
         catch { throw 'Could not copy native PowerPoint font color from the application exemplar.' }
     }
 
-    function Set-RoleSamples($shape, [string] $marker, $titleExemplar, [bool] $includeHeading, [bool] $includeBullet) {
+    function Set-RoleSamples($shape, [string] $marker, [bool] $includeHeading, [bool] $includeBullet) {
         $lines = [Collections.Generic.List[string]]::new()
         $lines.Add($marker)
         $lines.Add('ordinary paragraph example')
@@ -49,7 +49,15 @@ try {
         $shape.TextFrame.TextRange.Text = $lines -join "`r"
         if ($includeHeading) {
             $heading = $shape.TextFrame.TextRange.Paragraphs(3)
-            Copy-TextFormatting $titleExemplar $heading
+            # A body content heading is an example within the body placeholder,
+            # not a copy of the slide-title role. Derive its font and paragraph
+            # formatting from the ordinary body paragraph and distinguish it
+            # with modest typographic emphasis rather than copying the much
+            # larger slide-title role.
+            $bodyParagraph = $shape.TextFrame.TextRange.Paragraphs(2)
+            Copy-TextFormatting $bodyParagraph $heading
+            $heading.Font.Size = [single]([double]$bodyParagraph.Font.Size + 4)
+            $heading.Font.Bold = -1
         }
         if ($includeBullet) {
             $bulletIndex = if ($includeHeading) { 4 } else { 3 }
@@ -99,9 +107,9 @@ try {
         return $result.ToArray()
     }
 
-    function Set-TextRegion($shape, [string] $name, [string] $marker, $titleExemplar) {
+    function Set-TextRegion($shape, [string] $name, [string] $marker) {
         $shape.Name = $name
-        Set-RoleSamples $shape $marker $titleExemplar.TextFrame.TextRange.Paragraphs(1) $true $true
+        Set-RoleSamples $shape $marker $true $true
     }
 
     function Add-TitleAndContent($layout, [string] $layoutId) {
@@ -110,7 +118,7 @@ try {
         $slide.Shapes.Placeholders.Item(1).Name = "YADG title $layoutId"
         $body = @(Get-BodyPlaceholders $slide)
         if ($body.Count -ne 1) { throw "Expected one native PowerPoint body placeholder for layout '$layoutId'; found $($body.Count)." }
-        Set-TextRegion $body[0] "YADG $layoutId region" (('{{' + $layoutId + '}}')) $title
+        Set-TextRegion $body[0] "YADG $layoutId region" (('{{' + $layoutId + '}}'))
         Add-PrototypeMarker $slide $layoutId
         Add-StaticFooter $slide
         return [pscustomobject]@{ Slide = $slide; Title = $title; Body = $body[0] }
@@ -124,8 +132,8 @@ try {
     $columnsSlide.Shapes.Placeholders.Item(1).Name = 'YADG title two-columns'
     $columnPlaceholders = @(Get-BodyPlaceholders $columnsSlide)
     if ($columnPlaceholders.Count -ne 2) { throw "Expected two native PowerPoint body placeholders for 'two-columns'; found $($columnPlaceholders.Count)." }
-    Set-TextRegion $columnPlaceholders[0] 'YADG left region' '{{left}}' $columnsTitle
-    Set-TextRegion $columnPlaceholders[1] 'YADG right region' '{{right}}' $columnsTitle
+    Set-TextRegion $columnPlaceholders[0] 'YADG left region' '{{left}}'
+    Set-TextRegion $columnPlaceholders[1] 'YADG right region' '{{right}}'
     Add-PrototypeMarker $columnsSlide 'two-columns'
     Add-StaticFooter $columnsSlide
 
@@ -139,7 +147,7 @@ try {
     $visualRegion.Top = 138
     $visualRegion.Width = 420
     $visualRegion.Height = 315
-    Set-RoleSamples $visualRegion '{{text}}' $visualPrototype.Title.TextFrame.TextRange.Paragraphs(1) $true $true
+    Set-RoleSamples $visualRegion '{{text}}' $true $true
     $image = $visualSlide.Shapes.AddShape(1, 500, 155, 390, 275)
     $image.Name = 'YADG image region'
     $image.TextFrame.TextRange.Text = '{{image}}'
@@ -183,7 +191,7 @@ try {
         platform = [Runtime.InteropServices.RuntimeInformation]::OSDescription
         createdAtUtc = $created
         saveDateUtc = $created
-        creationMethod = 'Created as a new presentation through the real desktop Microsoft PowerPoint COM object model with a 960 x 540 pt custom widescreen canvas matching the authored native shape geometry; native default master/theme/layouts and title/body placeholders were retained, heading examples copied native title formatting, a native theme table was authored, and the four prototype slides were saved from PowerPoint as PPTX.'
+        creationMethod = 'Created as a new presentation through the real desktop Microsoft PowerPoint COM object model with a 960 x 540 pt custom widescreen canvas matching the authored native shape geometry; native default master/theme/layouts and title/body placeholders were retained, body-heading examples derive body-placeholder formatting with a modest 4 pt native-app emphasis and bold weight rather than copying slide-title formatting, a native theme table was authored, and the four prototype slides were saved from PowerPoint as PPTX.'
         syntheticAndRedistributionSafe = $true
         createdInApplication = $true
         notOpenXmlGeneratedOrRoundTripped = $true

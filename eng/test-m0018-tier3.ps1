@@ -5,7 +5,9 @@ param(
     [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/impress-tier3-evidence.json'),
     [string] $ConfigPath,
     [switch] $Yolo,
-    [switch] $AutomatedReviewOnly
+    [switch] $AutomatedReviewOnly,
+    [string] $Milestone = 'M0018',
+    [string] $Gate = 'VAL-03'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,6 +65,10 @@ try {
     $process = Start-Process -FilePath $soffice -ArgumentList @("-env:UserInstallation=`"$profileUri`"", '--norestore', "--accept=socket,host=localhost,port=$port;urp;StarOffice.ServiceManager", '--impress') -PassThru
     $env:YADG_M0018_IMPRESS_PORT = [string]$port
     $env:YADG_M0018_IMPRESS_VERSION = [string]$version
+    $env:YADG_M0018_MILESTONE = $Milestone
+    $env:YADG_M0018_GATE = $Gate
+    if ($ConfigPath) { $env:YADG_M0018_CONFIG = [IO.Path]::GetFullPath($ConfigPath) }
+    $env:YADG_M0018_YOLO = [string][bool]$Yolo
     if (-not $AutomatedReviewOnly) { $env:YADG_M0018_PAUSE_FOR_VISUAL_INSPECTION = '1' }
     & $python $inspectScript $template $source $openCopy $candidate $evidence $repo $revision
     if ($LASTEXITCODE -ne 0) { throw 'Real LibreOffice Impress did not open and inspect the generated candidate cleanly.' }
@@ -109,6 +115,10 @@ try {
     Remove-Item Env:YADG_M0018_IMPRESS_PORT -ErrorAction SilentlyContinue
     Remove-Item Env:YADG_M0018_IMPRESS_VERSION -ErrorAction SilentlyContinue
     Remove-Item Env:YADG_M0018_PAUSE_FOR_VISUAL_INSPECTION -ErrorAction SilentlyContinue
+    Remove-Item Env:YADG_M0018_MILESTONE -ErrorAction SilentlyContinue
+    Remove-Item Env:YADG_M0018_GATE -ErrorAction SilentlyContinue
+    Remove-Item Env:YADG_M0018_CONFIG -ErrorAction SilentlyContinue
+    Remove-Item Env:YADG_M0018_YOLO -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $openCopy) { Remove-Item -LiteralPath $openCopy -Force -ErrorAction SilentlyContinue }
     Stop-M0018OwnedImpressProcesses
     if ((Test-Path -LiteralPath $profile) -and -not $profileCleaned) {
