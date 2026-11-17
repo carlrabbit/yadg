@@ -1,6 +1,6 @@
 # YADG
 
-YADG is a template-first document authoring tool. Maintain semantic content in Markdown, configure workspace values and producer behavior in `YADG.md`, and keep layout and Word-native structure in prepared DOCX templates.
+YADG is a template-first document authoring tool. Maintain semantic content in Markdown, configure workspace values and producer behavior in `YADG.md`, and keep layout and native structure in prepared DOCX and PPTX templates.
 
 YADG authors DOCX without Office, can finalize documents through Microsoft Word or LibreOffice, and explicitly publishes finalized DOCX files to a filesystem destination.
 
@@ -40,21 +40,20 @@ Successful build and render replace their YADG-owned generated result sets (`Yad
 
 ## Choose a diagramming path
 
-Built-in text diagrams preserve source-grid geometry and generate internal SVG without an external tool:
+Built-in text diagrams preserve source-grid geometry and generate internal SVG without an external tool. In PowerPoint, place one identified diagram in a template-owned image region; YADG embeds it as a vector picture:
 
 ````markdown
 ```diagram {#service-flow}
 ┌──────────┐
-│ Frontend │
-└────┬─────┘
-     ▼
-┌──────────┐
-│ Backend  │
+│ Service  │
+│ ┌──────┐ │
+│ │Worker│ │
+│ └──────┘ │
 └──────────┘
 ```
 ````
 
-Mermaid describes diagram semantics and uses a separately configured trusted producer that returns PNG. YADG does not install Mermaid tooling automatically. Both identified forms use ordinary figure placement in the DOCX template; their source and rendering paths differ.
+Mermaid describes diagram semantics and uses a separately configured trusted producer that returns PNG. YADG does not install Mermaid tooling automatically. In DOCX both identified diagram forms use ordinary figure placement. In PPTX built-in text diagrams and identified Mermaid images occupy the existing image region; generated text diagrams remain SVG vector pictures. See [Box diagrams](docs/user/BOX-DIAGRAMS.md) and [Configuration](docs/user/CONFIGURATION.md).
 
 ## Strict and YOLO
 
@@ -72,6 +71,8 @@ YOLO reports each recovery as a visible degradation and still fails when it cann
 
 - [Getting started](https://github.com/carlrabbit/yadg/blob/main/docs/user/GETTING-STARTED.md) — guided workspace tutorial.
 - [Markdown authoring](https://github.com/carlrabbit/yadg/blob/main/docs/user/MARKDOWN-AUTHORING.md) — source grammar, figures, text diagrams, Mermaid, IDs, and references.
+- [Box diagrams](docs/user/BOX-DIAGRAMS.md) — Unicode and ASCII examples, validation rules, and DOCX/PPTX placement.
+- [Configuration](docs/user/CONFIGURATION.md) — annotated `YADG.md` schema-v1 and direct `--config` reference.
 - [DOCX template authoring](https://github.com/carlrabbit/yadg/blob/main/docs/user/DOCX-TEMPLATE-AUTHORING.md) — visible tags, front matter, styles, prototypes, and template presentation.
 - [Troubleshooting](https://github.com/carlrabbit/yadg/blob/main/docs/user/TROUBLESHOOTING.md) — diagnostics, producer failures, renderers, and YOLO behavior.
 

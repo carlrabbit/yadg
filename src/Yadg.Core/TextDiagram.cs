@@ -229,7 +229,7 @@ public static class TextDiagramParser
                 while (c < rows[r].Length && !structural.ContainsKey((r, c))) c++;
                 var value = rows[r][start..c];
                 if (string.IsNullOrWhiteSpace(value)) continue;
-                output.Append($"<text x=\"{start * CellWidth + CellWidth / 2}\" y=\"{r * CellHeight + CellHeight * 0.72:F1}\" font-family=\"Arial, sans-serif\" font-size=\"14\" fill=\"#202124\">{WebUtility.HtmlEncode(value)}</text>");
+                output.Append($"<text x=\"{start * CellWidth + CellWidth / 2}\" y=\"{F(r * CellHeight + CellHeight * 0.72)}\" font-family=\"Arial, sans-serif\" font-size=\"14\" fill=\"#202124\">{WebUtility.HtmlEncode(value)}</text>");
             }
         }
         output.Append("</svg>");

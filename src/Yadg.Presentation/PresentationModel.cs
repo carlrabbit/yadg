@@ -15,6 +15,7 @@ public sealed record PresentationParagraph(IReadOnlyList<PresentationInline> Inl
 public sealed record PresentationList(bool Ordered, IReadOnlyList<PresentationListItem> Items) : PresentationBlock;
 public sealed record PresentationListItem(IReadOnlyList<PresentationBlock> Blocks);
 public sealed record PresentationImage(string Alt, string Path, string SourcePath, string? GeneratedSource = null, string? Id = null, string? Caption = null, string? FailureReason = null) : PresentationBlock;
+public sealed record PresentationSvgDiagram(string Svg, string Alt, string SourcePath, string? Id = null, string? Caption = null) : PresentationBlock;
 public sealed record PresentationTable(IReadOnlyList<IReadOnlyList<PresentationInline>> Header, IReadOnlyList<IReadOnlyList<IReadOnlyList<PresentationInline>>> Rows) : PresentationBlock;
 public sealed record PresentationRegion(string Id, PresentationRegionType Type, IReadOnlyList<PresentationBlock> Blocks);
 public sealed record PresentationSlide(string Id, string Title, string Layout, string SourcePath, int SourceOrdinal, IReadOnlyList<PresentationRegion> Regions)

@@ -5,6 +5,7 @@ param(
     [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/powerpoint-tier3-evidence.json'),
     [string] $ConfigPath,
     [switch] $Yolo,
+    [switch] $SkipBuild,
     [string] $Milestone = 'M0018',
     [string] $Gate = 'VAL-06'
 )
@@ -106,16 +107,18 @@ function Get-M0018TableGeometry($slide) {
 }
 
 try {
-    $arguments = @($cli, 'presentation', 'check', '--template', $template, '--source', $source)
-    if ($ConfigPath) { $arguments += @('--config', [IO.Path]::GetFullPath($ConfigPath)) }
-    if ($Yolo) { $arguments += '--yolo' }
-    & dotnet @arguments
-    if ($LASTEXITCODE -ne 0) { throw 'PowerPoint-origin fixture failed presentation preflight.' }
-    $buildArguments = @($cli, 'presentation', 'build', '--template', $template, '--source', $source, '--output', $output)
-    if ($ConfigPath) { $buildArguments += @('--config', [IO.Path]::GetFullPath($ConfigPath)) }
-    if ($Yolo) { $buildArguments += '--yolo' }
-    & dotnet @buildArguments
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'PowerPoint-origin presentation build failed.' }
+    if (-not $SkipBuild) {
+        $arguments = @($cli, 'presentation', 'check', '--template', $template, '--source', $source)
+        if ($ConfigPath) { $arguments += @('--config', [IO.Path]::GetFullPath($ConfigPath)) }
+        if ($Yolo) { $arguments += '--yolo' }
+        & dotnet @arguments
+        if ($LASTEXITCODE -ne 0) { throw 'PowerPoint-origin fixture failed presentation preflight.' }
+        $buildArguments = @($cli, 'presentation', 'build', '--template', $template, '--source', $source, '--output', $output)
+        if ($ConfigPath) { $buildArguments += @('--config', [IO.Path]::GetFullPath($ConfigPath)) }
+        if ($Yolo) { $buildArguments += '--yolo' }
+        & dotnet @buildArguments
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'PowerPoint-origin presentation build failed.' }
+    } elseif (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw "Existing generated candidate is missing: $output" }
 
     try { $app = [Runtime.InteropServices.Marshal]::GetActiveObject('PowerPoint.Application'); $appWasRunning = $true }
     catch { $app = New-Object -ComObject PowerPoint.Application }
@@ -137,7 +140,7 @@ try {
         $slideTitle = $null
         foreach ($shape in $slide.Shapes) {
             if ($shape.Name -eq 'Native template footer') { $staticCount++ }
-            if ($shape.Type -eq 13 -or $shape.Type -eq 11) { $pictures++ }
+            if ($shape.Type -eq 13 -or $shape.Type -eq 11 -or ($Milestone -eq 'M0020' -and $shape.Type -eq 28)) { $pictures++ }
             try { if ($shape.HasTable -eq -1) { $tables++ } } catch {}
             try {
                 if ($shape.HasTextFrame -eq -1 -and $shape.TextFrame.HasText -eq -1) {
@@ -155,8 +158,12 @@ try {
     }
     $expectedTitles = if ($Milestone -eq 'M0019') { 'Narrative overview|Audience choices|Architecture map|Measures|YOLO recovery' } else { 'Narrative overview|Audience choices|Architecture map|Measures' }
     $expectedSlideCount = if ($Milestone -eq 'M0019') { 5 } else { 4 }
-    if ($presentation.Slides.Count -ne $expectedSlideCount -or $staticCount -ne $expectedSlideCount -or $pictures -lt 1 -or $tables -ne 1 -or $textShapeCount -lt 4) { throw "Opened PowerPoint output did not retain $expectedSlideCount native slides, footers, text, picture and table." }
+    if ($presentation.Slides.Count -ne $expectedSlideCount -or $staticCount -ne $expectedSlideCount -or $pictures -lt 1 -or $tables -ne 1 -or $textShapeCount -lt 4) { throw "Opened PowerPoint output did not retain expected native content (slides=$($presentation.Slides.Count)/$expectedSlideCount, footers=$staticCount, pictures=$pictures, tables=$tables, textShapes=$textShapeCount)." }
     if ($titles -join '|' -cne $expectedTitles) { throw "PowerPoint slide order differs from the source: $($titles -join ' | ')" }
+    if ($Milestone -eq 'M0020') {
+        $svgShapes = @($presentation.Slides | ForEach-Object { $_.Shapes } | Where-Object { $_.Type -eq 28 })
+        if ($svgShapes.Count -ne 1 -or [string]$svgShapes[0].AlternativeText -cne 'Nested service diagram') { throw 'PowerPoint did not reopen exactly one SVG vector picture with the expected caption metadata.' }
+    }
     $designCount = $presentation.Designs.Count
     $layoutCount = $presentation.Designs.Item(1).SlideMaster.CustomLayouts.Count
     if ($designCount -lt 1 -or $layoutCount -lt 1) { throw 'The opened output has no native design/master/layout relationship.' }
@@ -225,7 +232,7 @@ try {
     $inspect = [ordered]@{ slideTitles=@($titles); slideCount=$presentation.Slides.Count; slideRelationships=@($slideRelationships); staticFooterCount=$staticCount; editablePictureCount=$pictures; nativeTableCount=$tables; tableGeometry=[ordered]@{ prototype=$templateTableGeometry; candidate=$outputTableGeometry; candidateWithinSlideBounds=$true }; editableTextShapeCount=$textShapeCount; designCount=$designCount; nativeLayoutCount=$layoutCount; formattingValidation=$formattingValidation; nativeRenderings=$nativeRenders }
 
     $reviewCandidatePath = Join-Path $repo 'artifacts/review/evidence/M0018/review-sample.pptx'
-    if ($Milestone -ne 'M0019' -and (Test-Path -LiteralPath $reviewCandidatePath -PathType Leaf)) {
+    if ($Milestone -eq 'M0018' -and (Test-Path -LiteralPath $reviewCandidatePath -PathType Leaf)) {
         $reviewCandidatePresentation = $app.Presentations.Open($reviewCandidatePath, -1, 0, -1)
         if (-not $reviewCandidatePresentation -or $reviewCandidatePresentation.Slides.Count -ne 4) { throw 'The designated Impress-origin review candidate did not open as a four-slide presentation in PowerPoint.' }
         $reviewCandidateCheck = [ordered]@{
