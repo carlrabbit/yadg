@@ -14,6 +14,8 @@ namespace Yadg.IntegrationTests;
 public sealed class M0018FocusedTests
 {
     private const string M0020Diagram = "┌────────────┐\n│ Outer      │\n│ ┌──────┐   │\n│ │Inner │   │\n│ └──────┘   │\n└────────────┘\n  ↓\n  ↓";
+    private const string M0020WeakConnectedDiagram = "A---B";
+    private const string M0020UncoveredGap = "┌─────         ─────┐\n│                   │\n│                   │\n└───────────────────┘";
     private const string M0020Occluded = "      ┌───────┐\n      │ upper │\n┌─────│       │─────┐\n│lower│       │     │\n│     └───────┘     │\n│                   │\n│                   │\n│                   │\n└───────────────────┘";
 
     [Fact]
@@ -49,6 +51,39 @@ public sealed class M0018FocusedTests
     }
 
     [Fact]
+    public void M0020_explicit_weak_connected_diagrams_match_docx_in_strict_and_yolo_modes()
+    {
+        var core = TextDiagramParser.Parse(M0020WeakConnectedDiagram);
+        Assert.True(core.Success, core.Error);
+        Assert.False(core.Model!.HasStrongGeometry);
+        Assert.NotEmpty(core.Model.Cells);
+        Assert.False(core.Model.HasInvalidOcclusion);
+
+        var fence = $"```diagram {{#weak caption=\"Weak path\"}}\n{M0020WeakConnectedDiagram}\n```";
+        var docx = MarkdownDocumentParser.Parse(fence, "weak.md");
+        Assert.True(docx.IsValid, string.Join(Environment.NewLine, docx.Diagnostics));
+        var docxSvg = Assert.IsType<YadgFigure>(Assert.Single(docx.Document!.Blocks)).GeneratedSvg;
+        Assert.Equal(core.Model.Svg, docxSvg);
+
+        foreach (var yolo in new[] { false, true })
+        {
+            var source = new PresentationSource("weak.md", $"# Weak path {{#image}}\n\n{fence}");
+            var pptx = PresentationMarkdownParser.Parse(new[] { source }, yolo: yolo);
+            Assert.True(pptx.IsValid, $"YOLO={yolo}: {string.Join(Environment.NewLine, pptx.Diagnostics)}");
+            var diagram = Assert.IsType<PresentationSvgDiagram>(Assert.Single(Assert.Single(pptx.Slides).Regions).Blocks.Single());
+            Assert.Equal(docxSvg, diagram.Svg);
+            Assert.Equal("weak", diagram.Id);
+            Assert.Equal("Weak path", diagram.Caption);
+            Assert.DoesNotContain(pptx.Diagnostics, diagnostic => diagnostic.IsDegradation);
+        }
+
+        var weakAutoSource = new PresentationSource("weak-auto.md", $"# Weak path {{#image}}\n\n```text\n{M0020WeakConnectedDiagram}\n```");
+        var weakAuto = PresentationMarkdownParser.Parse(new[] { weakAutoSource }, diagramsAutoDetect: true);
+        Assert.Contains(weakAuto.Diagnostics, diagnostic => diagnostic.IsError);
+        Assert.DoesNotContain(weakAuto.Slides.SelectMany(slide => slide.Regions).SelectMany(region => region.Blocks), block => block is PresentationSvgDiagram);
+    }
+
+    [Fact]
     public void M0020_pptx_diagram_picture_carries_svg_payload_metadata_and_contain_geometry()
     {
         using var fixture = PresentationFixture.CreateRich();
@@ -79,9 +114,19 @@ public sealed class M0018FocusedTests
     [Fact]
     public void M0020_invalid_explicit_diagram_is_fatal_in_yolo_and_duplicate_ids_are_deck_scoped()
     {
-        var malformed = new PresentationSource("bad.md", "# Bad {#image}\n\n```diagram {#bad unknown=\"x\"}\nbox\n```");
-        var invalid = PresentationMarkdownParser.Parse(new[] { malformed }, yolo: true);
-        Assert.Contains(invalid.Diagnostics, diagnostic => diagnostic.IsError && diagnostic.Code == "YADG-PPT-DIAGRAM-001");
+        var invalidSources = new[]
+        {
+            new PresentationSource("malformed.md", "# Bad {#image}\n\n```diagram {#bad unknown=\"x\"}\nbox\n```"),
+            new PresentationSource("invalid-id.md", "# Bad {#image}\n\n```diagram {#1bad}\nA---B\n```"),
+            new PresentationSource("invalid-geometry.md", "# Bad {#image}\n\n```diagram {#plain}\nplain text\n```"),
+            new PresentationSource("ambiguous-occlusion.md", $"# Bad {{#image}}\n\n```diagram {{#gap}}\n{M0020UncoveredGap}\n```")
+        };
+        foreach (var yolo in new[] { false, true })
+        foreach (var source in invalidSources)
+        {
+            var invalid = PresentationMarkdownParser.Parse(new[] { source }, yolo: yolo);
+            Assert.Contains(invalid.Diagnostics, diagnostic => diagnostic.IsError);
+        }
 
         var duplicated = PresentationMarkdownParser.Parse(new[]
         {

@@ -184,7 +184,7 @@ public static class PresentationMarkdownParser
                 var parsed = CoreTextDiagramParser.Parse(fenced.Lines.ToString());
                 if (parsed.Model is null) { diagnostics.Add(new("YADG-PPT-DIAGRAM-002", parsed.Error ?? "Diagram geometry is invalid.", true, Location(sourcePath, block.Line))); return null; }
                 if (parsed.Model.HasInvalidOcclusion) { diagnostics.Add(new("YADG-PPT-DIAGRAM-002", "Diagram contains an uncovered or ambiguous missing rectangle edge.", true, Location(sourcePath, block.Line))); return null; }
-                if (!parsed.Model.HasStrongGeometry) { diagnostics.Add(new("YADG-PPT-DIAGRAM-002", "Diagram source contains no connected drawing geometry.", true, Location(sourcePath, block.Line))); return null; }
+                if (parsed.Model.Cells.Count == 0) { diagnostics.Add(new("YADG-PPT-DIAGRAM-002", "Diagram source contains no connected drawing geometry.", true, Location(sourcePath, block.Line))); return null; }
                 return new PresentationSvgDiagram(parsed.Model.Svg, match.Groups["caption"].Value, sourcePath, match.Groups["id"].Value, match.Groups["caption"].Success ? match.Groups["caption"].Value : null);
             }
             if (diagramsAutoDetect && (language.Length == 0 || language == "text"))
