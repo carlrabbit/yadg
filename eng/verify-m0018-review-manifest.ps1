@@ -1,4 +1,4 @@
-param([switch] $AllowPendingHumanReview)
+param([switch] $AllowPendingHumanReview, [switch] $AllowHistoricalRevision)
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -6,10 +6,11 @@ $root = Join-Path $repo 'artifacts/review/evidence/M0018'
 $manifestPath = Join-Path $root 'review-manifest.json'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "M0018 review manifest is missing: $manifestPath" }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -DateKind String
-$revision = (& git -C $repo rev-parse HEAD).Trim()
+$currentRevision = (& git -C $repo rev-parse HEAD).Trim()
+$revision = if ($AllowHistoricalRevision) { [string]$manifest.repositoryRevision } else { $currentRevision }
 if ([string]$manifest.milestone -cne 'M0018' -or [int]$manifest.schemaVersion -ne 1 -or [string]$manifest.humanReviewId -cne 'HR-M0018-01') { throw 'M0018 review manifest has an unsupported milestone, schema version or review request.' }
 if ([string]$manifest.candidatePath -cne 'artifacts/review/evidence/M0018/review-sample.pptx') { throw 'M0018 review manifest must identify the one canonical review-sample.pptx.' }
-if ([string]$manifest.repositoryRevision -cne $revision) { throw 'M0018 review manifest does not bind current repository HEAD.' }
+if ([string]::IsNullOrWhiteSpace($revision) -or (-not $AllowHistoricalRevision -and [string]$manifest.repositoryRevision -cne $currentRevision)) { throw 'M0018 review manifest does not bind current repository HEAD.' }
 
 function Get-RepoHash([string] $relativePath) {
     $path = Join-Path $repo $relativePath

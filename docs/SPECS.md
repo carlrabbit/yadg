@@ -16,6 +16,7 @@ When a focused specification explicitly states that it supersedes an earlier rul
 - `docs/specs/PREPARED-TABLES.md` — prepared Word table-row population.
 - `docs/specs/TEXT-DIAGRAMS.md` — built-in character-grid diagrams, vector rendering, containment/occlusion, and opt-in fenced-block auto-detection.
 - `docs/specs/PRESENTATION-AUTHORING.md` — M0018 editable PowerPoint authoring, named deck configuration, prototype slides, typed regions, direct CLI, and rendering exclusions.
+- `docs/specs/CROSS-FORMAT-AUTHORING.md` — M0019 shared Markdown policies, source/template values, Mermaid image production, YOLO, direct DOCX/PPTX authoring, explicit direct config and selected-deck workflows; specializes earlier format-specific rules only for named overlaps.
 
 ## Template presentation and Word structures
 

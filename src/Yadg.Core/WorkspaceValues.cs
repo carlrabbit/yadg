@@ -10,7 +10,7 @@ public sealed record WorkspaceValues(IReadOnlyDictionary<string, string> Values)
     public IReadOnlyDictionary<string, MermaidProducerConfiguration> Producers { get; init; } = new Dictionary<string, MermaidProducerConfiguration>(StringComparer.Ordinal);
     public string? PublishPath { get; init; }
     public string ThematicBreakPolicy { get; init; } = "error";
-    public string CodeInlinePolicy { get; init; } = "error";
+    public string CodeInlinePolicy { get; init; } = "style";
     public bool DiagramsAutoDetect { get; init; }
     public IReadOnlyList<PresentationDeclaration> Presentations { get; init; } = Array.Empty<PresentationDeclaration>();
     public static WorkspaceValues Empty { get; } = new(new Dictionary<string, string>(StringComparer.Ordinal));
@@ -24,6 +24,35 @@ public static class WorkspaceValuesParser
     private static readonly Regex Id = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled);
     private static readonly Regex Number = new("^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$", RegexOptions.Compiled);
     private static readonly Regex DateLike = new("^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[Tt ].*)?$", RegexOptions.Compiled);
+
+    public static WorkspaceValues ParseDirectConfig(string path, List<Diagnostic> diagnostics)
+    {
+        var fullPath = Path.GetFullPath(path);
+        string text;
+        try { text = File.ReadAllText(fullPath, Encoding.UTF8); }
+        catch (Exception ex) { diagnostics.Add(new("YADG-CONFIG-001", $"Unable to read direct authoring config: {ex.Message}", true, fullPath)); return WorkspaceValues.Empty; }
+        if (text.Length > 0 && text[0] == '\ufeff') text = text[1..];
+        if (text.Split('\n').Any(line => line.TrimEnd('\r') is "---" or "..."))
+        {
+            diagnostics.Add(new("YADG-CONFIG-002", "Direct config must be one YAML document without Markdown front-matter delimiters or trailing documents.", true, fullPath));
+            return WorkspaceValues.Empty;
+        }
+        var allowedRoots = new HashSet<string>(new[] { "yadg", "markdown", "values", "producers", "diagrams", "references" }, StringComparer.Ordinal);
+        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        var lines = normalized.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var raw = lines[i];
+            if (string.IsNullOrWhiteSpace(raw) || raw.TrimStart().StartsWith('#')) continue;
+            if (raw.StartsWith(' ') || raw.StartsWith('\t')) continue;
+            var colon = raw.IndexOf(':');
+            if (colon <= 0) { diagnostics.Add(new("YADG-CONFIG-003", "Direct config must contain YAML mappings only; Markdown body text is unsupported.", true, $"{fullPath}:{i + 1}")); continue; }
+            var key = raw[..colon].Trim();
+            if (!allowedRoots.Contains(key)) diagnostics.Add(new("YADG-CONFIG-004", $"Root key '{key}' is not permitted in direct authoring config.", true, $"{fullPath}:{i + 1}"));
+        }
+        if (diagnostics.Any(diagnostic => diagnostic.IsError)) return WorkspaceValues.Empty;
+        return Parse($"---\n{normalized}\n---\n", fullPath, diagnostics);
+    }
 
     public static string? ParsePublishPath(string path, List<Diagnostic> diagnostics)
     {

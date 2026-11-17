@@ -1,5 +1,7 @@
 param(
-    [string] $EvidenceRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0017')
+    [string] $EvidenceRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0017'),
+    [switch] $M0019Mode,
+    [string] $MermaidExecutable
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +25,8 @@ $source = @'
 # Architecture {#architecture}
 
 Read [the architecture explanation](#architecture), [the system flow](#system-flow), [the interface matrix](#interface-matrix), and [the external guide](https://example.test/yadg).
+
+Source value: {{value:source-value}}.
 
 See [@system-flow] and [@interface-matrix].
 
@@ -75,6 +79,16 @@ Task status [x] ordinary prose stays literal.
 +---+---+---+
 {#merged-matrix}
 '@
+if ($M0019Mode) {
+    if ([string]::IsNullOrWhiteSpace($MermaidExecutable) -or -not (Test-Path -LiteralPath $MermaidExecutable -PathType Leaf)) { throw 'M0019 DOCX Tier 3 requires the pinned Bun executable path.' }
+    $mermaidSource = @'
+```mermaid {#system-flow caption="System flow"}
+flowchart LR
+    A --> B
+```
+'@
+    $source = $source.Replace('![System flow](images/flow.png){#system-flow}', $mermaidSource.Trim())
+}
 
 function Find-DocumentTextRange($Document, [string] $Text, [int] $Start = 0, [int] $End = -1) {
     if ($End -lt 0) { $End = $Document.Content.End }
@@ -254,7 +268,22 @@ try {
         $workspace = Join-Path $temporary $renderer
         New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'YadgTemplates') | Out-Null
         Copy-Item -LiteralPath $templatePath -Destination (Join-Path $workspace 'YadgTemplates/template.docx')
-        Set-Content -LiteralPath (Join-Path $workspace 'YADG.md') -Encoding utf8 -Value @('---','yadg:','  version: 1','values:','  story-value: "M0017 Tier 3"','references:','  headings: number','  figures: label-number','  tables: label-number','---')
+        $workspaceConfig = @('---','yadg:','  version: 1','values:','  story-value: "M0017 Tier 3"','  source-value: "M0019 source substitution"','references:','  headings: number','  figures: label-number','  tables: label-number')
+        if ($M0019Mode) {
+            $toolsManifest = Get-Content (Join-Path $PSScriptRoot 'test-tools.json') -Raw | ConvertFrom-Json
+            $tooling = Join-Path $workspace '.tooling'
+            New-Item -ItemType Directory -Force -Path $tooling | Out-Null
+            $bunPath = $MermaidExecutable.Replace('\','\\')
+            $runner = @"
+param([string]`$InputFile,[string]`$OutputFile)
+& "$bunPath" x --bun --package "$($toolsManifest.mermaidCli.package)@$($toolsManifest.mermaidCli.version)" mmdc -i `$InputFile -o `$OutputFile
+exit `$LASTEXITCODE
+"@
+            Set-Content -LiteralPath (Join-Path $tooling 'run-mermaid.ps1') -Encoding utf8 -Value $runner
+            $workspaceConfig += @('producers:','  mermaid:','    executable: powershell.exe','    arguments:','      - -NoProfile','      - -File','      - .tooling/run-mermaid.ps1')
+        }
+        $workspaceConfig += '---'
+        Set-Content -LiteralPath (Join-Path $workspace 'YADG.md') -Encoding utf8 -Value $workspaceConfig
         New-Item -ItemType Directory -Force -Path (Join-Path $workspace 'images') | Out-Null
         Copy-Item -LiteralPath $diagramPath -Destination (Join-Path $workspace 'images/flow.png')
         Set-Content -LiteralPath (Join-Path $workspace 'content.md') -Encoding utf8 -Value $source
@@ -316,7 +345,7 @@ try {
             $instructions = @($xml.SelectNodes('//w:instrText', $manager) | ForEach-Object { $_.InnerText }) + @($xml.SelectNodes('//w:fldSimple', $manager) | ForEach-Object { $_.GetAttribute('instr', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') })
             if (@($instructions | Where-Object { $_ -match '^\s*SEQ\s+Figure\b' }).Count -lt 1 -or @($instructions | Where-Object { $_ -match '^\s*SEQ\s+Table\b' }).Count -lt 1) { throw "Finalized $renderer output is missing template-owned figure/table SEQ fields. Instructions: $($instructions -join ' | ')" }
             if ($allText.Contains('Error! Bookmark not defined.', [StringComparison]::Ordinal) -or $allText.Contains('Error! Not a valid bookmark', [StringComparison]::Ordinal)) { throw "Finalized $renderer output contains a broken generated reference field." }
-            foreach ($expected in @('unordered parent','ordered child','unordered grandchild','ordered parent','Nested quote paragraph.','keep leading spaces','{#literal-code-line}','keep four spaces','completed task','pending task','crossed out','inline-code','AAAAA','CCCCC')) {
+            foreach ($expected in @('unordered parent','ordered child','unordered grandchild','ordered parent','Nested quote paragraph.','keep leading spaces','{#literal-code-line}','keep four spaces','completed task','pending task','crossed out','inline-code','M0019 source substitution','AAAAA','CCCCC')) {
                 if (-not $allText.Contains($expected, [StringComparison]::Ordinal)) { throw "Finalized $renderer output lost M0017 content '$expected'." }
             }
             if (@($xml.SelectNodes('//w:strike', $manager)).Count -lt 1) { throw "Finalized $renderer output lost strike formatting." }

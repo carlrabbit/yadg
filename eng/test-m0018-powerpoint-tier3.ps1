@@ -2,7 +2,11 @@ param(
     [string] $TemplatePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/powerpoint-origin.pptx'),
     [string] $SourcePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/fixtures/m0018/review-source.md'),
     [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/runs/powerpoint-origin-generated.pptx'),
-    [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/powerpoint-tier3-evidence.json')
+    [string] $EvidencePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/powerpoint-tier3-evidence.json'),
+    [string] $ConfigPath,
+    [switch] $Yolo,
+    [string] $Milestone = 'M0018',
+    [string] $Gate = 'VAL-06'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,6 +25,8 @@ New-Item -ItemType Directory -Force -Path (Split-Path -Parent $output),(Split-Pa
 
 $revision = (& git -C $repo rev-parse HEAD).Trim()
 $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToUpperInvariant()
+$configFullPath = if ($ConfigPath) { [IO.Path]::GetFullPath($ConfigPath) } else { $null }
+$configHash = if ($configFullPath) { (Get-FileHash -LiteralPath $configFullPath -Algorithm SHA256).Hash.ToUpperInvariant() } else { $null }
 $templateHash = (Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToUpperInvariant()
 $app = $null
 $presentation = $null
@@ -42,7 +48,7 @@ function Get-M0018ShapeByName($document, [int] $slideIndex, [string] $name) {
 
 function Get-M0018Paragraph($shape, [string] $expectedText) {
     foreach ($paragraph in $shape.TextFrame.TextRange.Paragraphs()) {
-        if ([string]$paragraph.Text.Trim() -ceq $expectedText) { return $paragraph }
+        if ([string]$paragraph.Text.Trim() -ceq $expectedText -or ([string]$paragraph.Text.Trim()).StartsWith($expectedText, [StringComparison]::Ordinal)) { return $paragraph }
     }
     throw "PowerPoint shape '$($shape.Name)' is missing formatting exemplar/text '$expectedText'."
 }
@@ -86,11 +92,29 @@ function Get-M0018TableCellFormatting($slide, [int] $row, [int] $column) {
     throw "PowerPoint slide $($slide.SlideIndex) has no native table cell at ($row,$column)."
 }
 
+function Get-M0018TableGeometry($slide) {
+    foreach ($shape in $slide.Shapes) {
+        try {
+            if ($shape.HasTable -eq -1) {
+                $rowHeights = @(); for ($row = 1; $row -le $shape.Table.Rows.Count; $row++) { $rowHeights += [double]$shape.Table.Rows.Item($row).Height }
+                $columnWidths = @(); for ($column = 1; $column -le $shape.Table.Columns.Count; $column++) { $columnWidths += [double]$shape.Table.Columns.Item($column).Width }
+                return [ordered]@{ left=[double]$shape.Left; top=[double]$shape.Top; width=[double]$shape.Width; height=[double]$shape.Height; rowHeights=$rowHeights; columnWidths=$columnWidths }
+            }
+        } catch {}
+    }
+    throw "PowerPoint slide $($slide.SlideIndex) has no measurable native editable table."
+}
+
 try {
     $arguments = @($cli, 'presentation', 'check', '--template', $template, '--source', $source)
+    if ($ConfigPath) { $arguments += @('--config', [IO.Path]::GetFullPath($ConfigPath)) }
+    if ($Yolo) { $arguments += '--yolo' }
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'PowerPoint-origin fixture failed presentation preflight.' }
-    & dotnet $cli presentation build --template $template --source $source --output $output
+    $buildArguments = @($cli, 'presentation', 'build', '--template', $template, '--source', $source, '--output', $output)
+    if ($ConfigPath) { $buildArguments += @('--config', [IO.Path]::GetFullPath($ConfigPath)) }
+    if ($Yolo) { $buildArguments += '--yolo' }
+    & dotnet @buildArguments
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'PowerPoint-origin presentation build failed.' }
 
     try { $app = [Runtime.InteropServices.Marshal]::GetActiveObject('PowerPoint.Application'); $appWasRunning = $true }
@@ -129,8 +153,10 @@ try {
         if ([string]::IsNullOrWhiteSpace($slideTitle)) { throw 'An expected generated slide title is missing.' }
         $titles.Add($slideTitle)
     }
-    if ($presentation.Slides.Count -ne 4 -or $staticCount -ne 4 -or $pictures -lt 1 -or $tables -ne 1 -or $textShapeCount -lt 4) { throw 'Opened PowerPoint output did not retain the four native slides, footers, text, picture and table.' }
-    if ($titles -join '|' -cne 'Narrative overview|Audience choices|Architecture map|Measures') { throw "PowerPoint slide order differs from the source: $($titles -join ' | ')" }
+    $expectedTitles = if ($Milestone -eq 'M0019') { 'Narrative overview|Audience choices|Architecture map|Measures|YOLO recovery' } else { 'Narrative overview|Audience choices|Architecture map|Measures' }
+    $expectedSlideCount = if ($Milestone -eq 'M0019') { 5 } else { 4 }
+    if ($presentation.Slides.Count -ne $expectedSlideCount -or $staticCount -ne $expectedSlideCount -or $pictures -lt 1 -or $tables -ne 1 -or $textShapeCount -lt 4) { throw "Opened PowerPoint output did not retain $expectedSlideCount native slides, footers, text, picture and table." }
+    if ($titles -join '|' -cne $expectedTitles) { throw "PowerPoint slide order differs from the source: $($titles -join ' | ')" }
     $designCount = $presentation.Designs.Count
     $layoutCount = $presentation.Designs.Item(1).SlideMaster.CustomLayouts.Count
     if ($designCount -lt 1 -or $layoutCount -lt 1) { throw 'The opened output has no native design/master/layout relationship.' }
@@ -142,7 +168,10 @@ try {
     $formatComparisons = [Collections.Generic.List[object]]::new()
     $formatComparisons.Add((Compare-M0018Formatting 'title' (Get-M0018TextFormatting $templateTitle) (Get-M0018TextFormatting $outputTitle)))
     $formatComparisons.Add((Compare-M0018Formatting 'paragraph' (Get-M0018TextFormatting (Get-M0018Paragraph $templateBody 'ordinary paragraph example')) (Get-M0018TextFormatting (Get-M0018Paragraph $outputBody 'This paragraph was authored in the shared M0018 compatibility source.'))))
-    $formatComparisons.Add((Compare-M0018Formatting 'heading' (Get-M0018TextFormatting (Get-M0018Paragraph $templateBody 'content heading example')) (Get-M0018TextFormatting (Get-M0018Paragraph $outputBody 'Design intent'))))
+    $templateHeading = Get-M0018Paragraph $templateBody 'content heading example'
+    $generatedHeading = Get-M0018Paragraph $outputBody 'Design intent'
+    if ([double]$templateHeading.Font.Size -ge [double]$templateTitle.Font.Size -or [double]$generatedHeading.Font.Size -ge [double]$outputTitle.Font.Size) { throw 'A body content heading must remain below the slide-title role in native font size.' }
+    $formatComparisons.Add((Compare-M0018Formatting 'heading' (Get-M0018TextFormatting $templateHeading) (Get-M0018TextFormatting $generatedHeading)))
     $formatComparisons.Add((Compare-M0018Formatting 'nested-list' (Get-M0018TextFormatting (Get-M0018Paragraph $templateBody 'list formatting example')) (Get-M0018TextFormatting (Get-M0018Paragraph $outputBody 'A nested list remains editable'))))
     $templateTableHeader = Get-M0018TableCellFormatting $templatePresentation.Slides.Item(4) 1 2
     $outputTableHeader = Get-M0018TableCellFormatting $presentation.Slides.Item(4) 1 2
@@ -150,11 +179,53 @@ try {
     $templateTableBody = Get-M0018TableCellFormatting $templatePresentation.Slides.Item(4) 2 1
     $outputTableBody = Get-M0018TableCellFormatting $presentation.Slides.Item(4) 2 1
     $formatComparisons.Add((Compare-M0018Formatting 'table-body' $templateTableBody $outputTableBody))
+    $templateTableGeometry = Get-M0018TableGeometry $templatePresentation.Slides.Item(4)
+    $outputTableGeometry = Get-M0018TableGeometry $presentation.Slides.Item(4)
+    if ($templateTableGeometry.left -ne $outputTableGeometry.left -or $templateTableGeometry.top -ne $outputTableGeometry.top -or $templateTableGeometry.width -ne $outputTableGeometry.width -or ($templateTableGeometry.columnWidths -join ',') -cne ($outputTableGeometry.columnWidths -join ',')) { throw 'Generated PowerPoint table changed the prototype-owned frame origin/width or column widths.' }
+    if ($outputTableGeometry.rowHeights.Count -ne 3 -or $outputTableGeometry.rowHeights[0] -ne $templateTableGeometry.rowHeights[0] -or $outputTableGeometry.rowHeights[1] -ne $templateTableGeometry.rowHeights[1] -or $outputTableGeometry.rowHeights[2] -ne $templateTableGeometry.rowHeights[1]) { throw 'Generated PowerPoint table did not preserve the header/body row heights while duplicating the body row.' }
+    if ($outputTableGeometry.left -lt 0 -or $outputTableGeometry.top -lt 0 -or $outputTableGeometry.left + $outputTableGeometry.width -gt $presentation.PageSetup.SlideWidth -or $outputTableGeometry.top + $outputTableGeometry.height -gt $presentation.PageSetup.SlideHeight) { throw 'Generated PowerPoint table frame extends outside the native slide bounds.' }
     $formattingValidation = [ordered]@{ result = 'passed'; source = 'Microsoft PowerPoint COM formatting comparison against the canonical PowerPoint-origin template'; comparisons = @($formatComparisons) }
-    $inspect = [ordered]@{ slideTitles=@($titles); slideCount=$presentation.Slides.Count; staticFooterCount=$staticCount; editablePictureCount=$pictures; nativeTableCount=$tables; editableTextShapeCount=$textShapeCount; designCount=$designCount; nativeLayoutCount=$layoutCount; formattingValidation=$formattingValidation }
+    $slideRelationships = [Collections.Generic.List[object]]::new()
+    foreach ($slide in $presentation.Slides) {
+        $titleShape = $null
+        $placeholderTypes = [Collections.Generic.List[int]]::new()
+        foreach ($shape in $slide.Shapes) {
+            try { $placeholderType = [int]$shape.PlaceholderFormat.Type; $placeholderTypes.Add($placeholderType); if ($shape.Name -like 'YADG title*') { $titleShape = $shape } } catch {}
+        }
+        if (-not $titleShape -or [int]$titleShape.PlaceholderFormat.Type -ne 1) { throw "PowerPoint output slide $($slide.SlideIndex) lost its native title placeholder role." }
+        $prototypeName = [string]$titleShape.Name -replace '^YADG title ', ''
+        $prototypeSlide = $null
+        foreach ($candidateSlide in $templatePresentation.Slides) {
+            foreach ($candidateShape in $candidateSlide.Shapes) { if ($candidateShape.Name -ceq "YADG title $prototypeName") { $prototypeSlide = $candidateSlide; break } }
+            if ($prototypeSlide) { break }
+        }
+        if (-not $prototypeSlide) { throw "PowerPoint output slide $($slide.SlideIndex) cannot be tied to native prototype '$prototypeName'." }
+        if ([string]$slide.CustomLayout.Name -cne [string]$prototypeSlide.CustomLayout.Name -or [string]$slide.Design.SlideMaster.Name -cne [string]$prototypeSlide.Design.SlideMaster.Name) { throw "PowerPoint output slide $($slide.SlideIndex) changed its native layout/master relationship." }
+        $slideRelationships.Add([ordered]@{ slide=$slide.SlideIndex; prototype=$prototypeName; layoutName=[string]$slide.CustomLayout.Name; masterName=[string]$slide.Design.SlideMaster.Name; placeholderTypes=@($placeholderTypes) })
+    }
+    if ($Milestone -eq 'M0019') {
+        $placeholderText = @($presentation.Slides | ForEach-Object { $_.Shapes } | Where-Object { $_.Name -eq 'YADG image region' } | ForEach-Object { $_.TextFrame.TextRange.Text }) -join "`n"
+        if (-not $placeholderText.Contains('YADG image unavailable')) { throw 'M0019 PowerPoint output lost its visible YOLO image placeholder.' }
+    }
+    $renderRoot = Join-Path (Split-Path -Parent $evidence) 'renderings/powerpoint-origin'
+    $templateRenderRoot = Join-Path $renderRoot 'prototype'
+    $outputRenderRoot = Join-Path $renderRoot 'candidate'
+    New-Item -ItemType Directory -Force -Path $templateRenderRoot, $outputRenderRoot | Out-Null
+    $nativeRenders = [ordered]@{ application='Microsoft PowerPoint'; applicationVersion=$applicationVersion; prototype=@(); candidate=@() }
+    foreach ($slide in $templatePresentation.Slides) {
+        $path = Join-Path $templateRenderRoot "slide-$($slide.SlideIndex).png"
+        $slide.Export($path, 'PNG', 1440, 810)
+        $nativeRenders.prototype += [ordered]@{ slide=$slide.SlideIndex; path=[IO.Path]::GetRelativePath($repo, $path).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToUpperInvariant() }
+    }
+    foreach ($slide in $presentation.Slides) {
+        $path = Join-Path $outputRenderRoot "slide-$($slide.SlideIndex).png"
+        $slide.Export($path, 'PNG', 1440, 810)
+        $nativeRenders.candidate += [ordered]@{ slide=$slide.SlideIndex; path=[IO.Path]::GetRelativePath($repo, $path).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToUpperInvariant() }
+    }
+    $inspect = [ordered]@{ slideTitles=@($titles); slideCount=$presentation.Slides.Count; slideRelationships=@($slideRelationships); staticFooterCount=$staticCount; editablePictureCount=$pictures; nativeTableCount=$tables; tableGeometry=[ordered]@{ prototype=$templateTableGeometry; candidate=$outputTableGeometry; candidateWithinSlideBounds=$true }; editableTextShapeCount=$textShapeCount; designCount=$designCount; nativeLayoutCount=$layoutCount; formattingValidation=$formattingValidation; nativeRenderings=$nativeRenders }
 
     $reviewCandidatePath = Join-Path $repo 'artifacts/review/evidence/M0018/review-sample.pptx'
-    if (Test-Path -LiteralPath $reviewCandidatePath -PathType Leaf) {
+    if ($Milestone -ne 'M0019' -and (Test-Path -LiteralPath $reviewCandidatePath -PathType Leaf)) {
         $reviewCandidatePresentation = $app.Presentations.Open($reviewCandidatePath, -1, 0, -1)
         if (-not $reviewCandidatePresentation -or $reviewCandidatePresentation.Slides.Count -ne 4) { throw 'The designated Impress-origin review candidate did not open as a four-slide presentation in PowerPoint.' }
         $reviewCandidateCheck = [ordered]@{
@@ -178,7 +249,7 @@ try {
     if ($app -and -not $appWasRunning) { $applicationQuit = $true; try { $app.Quit() } catch { $applicationQuit = $false } }
     [GC]::Collect(); [GC]::WaitForPendingFinalizers()
     $record = [ordered]@{
-        milestone = 'M0018'; gate = 'VAL-06'; result = $result; failure = $failure
+        milestone = $Milestone; gate = $Gate; originPath = 'PowerPoint-origin template -> YADG -> Microsoft PowerPoint'; result = $result; failure = $failure
         repositoryRevision = $revision; application = 'Microsoft PowerPoint'; applicationVersion = $applicationVersion
         platform = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
         templateOriginApplication = 'Microsoft PowerPoint'; templateOriginVersion = [string]$provenance.applicationVersion
@@ -186,6 +257,7 @@ try {
         syntheticAndRedistributionSafe = [bool]$provenance.syntheticAndRedistributionSafe
         templatePath = [IO.Path]::GetRelativePath($repo, $template); templateSha256 = $templateHash
         sourcePath = [IO.Path]::GetRelativePath($repo, $source); sourceSha256 = $sourceHash
+        configPath = if ($configFullPath) { [IO.Path]::GetRelativePath($repo, $configFullPath) } else { $null }; configSha256 = $configHash; yolo = [bool]$Yolo
         outputPath = [IO.Path]::GetRelativePath($repo, $output)
         outputSha256 = if (Test-Path -LiteralPath $output -PathType Leaf) { (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToUpperInvariant() } else { $null }
         openResult = if ($result -eq 'passed') { 'opened-without-repair' } else { 'failed' }

@@ -16,6 +16,8 @@ Document-wide visible-text replacement behavior is specialized by:
 
 - `docs/specs/DOCUMENT-COMPOSITION.md`
 
+**M0019 specialization:** `docs/specs/CROSS-FORMAT-AUTHORING.md` adds source-authored value substitution for both output formats and an explicitly selected, separate `--config` authoring YAML file for direct commands. This does not change `YADG.md` schema version or remove existing template-visible Word story substitution.
+
 ## `YADG.md`
 
 `YADG.md` remains the workspace marker. It may contain optional YAML front matter followed by human-facing notes that are not document source.

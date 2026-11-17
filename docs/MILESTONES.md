@@ -20,5 +20,6 @@
 | M0016 | Canonical Markdown links and configured Word references | ready | Preserve authored words in semantic fragment links, add workspace-wide generated reference display backed by real template caption prototypes, and validate real Word/LibreOffice plus packed-tool behavior. |
 | M0017 | Markdown core completeness and Markdig tables | ready | Support Markdig pipe/grid tables and common Markdown blocks while preserving template-owned Word semantics; validate real renderers, packed-tool use, and blocking artifact review. |
 | M0018 | Template-based editable PowerPoint presentations | complete | Author editable PPTX slides from Markdown and prepared prototypes while preserving the established DOCX contract; both Office-origin validation paths and blocking artifact review are complete. |
+| M0019 | Unified authoring pipeline and cross-format consistency | ready (ledger seed materialization required at checkout) | Harmonize DOCX/PPTX Markdown policy, values, Mermaid production, YOLO recovery, direct and selected authoring; prove real Office and installed-tool consumption and blocking artifact review. |
 
 Milestone implementation starts from the active milestone document and its explicitly listed authority.

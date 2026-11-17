@@ -15,6 +15,23 @@ public sealed record YadgWorkspace(string Root, IReadOnlyList<string> Sources, I
 
 public static class WorkspaceLoader
 {
+    public static YadgWorkspace LoadSelectedPresentation(string? requestedRoot, string id)
+    {
+        var diagnostics = new List<Diagnostic>();
+        var root = Path.GetFullPath(requestedRoot ?? Directory.GetCurrentDirectory());
+        if (!Directory.Exists(root)) return Invalid(root, diagnostics, new("YADG-WS-001", $"Workspace directory does not exist: '{root}'."));
+        var marker = Path.Combine(root, "YADG.md");
+        if (!File.Exists(marker)) return Invalid(root, diagnostics, new("YADG-WS-001", $"Missing workspace marker '{marker}'.", true, marker));
+        var values = WorkspaceValuesParser.Parse(marker, diagnostics);
+        var declaration = values.Presentations.FirstOrDefault(candidate => string.Equals(candidate.Id, id, StringComparison.Ordinal));
+        if (declaration is null) diagnostics.Add(new("YADG-PRESENTATION-SELECT-001", $"No configured presentation has ID '{id}'.", true, marker));
+        var templateDirectory = Path.Combine(root, "YadgTemplates");
+        var selected = declaration is null ? Array.Empty<ResolvedPresentation>() : ResolvePresentations(root, templateDirectory, new[] { declaration }, diagnostics).ToArray();
+        if (selected.Length == 0 && declaration is not null && !diagnostics.Any(diagnostic => diagnostic.IsError))
+            diagnostics.Add(new("YADG-PRESENTATION-SELECT-002", $"Presentation '{id}' does not have a usable template and ordered source set.", true, marker));
+        return new(root, Array.Empty<string>(), Array.Empty<string>(), EmptyDocument(), values, diagnostics) { Presentations = selected };
+    }
+
     public static YadgWorkspace Load(string? requestedRoot = null, bool yolo = false)
     {
         var diagnostics = new List<Diagnostic>();
@@ -49,7 +66,12 @@ public static class WorkspaceLoader
             : Array.Empty<string>();
         if (sources.Length > 0 && templates.Length == 0) diagnostics.Add(new("YADG-WS-005", "Workspace contains no top-level DOCX templates in YadgTemplates.", true, templateDir));
 
-        var parsed = sources.Select(path => (path, MarkdownDocumentParser.Parse(File.ReadAllText(path), path, yolo && values.ThematicBreakPolicy == "error" ? "ignore" : values.ThematicBreakPolicy, yolo && values.CodeInlinePolicy == "error" ? "ignore" : values.CodeInlinePolicy, values.DiagramsAutoDetect)));
+        var parsed = sources.Select(path =>
+        {
+            var result = MarkdownDocumentParser.Parse(File.ReadAllText(path), path, yolo && values.ThematicBreakPolicy == "error" ? "ignore" : values.ThematicBreakPolicy, yolo && values.CodeInlinePolicy == "error" ? "ignore" : values.CodeInlinePolicy, values.DiagramsAutoDetect);
+            if (result.Document is not null) result = result with { Document = ValueSubstitution.ApplyToDocument(result.Document, values.Values, yolo, diagnostics, path) };
+            return (path, result);
+        });
         var document = MarkdownDocumentParser.Merge(parsed, diagnostics) with { ReferenceFormatting = values.References };
         document = AssetValidation.AttachAndValidate(document, root, diagnostics, yolo);
         var workspace = new YadgWorkspace(root, sources, templates, document, values, diagnostics);
@@ -61,6 +83,8 @@ public static class WorkspaceLoader
         diagnostics.Add(diagnostic);
         return new(root, Array.Empty<string>(), Array.Empty<string>(), new YadgDocument(Array.Empty<YadgBlock>(), new Dictionary<string, YadgSection>(), new Dictionary<string, YadgTable>(), new Dictionary<string, YadgFigure>()), WorkspaceValues.Empty, diagnostics);
     }
+
+    private static YadgDocument EmptyDocument() => new(Array.Empty<YadgBlock>(), new Dictionary<string, YadgSection>(), new Dictionary<string, YadgTable>(), new Dictionary<string, YadgFigure>());
 
     private static void Enumerate(string directory, List<string> files, List<Diagnostic> diagnostics)
     {

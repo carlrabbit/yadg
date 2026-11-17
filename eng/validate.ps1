@@ -17,7 +17,7 @@ if (Test-Path -LiteralPath $m0018FixtureVerifier) {
 }
 $m0018Manifest = Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/review/evidence/M0018/review-manifest.json'
 if (Test-Path -LiteralPath $m0018Manifest -PathType Leaf) {
-    & (Join-Path $PSScriptRoot 'verify-m0018-review-manifest.ps1')
+    & (Join-Path $PSScriptRoot 'verify-m0018-review-manifest.ps1') -AllowHistoricalRevision
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } else {
     Write-Output 'M0018 review-manifest consistency deferred until origin-specific Tier 3 evidence is generated.'

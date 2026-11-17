@@ -84,7 +84,7 @@ def get_placeholders(page):
     return result
 
 
-def fill_example(shape, marker: str, title_exemplar, *, include_heading: bool, include_list: bool) -> None:
+def fill_example(shape, marker: str, *, include_heading: bool, include_list: bool) -> None:
     lines = [marker, "ordinary paragraph example"]
     if include_heading:
         lines.append("content heading example")
@@ -98,7 +98,14 @@ def fill_example(shape, marker: str, title_exemplar, *, include_heading: bool, i
     if include_heading:
         cursor.goRight(len(marker) + 1 + len("ordinary paragraph example") + 1, False)
         cursor.goRight(len("content heading example"), True)
-        copy_native_text_format(title_exemplar, cursor)
+        heading_cursor = cursor
+        ordinary = shape.createTextCursor()
+        ordinary.gotoStart(False)
+        ordinary.goRight(len(marker) + 1, False)
+        ordinary.goRight(len("ordinary paragraph example"), True)
+        copy_native_text_format(ordinary, heading_cursor)
+        heading_cursor.CharHeight = float(ordinary.CharHeight) + 4.0
+        heading_cursor.CharWeight = uno.getConstantByName("com.sun.star.awt.FontWeight.BOLD")
     if include_list:
         cursor.gotoStart(False)
         cursor.goRight(len("\n".join(lines[:-1])) + 1, False)
@@ -174,7 +181,7 @@ def main() -> None:
         if len(content_region) != 1:
             raise RuntimeError(f"Expected one native Impress content placeholder, found {len(content_region)}.")
         content_region[0].Name = "YADG content region"
-        fill_example(content_region[0], "{{content}}", content_title, include_heading=True, include_list=True)
+        fill_example(content_region[0], "{{content}}", include_heading=True, include_list=True)
 
         columns, columns_title = add_slide(doc, pages, 4, "two-columns")
         outliners = get_native_content_placeholders(columns)
@@ -187,8 +194,8 @@ def main() -> None:
         set_position_size(outliners[1], 14600, 3600, 11800, 9500)
         outliners[0].Name = "YADG left region"
         outliners[1].Name = "YADG right region"
-        fill_example(outliners[0], "{{left}}", columns_title, include_heading=True, include_list=True)
-        fill_example(outliners[1], "{{right}}", columns_title, include_heading=True, include_list=True)
+        fill_example(outliners[0], "{{left}}", include_heading=True, include_list=True)
+        fill_example(outliners[1], "{{right}}", include_heading=True, include_list=True)
 
         visual, visual_title = add_slide(doc, pages, 8, "text-image")
         visual_content = get_native_content_placeholders(visual)
@@ -197,7 +204,7 @@ def main() -> None:
         visual_region = visual_content[0]
         visual_region.Name = "YADG text region"
         set_position_size(visual_region, 1000, 3600, 10500, 10500)
-        fill_example(visual_region, "{{text}}", visual_title, include_heading=True, include_list=True)
+        fill_example(visual_region, "{{text}}", include_heading=True, include_list=True)
         image_region = add_text_shape(doc, visual, "YADG image region", "{{image}}", 12500, 4100, 12000, 10500)
         source_style = visual_region.createTextCursor()
         source_style.gotoStart(False)
@@ -263,7 +270,7 @@ def main() -> None:
         "platform": platform.platform(),
         "createdAtUtc": now,
         "saveDateUtc": now,
-        "creationMethod": "Created as a new presentation through real LibreOffice Impress UNO; native default master, theme, layouts and title/body/list placeholders were retained, heading examples copied native title formatting, a native editable table was authored, and the four prototype slides were saved from Impress as PPTX.",
+        "creationMethod": "Created as a new presentation through real LibreOffice Impress UNO; native default master, theme, layouts and title/body/list placeholders were retained, body-heading examples derive body-placeholder formatting with a modest 4 pt native-app emphasis and bold weight rather than copying slide-title formatting, a native editable table was authored, and the four prototype slides were saved from Impress as PPTX.",
         "syntheticAndRedistributionSafe": True,
         "createdInApplication": True,
         "notOpenXmlGeneratedOrRoundTripped": True,

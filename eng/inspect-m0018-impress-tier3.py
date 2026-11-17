@@ -150,16 +150,22 @@ def inspect_document(desktop, path: Path, generated: bool) -> dict:
         raise RuntimeError(f"Impress did not return a document for {path}.")
     try:
         pages = doc.getDrawPages()
-        if pages.getCount() != 4:
-            raise RuntimeError(f"Expected four generated slides in {path}; found {pages.getCount()}.")
+        if pages.getCount() not in (4, 5):
+            raise RuntimeError(f"Expected four compatibility slides and an optional recovery slide in {path}; found {pages.getCount()}.")
         titles: list[str] = []
         footers = 0
         text_shapes = 0
         pictures = 0
         tables = []
+        layout_relations = []
         for index in range(pages.getCount()):
             page = pages.getByIndex(index)
             title = None
+            title_shape = require_title_shape(page)
+            prototype_name = title_shape.getString().strip()
+            layout_code = int(page.getPropertyValue("Layout"))
+            master_name = str(page.getMasterPage().getName())
+            placeholder_roles = []
             for shape_index in range(page.getCount()):
                 shape = page.getByIndex(shape_index)
                 shape_type = shape.getShapeType()
@@ -168,6 +174,8 @@ def inspect_document(desktop, path: Path, generated: bool) -> dict:
                     footers += 1
                 if "TitleTextShape" in shape_type:
                     title = shape.getString().strip()
+                if "TitleTextShape" in shape_type or "OutlinerShape" in shape_type:
+                    placeholder_roles.append({"name": name, "shapeType": shape_type})
                 if "TextShape" in shape_type or "OutlinerShape" in shape_type or "TitleTextShape" in shape_type:
                     text_shapes += 1
                     if generated and "{{" in shape.getString():
@@ -178,7 +186,7 @@ def inspect_document(desktop, path: Path, generated: bool) -> dict:
                     model = shape.Model
                     rows = model.RowCount
                     columns = model.ColumnCount
-                    if columns != 2 or rows < 3:
+                    if columns != 2 or rows < (3 if generated else 2):
                         raise RuntimeError(f"Expected the editable 2-column, 3-row native table in {path}; found {columns}x{rows}.")
                     cell_text = [model.getCellByPosition(column, row).String for row in range(rows) for column in range(columns)]
                     if generated and any("{{" in value for value in cell_text):
@@ -187,10 +195,30 @@ def inspect_document(desktop, path: Path, generated: bool) -> dict:
             if not title:
                 raise RuntimeError(f"Generated slide {index + 1} has no editable native title in {path}.")
             titles.append(title)
-        if titles != ["Narrative overview", "Audience choices", "Architecture map", "Measures"]:
+            layout_relations.append({
+                "slide": index + 1,
+                "prototype": prototype_name,
+                "layoutCode": layout_code,
+                "masterPageName": master_name,
+                "placeholderRoles": placeholder_roles,
+            })
+        expected_titles = ["Narrative overview", "Audience choices", "Architecture map", "Measures"]
+        if pages.getCount() == 5:
+            expected_titles.append("YOLO recovery")
+        if generated and titles != expected_titles:
             raise RuntimeError(f"Generated slide order differs from Markdown in {path}: {titles}")
-        if footers != 4 or pictures < 1 or len(tables) != 1 or text_shapes < 4:
+        if footers != pages.getCount() or (generated and pictures < 1) or len(tables) != 1 or text_shapes < 4:
             raise RuntimeError(f"Native content/static inspection failed in {path}: footer={footers}, picture={pictures}, table={len(tables)}, text={text_shapes}.")
+        if generated and pages.getCount() == 5:
+            recovery = pages.getByIndex(4)
+            recovery_text = []
+            for shape_index in range(recovery.getCount()):
+                try:
+                    recovery_text.append(recovery.getByIndex(shape_index).getString())
+                except Exception:
+                    pass
+            if not any("YADG image unavailable" in value for value in recovery_text):
+                raise RuntimeError("The designated YOLO recovery slide has no visible image placeholder.")
         masters = doc.getMasterPages().getCount()
         if masters < 1:
             raise RuntimeError(f"No native Impress master page remains in {path}.")
@@ -206,7 +234,44 @@ def inspect_document(desktop, path: Path, generated: bool) -> dict:
             "nativeTables": tables,
             "editableTextShapeCount": text_shapes,
             "masterPageCount": masters,
+            "slideLayoutMasterRelationships": layout_relations,
         }
+    finally:
+        doc.close(True)
+
+
+def export_native_pdf(desktop, source: Path, output: Path) -> dict:
+    doc = desktop.loadComponentFromURL(uno.systemPathToFileUrl(str(source)), "_blank", 0, (pv("ReadOnly", True),))
+    if doc is None:
+        raise RuntimeError(f"Impress could not open a document for native PDF rendering: {source}.")
+    try:
+        pages = int(doc.getDrawPages().getCount())
+        output.parent.mkdir(parents=True, exist_ok=True)
+        doc.storeToURL(uno.systemPathToFileUrl(str(output)), (pv("FilterName", "impress_pdf_Export"), pv("Overwrite", True)))
+        if not output.is_file() or output.stat().st_size == 0:
+            raise RuntimeError(f"Impress did not export its native slide rendering: {output}.")
+        return {"path": str(output.relative_to(repo_path)).replace("\\", "/"), "sha256": digest(output), "pageCount": pages, "renderedBy": "LibreOffice Impress native PDF export"}
+    finally:
+        doc.close(True)
+
+
+def export_native_slide_images(context, desktop, source: Path, output_dir: Path) -> list[dict]:
+    doc = desktop.loadComponentFromURL(uno.systemPathToFileUrl(str(source)), "_blank", 0, (pv("ReadOnly", True),))
+    if doc is None:
+        raise RuntimeError(f"Impress could not open a document for native slide rendering: {source}.")
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        pages = doc.getDrawPages()
+        records = []
+        for index in range(pages.getCount()):
+            output = output_dir / f"slide-{index + 1}.png"
+            exporter = context.ServiceManager.createInstanceWithContext("com.sun.star.drawing.GraphicExportFilter", context)
+            exporter.setSourceDocument(pages.getByIndex(index))
+            exporter.filter((pv("URL", uno.systemPathToFileUrl(str(output))), pv("MediaType", "image/png")))
+            if not output.is_file() or output.stat().st_size == 0:
+                raise RuntimeError(f"Impress did not export native slide image {index + 1} from {source}.")
+            records.append({"slide": index + 1, "path": str(output.relative_to(repo_path)).replace("\\", "/"), "sha256": digest(output), "renderedBy": "LibreOffice Impress GraphicExportFilter"})
+        return records
     finally:
         doc.close(True)
 
@@ -219,8 +284,18 @@ try:
     manager = context.ServiceManager
     desktop = manager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
     inspection = inspect_document(desktop, open_path, generated=True)
+    template_inspection = inspect_document(desktop, template_path, generated=False)
+    prototypes = {
+        (item["layoutCode"], item["masterPageName"])
+        for item in template_inspection["slideLayoutMasterRelationships"]
+    }
+    for relation in inspection["slideLayoutMasterRelationships"]:
+        if (relation["layoutCode"], relation["masterPageName"]) not in prototypes:
+            raise RuntimeError(f"Impress output slide {relation['slide']} changed its native slide-layout/master relationship.")
     template_formatting = inspect_formatting(desktop, template_path)
     generated_formatting = inspect_formatting(desktop, open_path)
+    if template_formatting["heading"]["CharHeight"] >= template_formatting["title"]["CharHeight"] or generated_formatting["heading"]["CharHeight"] >= generated_formatting["title"]["CharHeight"]:
+        raise RuntimeError("An Impress body content heading is at least as large as its slide-title role.")
     formatting_comparisons = [
         compare_formatting(role, template_formatting[role], generated_formatting[role])
         for role in ("title", "paragraph", "heading", "list", "table-header", "table-body")
@@ -230,6 +305,18 @@ try:
         "source": "LibreOffice Impress UNO formatting comparison against the canonical Impress-origin template",
         "comparisons": formatting_comparisons,
     }
+    render_root = evidence_path.parent / "renderings" / "impress-origin"
+    native_renderings = {
+        "application": "LibreOffice Impress",
+        "applicationVersion": os.environ.get("YADG_M0018_IMPRESS_VERSION", ""),
+        "prototype": export_native_pdf(desktop, template_path, render_root / "prototype.pdf"),
+        "candidate": export_native_pdf(desktop, open_path, render_root / "candidate.pdf"),
+        "prototypeSlideImages": export_native_slide_images(context, desktop, template_path, render_root / "prototype"),
+        "candidateSlideImages": export_native_slide_images(context, desktop, open_path, render_root / "candidate"),
+    }
+    if native_renderings["candidate"]["pageCount"] != inspection["slideCount"]:
+        raise RuntimeError("Impress native slide rendering does not include every generated slide.")
+    inspection["nativeRenderings"] = native_renderings
     desktop.terminate()
     result = "passed"
 except Exception as error:  # noqa: BLE001 - leave a durable failure receipt
@@ -241,9 +328,11 @@ except Exception as error:  # noqa: BLE001 - leave a durable failure receipt
 finally:
     provenance_path = template_path.with_name("impress-origin.provenance.json")
     provenance = json.loads(provenance_path.read_text(encoding="utf-8")) if provenance_path.exists() else {}
+    config_path = Path(os.environ["YADG_M0018_CONFIG"]) if os.environ.get("YADG_M0018_CONFIG") else None
     record = {
-        "milestone": "M0018",
-        "gate": "VAL-03",
+        "milestone": os.environ.get("YADG_M0018_MILESTONE", "M0018"),
+        "gate": os.environ.get("YADG_M0018_GATE", "VAL-03"),
+        "originPath": "Impress-origin template -> YADG -> LibreOffice Impress",
         "result": result,
         "failure": failure,
         "repositoryRevision": revision,
@@ -259,6 +348,9 @@ finally:
         "templateSha256": digest(template_path),
         "sourcePath": str(source_path.relative_to(repo_path)).replace("/", "\\"),
         "sourceSha256": digest(source_path),
+        "configPath": str(config_path.relative_to(repo_path)).replace("/", "\\") if config_path else None,
+        "configSha256": digest(config_path) if config_path else None,
+        "yolo": os.environ.get("YADG_M0018_YOLO", "False").lower() == "true",
         "outputPath": str(candidate_path.relative_to(repo_path)).replace("/", "\\"),
         "outputSha256": digest(candidate_path) if candidate_path.exists() else None,
         "openedCopyPath": str(open_path),

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Markdig;
+using Markdig.Extensions.EmphasisExtras;
 using Markdig.Extensions.Tables;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
@@ -11,14 +12,22 @@ public static class PresentationMarkdownParser
 {
     private static readonly Regex HeadingLine = new(@"^(?<marks>#{1,6})\s+(?<text>.*?)(?:\s+\{#(?<id>[^}]+)\})?\s*#*\s*$", RegexOptions.Compiled);
     private static readonly Regex ValidSelector = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled);
+    private static readonly Regex MermaidInfo = new("^mermaid\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
 
-    public static PresentationDocument Parse(IEnumerable<PresentationSource> sources, string inlineCodePolicy = "style")
+    public static PresentationDocument Parse(IEnumerable<PresentationSource> sources, string inlineCodePolicy = "style", string thematicBreakPolicy = "error", bool yolo = false)
     {
         var diagnostics = new List<Diagnostic>();
         var slides = new List<PresentationSlide>();
-        var pipeline = new MarkdownPipelineBuilder().UsePipeTables().UseGenericAttributes().Build();
+        var pipeline = new MarkdownPipelineBuilder().UsePipeTables().UseGenericAttributes().UseEmphasisExtras(EmphasisExtraOptions.Strikethrough).Build();
         foreach (var source in sources)
         {
+            var effectiveCodePolicy = inlineCodePolicy;
+            if (yolo && inlineCodePolicy == "error")
+            {
+                foreach (Match _ in Regex.Matches(source.Content, "(?<!`)`[^`\\r\\n]+`(?!`)"))
+                    diagnostics.Add(new("YADG-YOLO-CODE-001", "Inline code is prohibited by markdown.codeInline: error; fallback: preserve the code text as plain text.", false, source.Path) { IsDegradation = true });
+                effectiveCodePolicy = "ignore";
+            }
             var sourceSlides = Markdown.Parse(source.Content, pipeline);
             var lines = source.Content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
             SlideBuilder? current = null;
@@ -63,7 +72,7 @@ public static class PresentationMarkdownParser
                     ValidatePayload(content, regionType, current, regionId, source.Path, diagnostics);
                     parsedRegions.Add(new(regionId, regionType, content.ToArray()));
                 }
-                slides.Add(new($"{Path.GetFileName(source.Path)}:{slides.Count + 1}", current.Title, layout.Id, source.Path, current.Ordinal, parsedRegions));
+                slides.Add(new PresentationSlide($"{Path.GetFileName(source.Path)}:{slides.Count + 1}", current.Title, layout.Id, source.Path, current.Ordinal, parsedRegions) { TitleInlines = current.TitleInlines });
                 current = null;
             }
 
@@ -83,7 +92,8 @@ public static class PresentationMarkdownParser
                         currentRegion = null;
                         if (!ValidSelector.IsMatch(selector) && selector.Length > 0)
                             diagnostics.Add(new("YADG-PPT-MD-001", $"Invalid layout selector '{selector}'.", true, Location(source.Path, block.Line)));
-                        current = new SlideBuilder(text, selector.Length == 0 ? "content" : selector, block.Line + 1, slides.Count + 1);
+                        var titleInlines = ConvertInlines(heading.Inline, effectiveCodePolicy, source.Path, diagnostics);
+                        current = new SlideBuilder(text, selector.Length == 0 ? "content" : selector, block.Line + 1, slides.Count + 1, titleInlines);
                         continue;
                     }
                     if (current is null)
@@ -106,7 +116,7 @@ public static class PresentationMarkdownParser
                         currentRegion = selector;
                         continue;
                     }
-                    AddBlock(new PresentationParagraph(ConvertInlines(heading.Inline, inlineCodePolicy, source.Path, diagnostics), heading.Level));
+                    AddBlock(new PresentationParagraph(ConvertInlines(heading.Inline, effectiveCodePolicy, source.Path, diagnostics), heading.Level));
                     continue;
                 }
                 if (current is null)
@@ -114,7 +124,16 @@ public static class PresentationMarkdownParser
                     if (!string.IsNullOrWhiteSpace(block.ToString())) diagnostics.Add(new("YADG-PPT-MD-008", "Each presentation source must begin with a level-1 slide heading; stray content before the first slide is unsupported.", true, Location(source.Path, block.Line)));
                     continue;
                 }
-                var converted = ConvertBlock(block, inlineCodePolicy, source.Path, diagnostics);
+                if (block is ThematicBreakBlock)
+                {
+                    if (thematicBreakPolicy == "error")
+                    {
+                        if (yolo) diagnostics.Add(new("YADG-YOLO-MD-001", "Markdown thematic break omitted; fallback: no thematic-break output.", false, Location(source.Path, block.Line)) { IsDegradation = true });
+                        else diagnostics.Add(new("YADG-PPT-MD-019", "Unsupported Markdown construct 'thematic break'.", true, Location(source.Path, block.Line)));
+                    }
+                    continue;
+                }
+                var converted = ConvertBlock(block, effectiveCodePolicy, source.Path, diagnostics, lines);
                 if (converted is not null) AddBlock(converted);
             }
             FinishSlide();
@@ -125,12 +144,31 @@ public static class PresentationMarkdownParser
                 else if (regions.TryGetValue(currentRegion, out var regionBlocks)) regionBlocks.Add(content);
             }
         }
+        var generatedIds = slides.SelectMany(slide => slide.Regions).SelectMany(region => region.Blocks).OfType<PresentationImage>().Where(image => image.Id is not null).GroupBy(image => image.Id!, StringComparer.Ordinal);
+        foreach (var duplicate in generatedIds.Where(group => group.Count() > 1)) diagnostics.Add(new("YADG-PPT-MERMAID-001", $"Mermaid ID '{duplicate.Key}' must be unique within the presentation deck.", true, duplicate.Skip(1).First().SourcePath));
         if (slides.Count == 0 && diagnostics.All(d => !d.IsError)) diagnostics.Add(new("YADG-PPT-MD-011", "Presentation has no level-1 slide headings."));
         return new(slides, diagnostics);
     }
 
-    private static PresentationBlock? ConvertBlock(Block block, string inlineCodePolicy, string sourcePath, List<Diagnostic> diagnostics)
+    private static PresentationBlock? ConvertBlock(Block block, string inlineCodePolicy, string sourcePath, List<Diagnostic> diagnostics, string[]? sourceLines = null)
     {
+        if (block is FencedCodeBlock fenced)
+        {
+            var info = fenced.Info?.Trim() ?? string.Empty;
+            if (sourceLines is not null && block.Line >= 0 && block.Line < sourceLines.Length)
+            {
+                var opening = Regex.Match(sourceLines[block.Line], @"^\s*(?:`{3,}|~{3,})(?<info>.*)$");
+                if (opening.Success) info = opening.Groups["info"].Value.Trim();
+            }
+            if (info.StartsWith("mermaid", StringComparison.OrdinalIgnoreCase))
+            {
+                var match = MermaidInfo.Match(info);
+                if (!match.Success) { diagnostics.Add(new("YADG-PPT-MERMAID-002", "Mermaid fence requires exactly a stable ID and optional caption attribute.", true, Location(sourcePath, block.Line))); return null; }
+                var code = fenced.Lines.ToString().Trim();
+                if (code.Length == 0) { diagnostics.Add(new("YADG-PPT-MERMAID-003", "Mermaid source must not be empty.", true, Location(sourcePath, block.Line))); return null; }
+                return new PresentationImage(match.Groups["caption"].Value, string.Empty, sourcePath, code, match.Groups["id"].Value, match.Groups["caption"].Success ? match.Groups["caption"].Value : null);
+            }
+        }
         if (block is ParagraphBlock paragraph)
         {
             var images = paragraph.Inline?.OfType<LinkInline>().Where(link => link.IsImage).ToArray() ?? Array.Empty<LinkInline>();
@@ -193,8 +231,19 @@ public static class PresentationMarkdownParser
             {
                 case LiteralInline literal: result.Add(new PresentationText(literal.Content.ToString())); break;
                 case LineBreakInline lineBreak: result.Add(new PresentationBreak(lineBreak.IsHard)); break;
-                case EmphasisInline emphasis: result.Add(new PresentationEmphasis(ConvertInlines(emphasis, inlineCodePolicy, sourcePath, diagnostics), emphasis.DelimiterCount >= 2)); break;
-                case LinkInline link when !link.IsImage: result.Add(new PresentationLink(link.Url ?? string.Empty, ConvertInlines(link, inlineCodePolicy, sourcePath, diagnostics))); break;
+                case EmphasisInline emphasis when emphasis.DelimiterChar == '~': result.Add(new PresentationStrike(ConvertInlines(emphasis, inlineCodePolicy, sourcePath, diagnostics))); break;
+                case EmphasisInline emphasis: result.Add(new PresentationEmphasis(ConvertInlines(emphasis, inlineCodePolicy, sourcePath, diagnostics), emphasis.DelimiterCount >= 2, emphasis.DelimiterCount % 2 == 1)); break;
+                case LinkInline link when !link.IsImage:
+                    var destination = link.Url ?? string.Empty;
+                    if (!Uri.TryCreate(destination, UriKind.Absolute, out var uri) || uri.Scheme is not "http" and not "https" and not "mailto")
+                        diagnostics.Add(new("YADG-PPT-LINK-001", $"Link destination '{destination}' is unsupported; visible text is retained without a hyperlink.", false, sourcePath));
+                    result.Add(new PresentationLink(destination, ConvertInlines(link, inlineCodePolicy, sourcePath, diagnostics)));
+                    break;
+                case CodeInline code when inlineCodePolicy == "error":
+                    if (diagnostics.All(d => d.Code != "YADG-PPT-MD-020" || d.Location != sourcePath)) diagnostics.Add(new("YADG-PPT-MD-020", "Inline code is prohibited by markdown.codeInline: error.", true, sourcePath));
+                    result.Add(new PresentationText(code.Content));
+                    break;
+                case CodeInline code when inlineCodePolicy == "ignore": result.Add(new PresentationText(code.Content)); break;
                 case CodeInline code: result.Add(new PresentationCode(code.Content)); break;
                 default: diagnostics.Add(new("YADG-PPT-MD-015", $"Unsupported presentation inline '{inline.GetType().Name}'.", true, sourcePath)); break;
             }
@@ -208,7 +257,7 @@ public static class PresentationMarkdownParser
         var valid = type switch
         {
             PresentationRegionType.Text => blocks.All(block => block is PresentationParagraph or PresentationList),
-            PresentationRegionType.Image => blocks.Count == 1 && blocks[0] is PresentationImage image && IsLocalImage(image.Path),
+            PresentationRegionType.Image => blocks.Count == 1 && blocks[0] is PresentationImage image && (image.GeneratedSource is not null && image.Id is not null || IsLocalImage(image.Path)),
             PresentationRegionType.Table => blocks.Count == 1 && blocks[0] is PresentationTable,
             _ => false
         };
@@ -217,7 +266,7 @@ public static class PresentationMarkdownParser
             var description = type switch
             {
                 PresentationRegionType.Text => "accepts paragraphs, content headings and lists only",
-                PresentationRegionType.Image => "requires exactly one local PNG/JPEG image block",
+                PresentationRegionType.Image => "requires exactly one local PNG/JPEG image or one identified Mermaid block",
                 _ => "requires exactly one pipe table with header and body rows"
             };
             diagnostics.Add(new("YADG-PPT-MD-017", $"Slide '{slide.Title}' region '{region}' {description}.", true, Location(source, slide.Line)));
@@ -227,5 +276,5 @@ public static class PresentationMarkdownParser
     private static bool IsLocalImage(string path) => !string.IsNullOrWhiteSpace(path) && !Uri.TryCreate(path, UriKind.Absolute, out _) && !path.Contains('*') && !path.Contains('?') && Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg";
     private static string InlineText(ContainerInline? inline) => inline is null ? string.Empty : string.Concat(inline.Select(child => child switch { LiteralInline literal => literal.Content.ToString(), CodeInline code => code.Content, ContainerInline nested => InlineText(nested), _ => string.Empty }));
     private static string Location(string source, int line) => $"{source}:{Math.Max(1, line + 1)}";
-    private sealed record SlideBuilder(string Title, string Layout, int Line, int Ordinal);
+    private sealed record SlideBuilder(string Title, string Layout, int Line, int Ordinal, IReadOnlyList<PresentationInline> TitleInlines);
 }

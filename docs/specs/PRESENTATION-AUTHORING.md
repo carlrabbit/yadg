@@ -1,5 +1,7 @@
 # Template-based PowerPoint authoring (M0018)
 
+**M0019 specialization:** `docs/specs/CROSS-FORMAT-AUTHORING.md` supersedes this M0018 contract solely for the explicitly added shared Markdown policies and value/producer/YOLO handling, optional explicitly configured direct commands, and selected-deck CLI. In particular, the M0018 direct-command prohibition on running producers applies only to the configuration-free default; an explicitly supplied M0019 `--config` may authorize producer execution. All other prototype, layout, typed-region, geometry and result-set rules remain unchanged.
+
 ## Ownership and boundary
 
 YADG creates editable PPTX presentations from Markdown and ordinary prepared PPTX templates. Markdown owns slide order, titles, semantic content and logical layout/region selection. A reusable prototype slide in the PPTX owns shape positions, page/master/theme styling, static artwork, fonts and formatting examples. YADG duplicates the selected prototype in source order and fills designated regions; it does not generate CSS/HTML slides, rasterize a slide, require Office to author PPTX, or derive geometry from Markdown. This is a presentation output path, not a change to existing DOCX semantics.
