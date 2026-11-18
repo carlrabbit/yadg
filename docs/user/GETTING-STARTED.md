@@ -275,7 +275,7 @@ Use a built-in text-grid diagram when the source characters should set each elem
 ```
 ````
 
-Use Mermaid when its semantic diagram language and automatic layout fit better. Mermaid needs a separately configured trusted producer; YADG does not install it. Both identified diagram types behave as figures in a prepared DOCX template, while text-grid layout is built in and Mermaid is rendered externally.
+Use Mermaid when its semantic diagram language and automatic layout fit better. Mermaid needs a separately configured trusted producer; YADG does not install it. In DOCX, both identified diagram types behave as figures in the prepared template. In PPTX, a built-in text-grid diagram occupies an existing image region as an SVG picture, while Mermaid uses the configured producer and PNG picture path. See [Box diagrams](BOX-DIAGRAMS.md).
 
 See [Markdown authoring](MARKDOWN-AUTHORING.md) for full syntax and producer details.
 

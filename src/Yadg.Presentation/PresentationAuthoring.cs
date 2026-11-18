@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
@@ -29,9 +30,9 @@ public static class PresentationAuthoring
     private static readonly Regex RegionMarker = new(@"^\{\{(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex AnyControl = new(@"\{\{[^{}]*\}\}", RegexOptions.Compiled);
 
-    public static PresentationAnalysis Analyze(string templatePath, IEnumerable<PresentationSource> sources, string effectiveRoot, string inlineCodePolicy = "style", string thematicBreakPolicy = "error", IReadOnlyDictionary<string, string>? values = null, bool yolo = false, IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null)
+    public static PresentationAnalysis Analyze(string templatePath, IEnumerable<PresentationSource> sources, string effectiveRoot, string inlineCodePolicy = "style", string thematicBreakPolicy = "error", IReadOnlyDictionary<string, string>? values = null, bool yolo = false, IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null, bool diagramsAutoDetect = false)
     {
-        var document = PresentationMarkdownParser.Parse(sources, inlineCodePolicy, thematicBreakPolicy, yolo);
+        var document = PresentationMarkdownParser.Parse(sources, inlineCodePolicy, thematicBreakPolicy, yolo, diagramsAutoDetect);
         var diagnostics = document.Diagnostics.ToList();
         if (values is not null) document = SubstituteSourceValues(document, values, yolo, diagnostics);
         if (!File.Exists(templatePath) || !Path.GetExtension(templatePath).Equals(".pptx", StringComparison.OrdinalIgnoreCase))
@@ -105,10 +106,10 @@ public static class PresentationAuthoring
         return document with { Slides = slides, Diagnostics = diagnostics };
     }
 
-    public static IReadOnlyList<Diagnostic> Build(string templatePath, IEnumerable<PresentationSource> sources, string effectiveRoot, string outputPath, string inlineCodePolicy = "style", string thematicBreakPolicy = "error", IReadOnlyDictionary<string, string>? values = null, bool yolo = false, IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null)
+    public static IReadOnlyList<Diagnostic> Build(string templatePath, IEnumerable<PresentationSource> sources, string effectiveRoot, string outputPath, string inlineCodePolicy = "style", string thematicBreakPolicy = "error", IReadOnlyDictionary<string, string>? values = null, bool yolo = false, IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null, bool diagramsAutoDetect = false)
     {
         var sourceArray = sources.ToArray();
-        using var analysis = Analyze(templatePath, sourceArray, effectiveRoot, inlineCodePolicy, thematicBreakPolicy, values, yolo, producers);
+        using var analysis = Analyze(templatePath, sourceArray, effectiveRoot, inlineCodePolicy, thematicBreakPolicy, values, yolo, producers, diagramsAutoDetect);
         return BuildAnalyzed(templatePath, analysis, effectiveRoot, outputPath);
     }
 
@@ -364,6 +365,11 @@ public static class PresentationAuthoring
         {
             var token = $"{{{{{region.Id}}}}}";
             var shape = slidePart.Slide.Descendants<P.Shape>().Single(candidate => candidate.TextBody?.InnerText.Contains(token, StringComparison.Ordinal) == true);
+            if (region.Blocks.Single() is PresentationSvgDiagram diagram)
+            {
+                InsertSvgPicture(slidePart, shape, diagram.Svg, diagram.Caption ?? DiagramAccessibleText(diagram.Svg), diagram.SourcePath);
+                continue;
+            }
             var image = (PresentationImage)region.Blocks.Single();
             if (image.FailureReason is not null)
             {
@@ -600,6 +606,45 @@ public static class PresentationAuthoring
             new P.ShapeProperties(new A.Transform2D(new A.Offset { X = x, Y = y }, new A.Extents { Cx = width, Cy = height }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
         sourceShape.InsertAfterSelf(picture);
         sourceShape.Remove();
+    }
+
+    private static void InsertSvgPicture(SlidePart part, P.Shape sourceShape, string svg, string alt, string sourcePath)
+    {
+        try
+        {
+            var xfrm = sourceShape.ShapeProperties?.Transform2D ?? throw new InvalidDataException("Image prototype shape has no transform bounds.");
+            var offset = xfrm.Offset!; var extents = xfrm.Extents!;
+            var dimensions = Regex.Match(svg, "<svg\\b[^>]*\\bwidth=\"(?<w>[0-9.]+)\"[^>]*\\bheight=\"(?<h>[0-9.]+)\"", RegexOptions.CultureInvariant);
+            if (!dimensions.Success || !double.TryParse(dimensions.Groups["w"].Value, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var sourceWidth) || !double.TryParse(dimensions.Groups["h"].Value, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0)
+                throw new InvalidDataException("Generated SVG has invalid intrinsic dimensions.");
+            var scale = Math.Min((double)extents.Cx!.Value / sourceWidth, (double)extents.Cy!.Value / sourceHeight);
+            var width = (long)Math.Round(sourceWidth * scale); var height = (long)Math.Round(sourceHeight * scale);
+            var x = offset.X!.Value + (extents.Cx.Value - width) / 2; var y = offset.Y!.Value + (extents.Cy.Value - height) / 2;
+            var imagePart = part.AddImagePart(ImagePartType.Svg);
+            using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(svg))) imagePart.FeedData(stream);
+            var relationshipId = part.GetIdOfPart(imagePart);
+            var pictureId = (part.Slide.Descendants<P.NonVisualDrawingProperties>().Select(properties => properties.Id?.Value ?? 0U).DefaultIfEmpty(0U).Max()) + 1;
+            var blip = new A.Blip();
+            blip.AppendChild(new A.BlipExtensionList(new A.BlipExtension(new DocumentFormat.OpenXml.Office2019.Drawing.SVG.SVGBlip { Embed = relationshipId }) { Uri = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}" }));
+            var picture = new P.Picture(
+                new P.NonVisualPictureProperties(new P.NonVisualDrawingProperties { Id = pictureId, Name = "YADG text diagram", Description = string.IsNullOrWhiteSpace(alt) ? "Text-grid diagram" : alt }, new P.NonVisualPictureDrawingProperties(), new P.ApplicationNonVisualDrawingProperties()),
+                new P.BlipFill(blip, new A.Stretch(new A.FillRectangle())),
+                new P.ShapeProperties(new A.Transform2D(new A.Offset { X = x, Y = y }, new A.Extents { Cx = width, Cy = height }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
+            sourceShape.InsertAfterSelf(picture);
+            sourceShape.Remove();
+        }
+        catch (Exception ex) { throw new InvalidDataException($"Unable to package SVG text diagram from '{sourcePath}': {ex.Message}", ex); }
+    }
+
+    private static string DiagramAccessibleText(string svg)
+    {
+        try
+        {
+            XNamespace svgNamespace = "http://www.w3.org/2000/svg";
+            var labels = System.Xml.Linq.XDocument.Parse(svg).Descendants(svgNamespace + "text").Select(element => element.Value.Trim()).Where(value => value.Length > 0).ToArray();
+            return labels.Length == 0 ? "Character-grid diagram" : string.Join("; ", labels);
+        }
+        catch { return "Character-grid diagram"; }
     }
 
     private static void ReplaceTable(P.GraphicFrame frame, PresentationTable content, List<Diagnostic> diagnostics, SlidePart slidePart)

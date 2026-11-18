@@ -13,6 +13,167 @@ namespace Yadg.IntegrationTests;
 
 public sealed class M0018FocusedTests
 {
+    private const string M0020Diagram = "┌────────────┐\n│ Outer      │\n│ ┌──────┐   │\n│ │Inner │   │\n│ └──────┘   │\n└────────────┘\n  ↓\n  ↓";
+    private const string M0020WeakConnectedDiagram = "A---B";
+    private const string M0020UncoveredGap = "┌─────         ─────┐\n│                   │\n│                   │\n└───────────────────┘";
+    private const string M0020Occluded = "      ┌───────┐\n      │ upper │\n┌─────│       │─────┐\n│lower│       │     │\n│     └───────┘     │\n│                   │\n│                   │\n│                   │\n└───────────────────┘";
+
+    [Fact]
+    public void M0020_presentation_diagrams_reuse_shared_parser_for_explicit_and_opt_in_fences()
+    {
+        var explicitSource = new PresentationSource("diagram.md", $"# Map {{#image}}\n\n```diagram {{#map caption=\"System map\"}}\n{M0020Diagram}\n```");
+        var explicitResult = PresentationMarkdownParser.Parse(new[] { explicitSource });
+        Assert.True(explicitResult.IsValid, string.Join(Environment.NewLine, explicitResult.Diagnostics));
+        var explicitDiagram = Assert.IsType<PresentationSvgDiagram>(Assert.Single(Assert.Single(explicitResult.Slides).Regions).Blocks.Single());
+        var core = TextDiagramParser.Parse(M0020Diagram);
+        Assert.False(core.Model!.HasInvalidOcclusion);
+        Assert.Equal(core.Model!.Svg, explicitDiagram.Svg);
+        var docxResult = MarkdownDocumentParser.Parse($"```diagram {{#map caption=\"System map\"}}\n{M0020Diagram}\n```", "diagram.md");
+        Assert.True(docxResult.IsValid, string.Join(Environment.NewLine, docxResult.Diagnostics));
+        Assert.Equal(Assert.IsType<YadgFigure>(Assert.Single(docxResult.Document!.Blocks)).GeneratedSvg, explicitDiagram.Svg);
+        Assert.Equal("map", explicitDiagram.Id);
+        Assert.Equal("System map", explicitDiagram.Caption);
+
+        var occludedCore = TextDiagramParser.Parse(M0020Occluded);
+        Assert.False(occludedCore.Model!.HasInvalidOcclusion);
+        var occludedPptx = PresentationMarkdownParser.Parse(new[] { new PresentationSource("occluded.md", $"# Occluded {{#image}}\n\n```diagram {{#occlusion}}\n{M0020Occluded}\n```") });
+        Assert.True(occludedPptx.IsValid, string.Join(Environment.NewLine, occludedPptx.Diagnostics));
+        Assert.Equal(occludedCore.Model.Svg, Assert.IsType<PresentationSvgDiagram>(Assert.Single(Assert.Single(occludedPptx.Slides).Regions).Blocks.Single()).Svg);
+
+        var autoMarkdown = $"# Anonymous {{#image}}\n\n```text\n{M0020Diagram}\n```\n\n# Identified {{#image}}\n\n```text {{#detected caption=\"Detected\"}}\n{M0020Diagram}\n```";
+        var disabled = PresentationMarkdownParser.Parse(new[] { new PresentationSource("auto.md", autoMarkdown) });
+        Assert.Contains(disabled.Diagnostics, diagnostic => diagnostic.IsError);
+        var enabled = PresentationMarkdownParser.Parse(new[] { new PresentationSource("auto.md", autoMarkdown) }, diagramsAutoDetect: true);
+        Assert.True(enabled.IsValid, string.Join(Environment.NewLine, enabled.Diagnostics));
+        var detected = enabled.Slides.Select(slide => Assert.IsType<PresentationSvgDiagram>(Assert.Single(Assert.Single(slide.Regions).Blocks)) ).ToArray();
+        Assert.Null(detected[0].Id);
+        Assert.Equal("detected", detected[1].Id);
+    }
+
+    [Fact]
+    public void M0020_explicit_weak_connected_diagrams_match_docx_in_strict_and_yolo_modes()
+    {
+        var core = TextDiagramParser.Parse(M0020WeakConnectedDiagram);
+        Assert.True(core.Success, core.Error);
+        Assert.False(core.Model!.HasStrongGeometry);
+        Assert.NotEmpty(core.Model.Cells);
+        Assert.False(core.Model.HasInvalidOcclusion);
+
+        var fence = $"```diagram {{#weak caption=\"Weak path\"}}\n{M0020WeakConnectedDiagram}\n```";
+        var docx = MarkdownDocumentParser.Parse(fence, "weak.md");
+        Assert.True(docx.IsValid, string.Join(Environment.NewLine, docx.Diagnostics));
+        var docxSvg = Assert.IsType<YadgFigure>(Assert.Single(docx.Document!.Blocks)).GeneratedSvg;
+        Assert.Equal(core.Model.Svg, docxSvg);
+
+        foreach (var yolo in new[] { false, true })
+        {
+            var source = new PresentationSource("weak.md", $"# Weak path {{#image}}\n\n{fence}");
+            var pptx = PresentationMarkdownParser.Parse(new[] { source }, yolo: yolo);
+            Assert.True(pptx.IsValid, $"YOLO={yolo}: {string.Join(Environment.NewLine, pptx.Diagnostics)}");
+            var diagram = Assert.IsType<PresentationSvgDiagram>(Assert.Single(Assert.Single(pptx.Slides).Regions).Blocks.Single());
+            Assert.Equal(docxSvg, diagram.Svg);
+            Assert.Equal("weak", diagram.Id);
+            Assert.Equal("Weak path", diagram.Caption);
+            Assert.DoesNotContain(pptx.Diagnostics, diagnostic => diagnostic.IsDegradation);
+        }
+
+        var weakAutoSource = new PresentationSource("weak-auto.md", $"# Weak path {{#image}}\n\n```text\n{M0020WeakConnectedDiagram}\n```");
+        var weakAuto = PresentationMarkdownParser.Parse(new[] { weakAutoSource }, diagramsAutoDetect: true);
+        Assert.Contains(weakAuto.Diagnostics, diagnostic => diagnostic.IsError);
+        Assert.DoesNotContain(weakAuto.Slides.SelectMany(slide => slide.Regions).SelectMany(region => region.Blocks), block => block is PresentationSvgDiagram);
+    }
+
+    [Fact]
+    public void M0020_pptx_diagram_picture_carries_svg_payload_metadata_and_contain_geometry()
+    {
+        using var fixture = PresentationFixture.CreateRich();
+        var output = Path.Combine(fixture.Root, "diagram.pptx");
+        var markdown = $"# System map {{#text-image}}\n\n## Notes {{#text}}\n\nShared built-in diagram.\n\n## Diagram {{#image}}\n\n```diagram {{#architecture caption=\"System architecture\"}}\n{M0020Diagram}\n```";
+        var diagnostics = PresentationAuthoring.Build(fixture.Template, new[] { new PresentationSource("slides.md", markdown) }, fixture.Root, output);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.IsError);
+
+        using var document = OpenXmlPresentationDocument.Open(output, false);
+        var slide = document.PresentationPart!.SlideParts.Single();
+        var picture = Assert.Single(slide.Slide.Descendants<P.Picture>());
+        Assert.Equal("System architecture", picture.NonVisualPictureProperties!.NonVisualDrawingProperties!.Description!.Value);
+        var relationshipId = Assert.Single(picture.BlipFill!.Blip!.Descendants<DocumentFormat.OpenXml.Office2019.Drawing.SVG.SVGBlip>()).Embed!.Value!;
+        var svgPart = Assert.IsType<ImagePart>(slide.GetPartById(relationshipId));
+        Assert.Equal("image/svg+xml", svgPart.ContentType);
+        using var reader = new StreamReader(svgPart.GetStream());
+        var svg = reader.ReadToEnd();
+        Assert.Contains("Outer", svg, StringComparison.Ordinal);
+        Assert.Contains("Inner", svg, StringComparison.Ordinal);
+        Assert.Contains("<rect", svg, StringComparison.Ordinal);
+        var pictureBounds = picture.ShapeProperties!.Transform2D!;
+        Assert.True(pictureBounds.Extents!.Cx!.Value <= 4000000L);
+        Assert.True(pictureBounds.Extents.Cy!.Value <= 4500000L);
+        Assert.Equal("static template element", Assert.Single(slide.Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText.Contains("static template element", StringComparison.Ordinal) == true).TextBody!.InnerText);
+        Assert.DoesNotContain(slide.Slide.Descendants<P.Shape>(), shape => shape.TextBody?.InnerText.Contains("{{image}}", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void M0020_invalid_explicit_diagram_is_fatal_in_yolo_and_duplicate_ids_are_deck_scoped()
+    {
+        var invalidSources = new[]
+        {
+            new PresentationSource("malformed.md", "# Bad {#image}\n\n```diagram {#bad unknown=\"x\"}\nbox\n```"),
+            new PresentationSource("invalid-id.md", "# Bad {#image}\n\n```diagram {#1bad}\nA---B\n```"),
+            new PresentationSource("invalid-geometry.md", "# Bad {#image}\n\n```diagram {#plain}\nplain text\n```"),
+            new PresentationSource("ambiguous-occlusion.md", $"# Bad {{#image}}\n\n```diagram {{#gap}}\n{M0020UncoveredGap}\n```")
+        };
+        foreach (var yolo in new[] { false, true })
+        foreach (var source in invalidSources)
+        {
+            var invalid = PresentationMarkdownParser.Parse(new[] { source }, yolo: yolo);
+            Assert.Contains(invalid.Diagnostics, diagnostic => diagnostic.IsError);
+        }
+
+        var duplicated = PresentationMarkdownParser.Parse(new[]
+        {
+            new PresentationSource("one.md", $"# One {{#image}}\n\n```diagram {{#same}}\n{M0020Diagram}\n```"),
+            new PresentationSource("two.md", $"# Two {{#image}}\n\n```diagram {{#same}}\n{M0020Diagram}\n```")
+        });
+        Assert.Contains(duplicated.Diagnostics, diagnostic => diagnostic.Code == "YADG-PPT-DIAGRAM-003" && diagnostic.IsError);
+    }
+
+    [Fact]
+    public void M0020_user_guide_diagrams_and_configuration_examples_match_current_parsers()
+    {
+        var docs = FindRepositoryRoot();
+        var diagramGuide = File.ReadAllText(Path.Combine(docs, "docs", "user", "BOX-DIAGRAMS.md"));
+        var diagramBlocks = System.Text.RegularExpressions.Regex.Matches(diagramGuide, "(?ms)^```diagram\\s+\\{#(?<info>[^}]+)\\}\\r?\\n(?<body>.*?)\\r?\\n```$");
+        Assert.True(diagramBlocks.Count >= 3, "The box-diagram guide must provide multiple explicit, copy-ready examples.");
+        foreach (System.Text.RegularExpressions.Match block in diagramBlocks)
+        {
+            var body = TextDiagramParser.Parse(block.Groups["body"].Value);
+            Assert.True(body.Success && !body.Model!.HasInvalidOcclusion, $"Guide diagram '#{block.Groups["info"].Value}' must parse: {body.Error}");
+        }
+
+        var configuration = File.ReadAllText(Path.Combine(docs, "docs", "user", "CONFIGURATION.md"));
+        var yaml = System.Text.RegularExpressions.Regex.Match(configuration, "(?ms)^```yaml\\r?\\n(?<body>.*?)\\r?\\n```");
+        Assert.True(yaml.Success, "Configuration guide must contain an executable complete workspace example.");
+        var diagnostics = new List<Diagnostic>();
+        var values = WorkspaceValuesParser.Parse(yaml.Groups["body"].Value, "CONFIGURATION.md", diagnostics);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.IsError);
+        Assert.Equal("overview", Assert.Single(values.Presentations).Id);
+        Assert.False(values.DiagramsAutoDetect);
+    }
+
+    [Fact]
+    public void M0020_svg_numeric_attributes_remain_invariant_under_non_english_cultures()
+    {
+        var before = TextDiagramParser.Parse(M0020Diagram);
+        var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+            var after = TextDiagramParser.Parse(M0020Diagram);
+            Assert.Equal(before.Model!.Svg, after.Model!.Svg);
+            Assert.DoesNotContain("37,8", after.Model.Svg, StringComparison.Ordinal);
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = originalCulture; }
+    }
+
     [Fact]
     public void Canonical_native_office_fixtures_bind_four_layouts_to_their_committed_hashes()
     {

@@ -5,6 +5,7 @@ using Markdig.Extensions.Tables;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Yadg.Core;
+using CoreTextDiagramParser = Yadg.Core.TextDiagramParser;
 
 namespace Yadg.Presentation;
 
@@ -13,8 +14,10 @@ public static class PresentationMarkdownParser
     private static readonly Regex HeadingLine = new(@"^(?<marks>#{1,6})\s+(?<text>.*?)(?:\s+\{#(?<id>[^}]+)\})?\s*#*\s*$", RegexOptions.Compiled);
     private static readonly Regex ValidSelector = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled);
     private static readonly Regex MermaidInfo = new("^mermaid\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
+    private static readonly Regex DiagramInfo = new("^diagram\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
+    private static readonly Regex AutoDiagramInfo = new("^text\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
 
-    public static PresentationDocument Parse(IEnumerable<PresentationSource> sources, string inlineCodePolicy = "style", string thematicBreakPolicy = "error", bool yolo = false)
+    public static PresentationDocument Parse(IEnumerable<PresentationSource> sources, string inlineCodePolicy = "style", string thematicBreakPolicy = "error", bool yolo = false, bool diagramsAutoDetect = false)
     {
         var diagnostics = new List<Diagnostic>();
         var slides = new List<PresentationSlide>();
@@ -133,7 +136,7 @@ public static class PresentationMarkdownParser
                     }
                     continue;
                 }
-                var converted = ConvertBlock(block, effectiveCodePolicy, source.Path, diagnostics, lines);
+                var converted = ConvertBlock(block, effectiveCodePolicy, source.Path, diagnostics, lines, diagramsAutoDetect);
                 if (converted is not null) AddBlock(converted);
             }
             FinishSlide();
@@ -144,13 +147,18 @@ public static class PresentationMarkdownParser
                 else if (regions.TryGetValue(currentRegion, out var regionBlocks)) regionBlocks.Add(content);
             }
         }
-        var generatedIds = slides.SelectMany(slide => slide.Regions).SelectMany(region => region.Blocks).OfType<PresentationImage>().Where(image => image.Id is not null).GroupBy(image => image.Id!, StringComparer.Ordinal);
-        foreach (var duplicate in generatedIds.Where(group => group.Count() > 1)) diagnostics.Add(new("YADG-PPT-MERMAID-001", $"Mermaid ID '{duplicate.Key}' must be unique within the presentation deck.", true, duplicate.Skip(1).First().SourcePath));
+        var generatedIds = slides.SelectMany(slide => slide.Regions).SelectMany(region => region.Blocks).Select(block => block switch { PresentationImage { Id: not null } image => (image.Id, image.SourcePath, Code: "YADG-PPT-MERMAID-001"), PresentationSvgDiagram { Id: not null } diagram => (diagram.Id, diagram.SourcePath, Code: "YADG-PPT-DIAGRAM-003"), _ => ((string Id, string SourcePath, string Code)?)null }).Where(item => item is not null).Select(item => item!.Value).GroupBy(item => item.Id, StringComparer.Ordinal);
+        foreach (var duplicate in generatedIds.Where(group => group.Count() > 1))
+        {
+            var items = duplicate.ToArray();
+            var code = items.Any(item => item.Code == "YADG-PPT-MERMAID-001") ? "YADG-PPT-MERMAID-001" : "YADG-PPT-DIAGRAM-003";
+            diagnostics.Add(new(code, $"Generated image ID '{duplicate.Key}' must be unique within the presentation deck.", true, items[1].SourcePath));
+        }
         if (slides.Count == 0 && diagnostics.All(d => !d.IsError)) diagnostics.Add(new("YADG-PPT-MD-011", "Presentation has no level-1 slide headings."));
         return new(slides, diagnostics);
     }
 
-    private static PresentationBlock? ConvertBlock(Block block, string inlineCodePolicy, string sourcePath, List<Diagnostic> diagnostics, string[]? sourceLines = null)
+    private static PresentationBlock? ConvertBlock(Block block, string inlineCodePolicy, string sourcePath, List<Diagnostic> diagnostics, string[]? sourceLines = null, bool diagramsAutoDetect = false)
     {
         if (block is FencedCodeBlock fenced)
         {
@@ -167,6 +175,31 @@ public static class PresentationMarkdownParser
                 var code = fenced.Lines.ToString().Trim();
                 if (code.Length == 0) { diagnostics.Add(new("YADG-PPT-MERMAID-003", "Mermaid source must not be empty.", true, Location(sourcePath, block.Line))); return null; }
                 return new PresentationImage(match.Groups["caption"].Value, string.Empty, sourcePath, code, match.Groups["id"].Value, match.Groups["caption"].Success ? match.Groups["caption"].Value : null);
+            }
+            var language = info.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+            if (language == "diagram")
+            {
+                var match = DiagramInfo.Match(info);
+                if (!match.Success) { diagnostics.Add(new("YADG-PPT-DIAGRAM-001", "Diagram fence requires exactly a stable ID and optional caption=\"...\" attribute.", true, Location(sourcePath, block.Line))); return null; }
+                var parsed = CoreTextDiagramParser.Parse(fenced.Lines.ToString());
+                if (parsed.Model is null) { diagnostics.Add(new("YADG-PPT-DIAGRAM-002", parsed.Error ?? "Diagram geometry is invalid.", true, Location(sourcePath, block.Line))); return null; }
+                if (parsed.Model.HasInvalidOcclusion) { diagnostics.Add(new("YADG-PPT-DIAGRAM-002", "Diagram contains an uncovered or ambiguous missing rectangle edge.", true, Location(sourcePath, block.Line))); return null; }
+                if (parsed.Model.Cells.Count == 0) { diagnostics.Add(new("YADG-PPT-DIAGRAM-002", "Diagram source contains no connected drawing geometry.", true, Location(sourcePath, block.Line))); return null; }
+                return new PresentationSvgDiagram(parsed.Model.Svg, match.Groups["caption"].Value, sourcePath, match.Groups["id"].Value, match.Groups["caption"].Success ? match.Groups["caption"].Value : null);
+            }
+            if (diagramsAutoDetect && (language.Length == 0 || language == "text"))
+            {
+                string? id = null; string? caption = null; var allowed = language.Length == 0 ? info.Length == 0 : info == "text";
+                if (language == "text" && info != "text")
+                {
+                    var match = AutoDiagramInfo.Match(info);
+                    if (match.Success) { id = match.Groups["id"].Value; caption = match.Groups["caption"].Success ? match.Groups["caption"].Value : null; allowed = true; }
+                }
+                if (allowed)
+                {
+                    var parsed = CoreTextDiagramParser.Parse(fenced.Lines.ToString());
+                    if (parsed.Model is { HasStrongGeometry: true, HasInvalidOcclusion: false }) return new PresentationSvgDiagram(parsed.Model.Svg, caption ?? string.Empty, sourcePath, id, caption);
+                }
             }
         }
         if (block is ParagraphBlock paragraph)
@@ -257,7 +290,7 @@ public static class PresentationMarkdownParser
         var valid = type switch
         {
             PresentationRegionType.Text => blocks.All(block => block is PresentationParagraph or PresentationList),
-            PresentationRegionType.Image => blocks.Count == 1 && blocks[0] is PresentationImage image && (image.GeneratedSource is not null && image.Id is not null || IsLocalImage(image.Path)),
+            PresentationRegionType.Image => blocks.Count == 1 && (blocks[0] is PresentationSvgDiagram || blocks[0] is PresentationImage image && (image.GeneratedSource is not null && image.Id is not null || IsLocalImage(image.Path))),
             PresentationRegionType.Table => blocks.Count == 1 && blocks[0] is PresentationTable,
             _ => false
         };
@@ -266,7 +299,7 @@ public static class PresentationMarkdownParser
             var description = type switch
             {
                 PresentationRegionType.Text => "accepts paragraphs, content headings and lists only",
-                PresentationRegionType.Image => "requires exactly one local PNG/JPEG image or one identified Mermaid block",
+                PresentationRegionType.Image => "requires exactly one local PNG/JPEG image, identified Mermaid block, or built-in diagram fence",
                 _ => "requires exactly one pipe table with header and body rows"
             };
             diagnostics.Add(new("YADG-PPT-MD-017", $"Slide '{slide.Title}' region '{region}' {description}.", true, Location(source, slide.Line)));

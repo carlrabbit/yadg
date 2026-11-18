@@ -2,7 +2,7 @@
 
 This is the canonical source-authoring guide for YADG.
 
-Markdown owns maintainable semantic content. `YADG.md` owns workspace configuration such as Markdown policy, values, diagram auto-detection, external producers, and publication defaults. Prepared DOCX templates own presentation and Word-native structure.
+Markdown owns maintainable semantic content. `YADG.md` owns workspace configuration such as Markdown policy, values, diagram auto-detection, external producers, and publication defaults. Prepared DOCX and PPTX templates own presentation and native structure.
 
 For template construction, see [DOCX template authoring](DOCX-TEMPLATE-AUTHORING.md).
 
@@ -394,6 +394,8 @@ An explicit identified diagram is an ordinary semantic figure. It supports:
 Generated SVG is passive and self-contained and is embedded in the authored DOCX. It is not written as workspace source/cache.
 
 ## Optional text-diagram auto-detection
+
+In PPTX, built-in diagrams are accepted in a prepared `image` region as one SVG vector picture. See [Box diagrams](BOX-DIAGRAMS.md) for the presentation grammar and limitations.
 
 Auto-detection is disabled by default.
 

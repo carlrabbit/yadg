@@ -62,7 +62,7 @@ Level-2 headings select regions. Their text is only an authoring label and is no
 | `text-table` | `text:text`, `table:table` |
 | `table-text` | `table:table`, `text:text` |
 
-Text regions support paragraphs, composed bold/italic/strikethrough, inline code, supported external hyperlinks, content headings and nested lists. Image regions accept one local PNG/JPEG Markdown image or one identified Mermaid block. Table regions accept one pipe table with a header and at least one body row; its column count must match the prepared native table. Source values are substituted literally in titles, text, lists and table cells.
+Text regions support paragraphs, composed bold/italic/strikethrough, inline code, supported external hyperlinks, content headings and nested lists. Image regions accept one local PNG/JPEG Markdown image, one identified Mermaid block, or one built-in `diagram` fence. Text-grid diagrams reuse the shared character-grid parser and embed as self-contained SVG vector pictures, contained within the template region. They remain one picture object; component shapes are not generated. See [Box diagrams](BOX-DIAGRAMS.md). Table regions accept one pipe table with a header and at least one body row; its column count must match the prepared native table. Source values are substituted literally in titles, text, lists and table cells.
 
 ## Prepare the template
 
@@ -81,7 +81,7 @@ yadg presentation build --template ./templates/corporate.pptx --source ./slides/
 
 Pass one template and one or more ordered sources. `check` does not accept `--output`; `build` requires one. Direct build writes only the named file and preserves an existing output if validation or generation fails.
 
-An optional explicit `--config authoring.yaml` enables schema-v1 authoring settings and values. Direct commands do not read an ambient `YADG.md`. `--yolo` enables only the documented invocation-local recoveries.
+An optional explicit `--config authoring.yaml` enables schema-v1 authoring settings, values, and diagram auto-detection. Direct commands do not read an ambient `YADG.md`. See [Configuration](CONFIGURATION.md) for the allowed roots and path behavior. `--yolo` enables only the documented invocation-local recoveries.
 
 For a configured workspace, select one declared deck without checking unrelated deck inputs:
 

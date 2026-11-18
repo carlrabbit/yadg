@@ -6,6 +6,7 @@ param(
     [string] $ConfigPath,
     [switch] $Yolo,
     [switch] $AutomatedReviewOnly,
+    [switch] $SkipBuild,
     [string] $Milestone = 'M0018',
     [string] $Gate = 'VAL-03'
 )
@@ -50,16 +51,18 @@ function Stop-M0018OwnedImpressProcesses {
     while (@(Get-M0018OwnedImpressProcesses).Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
 }
 try {
-    $checkArgs = @('presentation','check','--template',$template,'--source',$source)
-    if ($ConfigPath) { $checkArgs += @('--config',[IO.Path]::GetFullPath($ConfigPath)) }
-    if ($Yolo) { $checkArgs += '--yolo' }
-    & dotnet $cli @checkArgs
-    if ($LASTEXITCODE -ne 0) { throw 'Impress-origin fixture failed presentation preflight.' }
-    $buildArgs = @('presentation','build','--template',$template,'--source',$source,'--output',$candidate)
-    if ($ConfigPath) { $buildArgs += @('--config',[IO.Path]::GetFullPath($ConfigPath)) }
-    if ($Yolo) { $buildArgs += '--yolo' }
-    & dotnet $cli @buildArgs
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'Impress-origin review candidate build failed.' }
+    if (-not $SkipBuild) {
+        $checkArgs = @('presentation','check','--template',$template,'--source',$source)
+        if ($ConfigPath) { $checkArgs += @('--config',[IO.Path]::GetFullPath($ConfigPath)) }
+        if ($Yolo) { $checkArgs += '--yolo' }
+        & dotnet $cli @checkArgs
+        if ($LASTEXITCODE -ne 0) { throw 'Impress-origin fixture failed presentation preflight.' }
+        $buildArgs = @('presentation','build','--template',$template,'--source',$source,'--output',$candidate)
+        if ($ConfigPath) { $buildArgs += @('--config',[IO.Path]::GetFullPath($ConfigPath)) }
+        if ($Yolo) { $buildArgs += '--yolo' }
+        & dotnet $cli @buildArgs
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'Impress-origin review candidate build failed.' }
+    } elseif (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw "Existing generated candidate is missing: $candidate" }
     Copy-Item -LiteralPath $candidate -Destination $openCopy
 
     $process = Start-Process -FilePath $soffice -ArgumentList @("-env:UserInstallation=`"$profileUri`"", '--norestore', "--accept=socket,host=localhost,port=$port;urp;StarOffice.ServiceManager", '--impress') -PassThru

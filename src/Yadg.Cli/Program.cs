@@ -454,7 +454,7 @@ public static class Program
             diagnostics.Add(new("YADG-PPT-CLI-004", error!));
             return new(new(Array.Empty<PresentationSlide>(), diagnostics), diagnostics);
         }
-        return PresentationAuthoring.Analyze(templatePath, content, Directory.GetCurrentDirectory(), values.CodeInlinePolicy, values.ThematicBreakPolicy, values.Values, yolo, values.Producers);
+        return PresentationAuthoring.Analyze(templatePath, content, Directory.GetCurrentDirectory(), values.CodeInlinePolicy, values.ThematicBreakPolicy, values.Values, yolo, values.Producers, values.DiagramsAutoDetect);
     }
 
     private static WorkspaceValues LoadDirectConfig(string? path, out IReadOnlyList<Diagnostic> diagnostics)
@@ -475,7 +475,7 @@ public static class Program
         try
         {
             var sources = deck.SourcePaths.Select(path => new PresentationSource(path, File.ReadAllText(path))).ToArray();
-            using var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers);
+            using var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers, workspace.Values.DiagramsAutoDetect);
             diagnostics.AddRange(analysis.Diagnostics);
             return new(analysis.Document, diagnostics);
         }
@@ -495,7 +495,7 @@ public static class Program
         try
         {
             var sources = deck.SourcePaths.Select(path => new PresentationSource(path, File.ReadAllText(path))).ToArray();
-            using var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers);
+            using var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers, workspace.Values.DiagramsAutoDetect);
             diagnostics.AddRange(analysis.Diagnostics);
             PrintDiagnostics(diagnostics, workspace.Root);
             if (!analysis.IsValid || diagnostics.Any(diagnostic => diagnostic.IsError)) { fail(); return; }
@@ -562,7 +562,7 @@ public static class Program
             try
             {
                 var sources = deck.SourcePaths.Select(path => new PresentationSource(path, File.ReadAllText(path))).ToArray();
-                using var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers);
+                using var analysis = PresentationAuthoring.Analyze(deck.TemplatePath, sources, workspace.Root, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers, workspace.Values.DiagramsAutoDetect);
                 diagnostics.AddRange(analysis.Diagnostics.Select(diagnostic => diagnostic with { Message = $"Presentation '{deck.Declaration.Id}': {diagnostic.Message}" }));
             }
             catch (Exception ex) { diagnostics.Add(new("YADG-PPT-WORKSPACE-001", $"Presentation '{deck.Declaration.Id}' cannot be checked: {ex.Message}", true, deck.TemplatePath)); }
@@ -592,7 +592,7 @@ public static class Program
             foreach (var (deck, sources) in loaded)
             {
                 var target = Path.Combine(staged, deck.Declaration.Output);
-                allDiagnostics.AddRange(PresentationAuthoring.Build(deck.TemplatePath, sources, workspace.Root, target, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers)
+                allDiagnostics.AddRange(PresentationAuthoring.Build(deck.TemplatePath, sources, workspace.Root, target, workspace.Values.CodeInlinePolicy, workspace.Values.ThematicBreakPolicy, workspace.Values.Values, yolo, workspace.Values.Producers, workspace.Values.DiagramsAutoDetect)
                     .Select(diagnostic => diagnostic with { Message = $"Presentation '{deck.Declaration.Id}': {diagnostic.Message}" }));
                 if (allDiagnostics.Any(diagnostic => diagnostic.IsError)) { diagnostics = allDiagnostics; return false; }
             }
