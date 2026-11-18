@@ -115,7 +115,7 @@ The explicit PPTX diagram path now follows the DOCX rule: it accepts any success
 
 VAL-03 passed independently for PowerPoint-origin→PowerPoint (16.0.20527.20196) and Impress-origin→Impress (26.8.2.2); native slide renders show the SVG boxes, arrows and labels. VAL-04 passed with the isolated current Yadg 1.2.0 tool and native acceptance in both applications. The current package SHA-256, source revision, candidate/fixture hashes, application versions, native renders and gate receipts are bound in `artifacts/review/evidence/M0020/review-manifest.json`. Validated PowerPoint- and Impress-origin fixture hashes are `2DCBF9DBF91FBF1AEFFF9771CF9DAD1D3E66724DC39C409048B31620F93E52B7` and `033CAC3CB7956E5B511608CEC501DA3D21A050AE43FF13D1131358C8DFEA96A6`, respectively.
 
-The obligation reconciliation is recorded in `.execution/M0020.md`. All AC, DOC and EC implementation/validation obligations and VAL-01 through VAL-04 pass. Genuine human review `HR-M0020-01` remains pending (REV-01 and VAL-05); no reviewer approval has been fabricated. `./eng/review-check.ps1 --milestone M0020` correctly blocks completion until the reviewer inspects and records approval for both designated candidates.
+The obligation reconciliation is recorded in `.execution/M0020.md`. All AC, DOC, EC and VAL obligations pass. Human reviewer `carlrabbit` approved the two diagram candidates after broad review; the approval record binds both candidate hashes, native-origin receipts, the installed-tool receipt, and the current manifest. `./eng/review-check.ps1 --milestone M0020` passes for `HR-M0020-01`.
 
 ## Implementation discretion and escalation
 
