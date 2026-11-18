@@ -37,13 +37,19 @@ $powerPointReceipt = Join-Path $root 'powerpoint-tier3-evidence.json'
 $impressReceipt = Join-Path $root 'impress-tier3-evidence.json'
 & (Join-Path $PSScriptRoot 'verify-m0018-fixtures.ps1')
 if (-not $?) { throw 'M0020 requires current verified M0018 PowerPoint and Impress origin fixtures.' }
-$powerPointArgs = @('-TemplatePath',$powerPointFixture,'-SourcePath',$source,'-OutputPath',$powerPointOutput,'-EvidencePath',$powerPointReceipt,'-ConfigPath',$config,'-Milestone','M0020','-Gate','VAL-03')
-if ($SkipBuild) { $powerPointArgs += '-SkipBuild' }
-& (Join-Path $PSScriptRoot 'test-m0018-powerpoint-tier3.ps1') @powerPointArgs
+$powerPointScript = Join-Path $PSScriptRoot 'test-m0018-powerpoint-tier3.ps1'
+if ($SkipBuild) {
+    & $powerPointScript -TemplatePath $powerPointFixture -SourcePath $source -OutputPath $powerPointOutput -EvidencePath $powerPointReceipt -ConfigPath $config -Milestone M0020 -Gate VAL-03 -SkipBuild
+} else {
+    & $powerPointScript -TemplatePath $powerPointFixture -SourcePath $source -OutputPath $powerPointOutput -EvidencePath $powerPointReceipt -ConfigPath $config -Milestone M0020 -Gate VAL-03
+}
 if (-not $?) { throw 'PowerPoint-origin -> YADG -> PowerPoint failed.' }
-$impressArgs = @('-TemplatePath',$impressFixture,'-SourcePath',$source,'-CandidatePath',$impressOutput,'-EvidencePath',$impressReceipt,'-ConfigPath',$config,'-AutomatedReviewOnly','-Milestone','M0020','-Gate','VAL-03')
-if ($SkipBuild) { $impressArgs += '-SkipBuild' }
-& (Join-Path $PSScriptRoot 'test-m0018-tier3.ps1') @impressArgs
+$impressScript = Join-Path $PSScriptRoot 'test-m0018-tier3.ps1'
+if ($SkipBuild) {
+    & $impressScript -TemplatePath $impressFixture -SourcePath $source -CandidatePath $impressOutput -EvidencePath $impressReceipt -ConfigPath $config -AutomatedReviewOnly -Milestone M0020 -Gate VAL-03 -SkipBuild
+} else {
+    & $impressScript -TemplatePath $impressFixture -SourcePath $source -CandidatePath $impressOutput -EvidencePath $impressReceipt -ConfigPath $config -AutomatedReviewOnly -Milestone M0020 -Gate VAL-03
+}
 if (-not $?) { throw 'Impress-origin -> YADG -> Impress failed.' }
 
 function Confirm-SvgPicture([string] $path) {
