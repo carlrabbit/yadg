@@ -2,17 +2,17 @@
 
 ## Status
 
-Authoritative for YADG 1.2 release engineering after M0015.
+Authoritative for YADG 1.3 release preparation, retaining the existing .NET tool packaging and runtime boundaries. Historical M0015 validation remains evidence for the earlier 1.2 candidate, not a substitute for 1.3 acceptance.
 
 Historical release milestones remain historical evidence; this document describes the current release target and reusable packaging contract.
 
 ## Current release target
 
 ```text
-YADG 1.2.0
+YADG 1.3.0
 ```
 
-M0015 produces a validated release candidate and does not publish externally.
+The current 1.3.0 preparation PR updates release metadata and documentation only. It does not establish build, native-runtime, packaged-consumer or human release acceptance, and does not publish externally.
 
 ## Distribution
 
@@ -22,7 +22,7 @@ Package type:      .NET tool
 Command:           yadg
 Target framework:  net10.0
 Platform target:   x64
-Version:           1.2.0
+Version:           1.3.0
 ```
 
 The package is framework-dependent.
@@ -59,14 +59,14 @@ Do not rely on an uncaught `PlatformNotSupportedException` as the platform contr
 
 YOLO may attempt the alternate renderer after the normal Word platform failure according to the existing resilience specification.
 
-M0015 does not certify full non-Windows product support.
+The 1.3 candidate does not certify full non-Windows product support.
 
 ## Central version authority
 
 Use the central MSBuild product version:
 
 ```text
-VersionPrefix = 1.2.0
+VersionPrefix = 1.3.0
 VersionSuffix = empty
 ```
 
@@ -140,7 +140,7 @@ dotnet pack src/Yadg.Cli/Yadg.Cli.csproj --configuration Release --no-build --ou
 Default package output:
 
 ```text
-artifacts/package/Yadg.1.2.0.nupkg
+artifacts/package/Yadg.1.3.0.nupkg
 ```
 
 `eng/pack.ps1` must:
@@ -211,7 +211,7 @@ No credential is committed.
 
 Before push, inspect the nuspec and require the expected package ID/current central version.
 
-M0015 validates this script only against a local/non-external NuGet destination.
+The historical M0015 release process validated this script only against a local/non-external NuGet destination. Repeat the non-external push dry run for 1.3 before publication.
 
 ## Tier 2
 
@@ -225,7 +225,7 @@ This remains the ordinary source-tree validation layer.
 
 ## Tier 3
 
-Current authoritative real Office integration for the 1.2 feature line:
+Historical Word/Writer integration entry point from the 1.2 feature line:
 
 ```powershell
 ./eng/test-m0014-tier3.ps1
@@ -244,13 +244,15 @@ Tier-3 evidence must belong to the same repository revision used for the release
 
 ## Tier 4 — packaged consumer validation
 
-Canonical command:
+Historical 1.2 installed-tool validation entry point:
 
 ```powershell
 ./eng/test-m0015-tier4.ps1
 ```
 
-Install the freshly packed `Yadg 1.2.0` into an isolated tool directory and invoke the installed command.
+For **1.3.0**, use a fresh package and an isolated installed-tool consumer run. Existing M0019 and M0020 gates cover DOCX/PPTX cross-format features and SVG rendering, but a 1.3 release candidate must also validate the final package and its complete installed CLI/help, bootstrap, strict/YOLO, diagram, DOCX render/publish, and PPTX PowerPoint/Impress surface. A dedicated version-neutral release consumer entry point may be added during validation; do not claim the 1.2-only script proves 1.3 by itself.
+
+Install the freshly packed `Yadg 1.3.0` into an isolated tool directory and invoke the installed command.
 
 Validate:
 
@@ -307,9 +309,7 @@ README/examples must agree with actual help.
 
 ## Documentation release surface
 
-The M0015 planning package supplies the intended documentation content.
-
-Release implementation verifies rather than rewrites it.
+The existing user guides form the 1.3 documentation baseline. Verify them against the installed 1.3 tool and correct narrow factual defects found during validation.
 
 Verify:
 
@@ -324,27 +324,23 @@ Only narrow factual corrections discovered by validation are allowed without ret
 
 ## Changelog
 
-Before external publication, keep the prepared 1.2 content under:
+Before external publication, keep the prepared 1.3 content under:
 
 ```text
 ## [Unreleased]
 ```
 
-Do not fabricate a release date.
-
-An explicitly authorized publication operation later converts it to:
-
-```text
-## 1.2.0 — <actual release date>
-```
+Do not fabricate a release date. The previous 1.2.0 section was an unpublished candidate and is incorporated into the 1.3.0 unreleased entry. An explicitly authorized publication operation later converts it to a dated 1.3.0 entry.
 
 ## Release evidence
 
 Write ignored evidence under:
 
 ```text
-artifacts/release/evidence/M0015/
+artifacts/release/evidence/M0021/
 ```
+
+This destination is reserved for the forthcoming M0021 release-readiness work; it is not evidence that the milestone or review has already been initialized.
 
 Record at least:
 
@@ -358,7 +354,7 @@ Record at least:
 - Windows version;
 - Word version;
 - LibreOffice version;
-- M0014 Tier-3 evidence reference/revision;
+- M0019/M0020 origin-matched native evidence references/revisions and fresh 1.3 native validation;
 - isolated tool-install result;
 - installed version/help;
 - bootstrap/strict authoring/inspection/build;
@@ -374,29 +370,21 @@ If production code/package/docs change, regenerate affected evidence.
 
 ## Human release review
 
-M0015 owns:
-
-```text
-HR-M0015-01
-```
+The next 1.3 release-readiness review must use a new milestone-scoped review ID, allocated in its release-readiness milestone. Historical `HR-M0015-01` is not a 1.3 release approval.
 
 The human judges:
 
-- documentation usability/accuracy for 1.2;
+- documentation usability/accuracy for 1.3;
 - prepared changelog/release description;
 - acceptability of the exact validated RC.
 
 Hashes, revisions, runtime versions and automated pass/fail data are bound automatically.
 
-Canonical gate:
-
-```powershell
-./eng/review-check.ps1 --milestone M0015
-```
+The 1.3 milestone must establish its own review record and executable review-check gate. Do not reuse the historical `./eng/review-check.ps1 --milestone M0015` result as approval.
 
 ## External publication
 
-Excluded from M0015:
+Excluded from this release-preparation PR and the release-readiness validation phase:
 
 - NuGet.org push;
 - GitHub Release;
@@ -404,3 +392,7 @@ Excluded from M0015:
 - publication workflow changes.
 
 A later explicitly authorized release operation consumes the validated candidate.
+
+## 1.3 readiness hold points
+
+Do not publish, tag or represent this release candidate as validated until all of the following are recorded against the exact final revision and package SHA-256: a clean repository build and full test suite (with investigation of the intermittent M0005 LibreOffice UNO timeout, not an unqualified waiver); two native-origin presentation paths; Word/Writer document compatibility; installed-tool DOCX/PPTX and diagram consumer workflows; documentation examples and package metadata; and genuine human release review. Reuse M0019/M0020 evidence only when its proven fingerprint, runtime and source surface remain valid. An unavailable native runtime leaves the corresponding gate BLOCKED, not passed.

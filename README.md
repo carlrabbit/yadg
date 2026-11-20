@@ -8,10 +8,10 @@ YADG also creates editable PowerPoint presentations from Markdown and prepared s
 
 ## Install
 
-The YADG 1.2.0 candidate is a framework-dependent .NET 10 tool. After it is available from your NuGet source, install it with:
+The YADG 1.3.0 release candidate is a framework-dependent .NET 10 tool. After the validated package is published to your NuGet source, install it with:
 
 ```powershell
-dotnet tool install --global Yadg --version 1.2.0
+dotnet tool install --global Yadg --version 1.3.0
 yadg --version
 ```
 

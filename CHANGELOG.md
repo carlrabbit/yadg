@@ -2,35 +2,32 @@
 
 ## [Unreleased]
 
-### YADG 1.2.0
+### YADG 1.3.0 release candidate
 
-YADG 1.2 adds built-in source-grid text diagrams and makes the authoring documentation boundary explicit.
+The 1.3.0 candidate consolidates the unreleased 1.2.0 feature line with cross-format authoring, template-based PowerPoint presentations, and shared SVG box diagrams. No publication date or external release is claimed. Release validation and human release approval remain pending.
 
 #### Added
 
-- built-in `diagram` fenced blocks that convert source-authored Unicode/ASCII character-grid geometry into passive SVG embedded in DOCX;
-- supported orthogonal box drawing, arrows, nested boxes, connector crossings, and conservative overlap/occlusion reconstruction;
-- opt-in `diagrams.autoDetect` for strong diagram geometry inside unlabeled or exact lowercase `text` fenced blocks;
-- anonymous natural rendering for auto-detected diagrams without stable IDs;
-- a dedicated Markdown authoring guide covering both built-in text diagrams and Mermaid;
-- a dedicated DOCX template authoring guide covering placements, styles, prototypes, prepared tables, captions/references, values, and inspection.
+- Built-in `diagram` fences for Unicode/ASCII character-grid diagrams, deterministic SVG, nested boxes, arrows and conservative occlusion handling; opt-in `diagrams.autoDetect`.
+- Template-based PPTX authoring from Markdown with 16 standard layouts, typed text/image/table regions, and native PowerPoint/Impress prototype templates.
+- Named presentation decks, selected-deck commands, direct `presentation check/build` commands and explicit direct `--config`.
+- Cross-format Markdown policies, literal source-authored values, Mermaid producer reuse, strict/YOLO diagnostics and visible recovery semantics.
+- Built-in box diagrams in PPTX as vector SVG pictures inside template-owned image regions, preserving the shared DOCX diagram parser; no native component-shape editing.
+- User guides for Markdown, DOCX templates, presentations, box diagrams, and the complete schema-v1 `YADG.md` configuration reference.
 
 #### Changed
 
-- README/getting-started documentation distinguishes the two diagramming choices: built-in source-grid diagrams versus externally produced Mermaid diagrams;
-- historical `docs/user/AUTHORING.md` and `docs/user/TEMPLATES.md` paths become compatibility landing pages pointing to the dedicated authoring guides;
-- release/consumer validation covers built-in text diagrams and real Mermaid production from the installed package.
+- Markdown link/reference semantics and Markdig pipe/grid-table authoring were expanded for Word documents.
+- Existing Word/Writer and PowerPoint/Impress origin-specific compatibility and installed-tool validation were strengthened.
+- `README.md`, package description and user documentation now cover DOCX and PPTX.
 
 #### Compatibility and release notes
 
-- workspace schema remains version 1;
-- text-diagram auto-detection is off by default, so existing workspaces keep their previous fenced-block behavior unless they opt in;
-- explicit `diagram` fences are built in and require no external diagram executable;
-- Mermaid remains a separately configured trusted external producer and continues through its PNG figure path;
-- source-file figures remain PNG/JPEG; YADG's internal SVG generation does not enable arbitrary source SVG figures;
-- package/runtime platform policy remains the YADG 1.1 model: framework-dependent `net10.0`, x64, with Windows x64 as the authoritative full-product validation locus.
-
-Do not assign a 1.2.0 release date or publish externally as part of M0015. Publication is a separate explicitly authorized operation.
+- Workspace configuration remains `YADG.md`, schema version 1; `workspace.yaml` is not supported.
+- Diagram auto-detection remains disabled by default. Mermaid remains an explicitly configured external PNG producer. User-file SVG figures are not enabled.
+- DOCX publishing remains downstream-only; presentation outputs are authored PPTX, without a `render` or `publish` path.
+- Package remains a framework-dependent `net10.0`, x64 `.NET` tool with Windows x64 as the authoritative full-product validation environment.
+- The prior 1.2.0 section was an **unreleased candidate**, not a dated release entry; its capabilities are included here rather than represented as an externally published version.
 
 ## 1.1.0 — 2026-09-30
 

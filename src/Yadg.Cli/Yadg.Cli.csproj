@@ -10,13 +10,13 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>yadg</ToolCommandName>
     <Authors>carlrabbit</Authors>
-    <Description>Template-first document authoring from Markdown and prepared DOCX templates.</Description>
+    <Description>Template-first DOCX and PowerPoint PPTX authoring from Markdown, with reusable templates, diagrams and Office finalization.</Description>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/carlrabbit/yadg</RepositoryUrl>
     <PackageProjectUrl>https://github.com/carlrabbit/yadg</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageTags>documents;docx;markdown;templates;word</PackageTags>
+    <PackageTags>documents;docx;pptx;powerpoint;markdown;templates;word;diagrams;svg</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Yadg.Core\Yadg.Core.csproj" />
