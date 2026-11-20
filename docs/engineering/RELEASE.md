@@ -337,8 +337,10 @@ Do not fabricate a release date. The previous 1.2.0 section was an unpublished c
 Write ignored evidence under:
 
 ```text
-artifacts/release/evidence/M0021/ (after M0021 release-readiness work is formally initialized)
+artifacts/release/evidence/M0021/
 ```
+
+This destination is reserved for the forthcoming M0021 release-readiness work; it is not evidence that the milestone or review has already been initialized.
 
 Record at least:
 
