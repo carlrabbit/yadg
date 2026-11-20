@@ -59,7 +59,7 @@ Do not rely on an uncaught `PlatformNotSupportedException` as the platform contr
 
 YOLO may attempt the alternate renderer after the normal Word platform failure according to the existing resilience specification.
 
-M0015 does not certify full non-Windows product support.
+The 1.3 candidate does not certify full non-Windows product support.
 
 ## Central version authority
 
@@ -211,7 +211,7 @@ No credential is committed.
 
 Before push, inspect the nuspec and require the expected package ID/current central version.
 
-M0015 validates this script only against a local/non-external NuGet destination.
+The historical M0015 release process validated this script only against a local/non-external NuGet destination. Repeat the non-external push dry run for 1.3 before publication.
 
 ## Tier 2
 
@@ -324,7 +324,7 @@ Only narrow factual corrections discovered by validation are allowed without ret
 
 ## Changelog
 
-Before external publication, keep the prepared 1.2 content under:
+Before external publication, keep the prepared 1.3 content under:
 
 ```text
 ## [Unreleased]
@@ -337,7 +337,7 @@ Do not fabricate a release date. The previous 1.2.0 section was an unpublished c
 Write ignored evidence under:
 
 ```text
-artifacts/release/evidence/M0021/
+artifacts/release/evidence/M0021/ (after M0021 release-readiness work is formally initialized)
 ```
 
 Record at least:
@@ -378,15 +378,11 @@ The human judges:
 
 Hashes, revisions, runtime versions and automated pass/fail data are bound automatically.
 
-Canonical gate:
-
-```powershell
-./eng/review-check.ps1 --milestone M0015
-```
+The 1.3 milestone must establish its own review record and executable review-check gate. Do not reuse the historical `./eng/review-check.ps1 --milestone M0015` result as approval.
 
 ## External publication
 
-Excluded from M0015:
+Excluded from this release-preparation PR and the release-readiness validation phase:
 
 - NuGet.org push;
 - GitHub Release;
