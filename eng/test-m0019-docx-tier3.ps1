@@ -11,10 +11,22 @@ if ((& $bun --version).Trim() -ne $bunVersion) { throw "M0019 DOCX Tier 3 requir
 $globalPath = Join-Path $repo 'global.json'
 if (Test-Path -LiteralPath $globalPath) { throw 'Refusing to replace an existing repository global.json.' }
 Set-Content -LiteralPath $globalPath -Value '{"sdk":{"version":"10.0.403","rollForward":"disable","allowPrerelease":false}}' -Encoding ascii
+$oldBrowser = $env:PUPPETEER_EXECUTABLE_PATH
 try {
+    if ([string]::IsNullOrWhiteSpace($env:PUPPETEER_EXECUTABLE_PATH)) {
+        $browserCandidates = @(
+            (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe')
+        )
+        $browser = $browserCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        if ($browser) { $env:PUPPETEER_EXECUTABLE_PATH = $browser }
+    }
     & (Join-Path $PSScriptRoot 'test-m0017-tier3.ps1') -M0019Mode -MermaidExecutable $bun
     if ($LASTEXITCODE -ne 0) { throw 'M0019 real Word/Writer authoring and finalization failed.' }
-} finally { Remove-Item -LiteralPath $globalPath -Force -ErrorAction SilentlyContinue }
+} finally {
+    Remove-Item -LiteralPath $globalPath -Force -ErrorAction SilentlyContinue
+    if ($null -eq $oldBrowser) { Remove-Item Env:PUPPETEER_EXECUTABLE_PATH -ErrorAction SilentlyContinue } else { $env:PUPPETEER_EXECUTABLE_PATH = $oldBrowser }
+}
 
 $sourceEvidencePath = Join-Path $repo 'artifacts/review/evidence/M0017/tier3-evidence.json'
 $sourceEvidence = Get-Content -LiteralPath $sourceEvidencePath -Raw | ConvertFrom-Json -DateKind String
