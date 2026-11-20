@@ -13,10 +13,10 @@ YADG            -> authoring, validation, finalization orchestration
 
 ## Requirements
 
-After YADG 1.2.0 is available from your NuGet source, install it as a .NET tool:
+After YADG 1.3.0 is available from your NuGet source, install it as a .NET tool:
 
 ```powershell
-dotnet tool install --global Yadg --version 1.2.0
+dotnet tool install --global Yadg --version 1.3.0
 yadg --version
 ```
 
@@ -212,7 +212,7 @@ in supported visible DOCX template text, for example:
 Document version: {{value:document-version}}
 ```
 
-Workspace values are not Markdown-source interpolation.
+Workspace values also substitute literal `{{value:id}}` tokens in supported Markdown source content for both DOCX and PPTX. Substitution is nonrecursive; see [Configuration](CONFIGURATION.md).
 
 ## Add a figure
 
