@@ -1,35 +1,74 @@
-using System.Text.RegularExpressions;
-using System.Text;
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
-using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
-using A = DocumentFormat.OpenXml.Drawing;
-using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using Yadg.Core;
+using A = DocumentFormat.OpenXml.Drawing;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
+using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 
 namespace Yadg.Word;
 
 public enum PlacementKind { Section, Table, Figure }
-public sealed record TemplatePlacement(Paragraph Anchor, PlacementKind Kind, string Id, SectionReference? SectionReference = null, int ContextLevel = 0, int RootLevel = 0);
-public sealed record PreparedTableBinding(Table Table, TableRow MarkerRow, TableRow PrototypeRow, string Id);
-public sealed record CaptionPrototype(string Id, Paragraph Paragraph, int SequenceFields, int CaptionPlaceholders);
+public sealed record TemplatePlacement(
+    Paragraph Anchor,
+    PlacementKind Kind,
+    string Id,
+    SectionReference? SectionReference = null,
+    int ContextLevel = 0,
+    int RootLevel = 0
+);
+public sealed record PreparedTableBinding(
+    Table Table,
+    TableRow MarkerRow,
+    TableRow PrototypeRow,
+    string Id
+);
+public sealed record CaptionPrototype(
+    string Id,
+    Paragraph Paragraph,
+    int SequenceFields,
+    int CaptionPlaceholders
+);
 public sealed record TemplateMetadata(
     int Version,
     IReadOnlyDictionary<string, string> Styles,
     IReadOnlyDictionary<string, string> PrototypeBindings,
     IReadOnlyDictionary<string, CaptionPrototype> Prototypes,
-    IReadOnlyList<Paragraph> ControlParagraphs)
+    IReadOnlyList<Paragraph> ControlParagraphs
+)
 {
     public IReadOnlyDictionary<string, CaptionPrototype> ListItemPrototypes { get; init; } = new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal);
     public IReadOnlyDictionary<string, string> HyperlinkRelationships { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
-    public static TemplateMetadata Defaults => new(0, new Dictionary<string, string>(StringComparer.Ordinal) {
-        ["heading1"] = "Heading1", ["heading2"] = "Heading2", ["heading3"] = "Heading3", ["heading4"] = "Heading4", ["heading5"] = "Heading5", ["heading6"] = "Heading6", ["heading7"] = "Heading7", ["heading8"] = "Heading8", ["heading9"] = "Heading9",
-        ["unordered"] = "ListBullet", ["ordered"] = "ListNumber", ["generatedTable"] = "TableGrid", ["caption"] = "Caption" },
-        new Dictionary<string, string>(StringComparer.Ordinal), new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal), Array.Empty<Paragraph>());
+    public static TemplateMetadata Defaults => new(0,
+    new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["heading1"] = "Heading1",
+        ["heading2"] = "Heading2",
+        ["heading3"] = "Heading3",
+        ["heading4"] = "Heading4",
+        ["heading5"] = "Heading5",
+        ["heading6"] = "Heading6",
+        ["heading7"] = "Heading7",
+        ["heading8"] = "Heading8",
+        ["heading9"] = "Heading9",
+        ["unordered"] = "ListBullet",
+        ["ordered"] = "ListNumber",
+        ["generatedTable"] = "TableGrid",
+        ["caption"] = "Caption"
+    },
+        new Dictionary<string, string>(StringComparer.Ordinal),
+    new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal),
+    Array.Empty<Paragraph>());
 }
-public sealed record TemplateAnalysis(IReadOnlyList<TemplatePlacement> Placements, IReadOnlyList<Diagnostic> Diagnostics, TemplateMetadata Metadata, IReadOnlyList<PreparedTableBinding>? PreparedBindings = null)
+public sealed record TemplateAnalysis(
+    IReadOnlyList<TemplatePlacement> Placements,
+    IReadOnlyList<Diagnostic> Diagnostics,
+    TemplateMetadata Metadata,
+    IReadOnlyList<PreparedTableBinding>? PreparedBindings = null
+)
 {
     public IReadOnlyDictionary<string, PresentationResolution> Presentation { get; init; } = new Dictionary<string, PresentationResolution>(StringComparer.Ordinal);
     public bool IsValid => Diagnostics.All(d => !d.IsError);
@@ -37,9 +76,24 @@ public sealed record TemplateAnalysis(IReadOnlyList<TemplatePlacement> Placement
 
 public enum PresentationSourceKind { Prototype, ContextualExample, ConfiguredResource, CompatibilityDefault, RelatedTemplateResource, BuiltinFallback, PlainRepresentation, VisiblePlaceholder }
 public enum PresentationCapability { None, Paragraph, Character, Table, BulletNumbering, OrderedNumbering, OutlineLevel, SequenceField, PreparedRow, ContextualFormatting }
-public sealed record PresentationResolution(string Role, bool StrictResolved, PresentationSourceKind? SourceKind, string? SourceId, string? DisplayName, PresentationCapability RequiredCapability, bool CapabilitySatisfied, string? YoloRelatedCandidate, string? YoloBuiltinFallback, IReadOnlyList<Diagnostic> Diagnostics);
+public sealed record PresentationResolution(
+    string Role,
+    bool StrictResolved,
+    PresentationSourceKind? SourceKind,
+    string? SourceId,
+    string? DisplayName,
+    PresentationCapability RequiredCapability,
+    bool CapabilitySatisfied,
+    string? YoloRelatedCandidate,
+    string? YoloBuiltinFallback,
+    IReadOnlyList<Diagnostic> Diagnostics
+);
 internal enum ListNumberingCapability { None, Bullet, Ordered }
-internal sealed record PresentationResolutionSet(TemplateMetadata Metadata, IReadOnlyDictionary<string, PresentationResolution> Roles, IReadOnlyList<Diagnostic> Diagnostics);
+internal sealed record PresentationResolutionSet(
+    TemplateMetadata Metadata,
+    IReadOnlyDictionary<string, PresentationResolution> Roles,
+    IReadOnlyList<Diagnostic> Diagnostics
+);
 
 public sealed class WordAuthoringException(Diagnostic diagnostic) : Exception(diagnostic.ToString())
 {
@@ -52,8 +106,18 @@ public static class WordAuthoring
     private static readonly Regex DirectTag = new(@"^\{\{(table|figure):([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex PreparedTag = new(@"^\{\{table-rows:([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex CellTag = new(@"\{\{cell\}\}", RegexOptions.Compiled);
-    private sealed record ComplexFieldRange(string Instruction, OpenXmlElement BeginNode, OpenXmlElement? SeparateNode, OpenXmlElement? EndNode, bool ContainsNestedField);
-    private sealed record CaptionLabelRange(OpenXmlElement FirstNode, OpenXmlElement LastNode, string Label);
+    private sealed record ComplexFieldRange(
+        string Instruction,
+        OpenXmlElement BeginNode,
+        OpenXmlElement? SeparateNode,
+        OpenXmlElement? EndNode,
+        bool ContainsNestedField
+    );
+    private sealed record CaptionLabelRange(
+        OpenXmlElement FirstNode,
+        OpenXmlElement LastNode,
+        string Label
+    );
     private sealed class ComplexFieldState(OpenXmlElement beginNode)
     {
         public OpenXmlElement BeginNode { get; } = beginNode;
@@ -66,7 +130,11 @@ public static class WordAuthoring
     {
         using var document = WordprocessingDocument.Open(templatePath, false);
         var styles = document.MainDocumentPart?.StyleDefinitionsPart?.Styles;
-        if (styles is null) return new[] { "No concrete styles are serialized." };
+        if (styles is null)
+        {
+            return ["No concrete styles are serialized."];
+        }
+
         var numbering = document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering;
         return styles.Elements<Style>().OrderBy(s => s.Type?.Value.ToString(), StringComparer.Ordinal).ThenBy(s => s.StyleId?.Value, StringComparer.Ordinal).Select(style =>
         {
@@ -74,9 +142,29 @@ public static class WordAuthoring
             var id = style.StyleId?.Value ?? "(no-id)";
             var name = style.StyleName?.Val?.Value ?? id;
             var aliases = style.Aliases?.Val?.Value ?? "-";
-            var visibility = new List<string>();
-            if (style.GetFirstChild<Hidden>() is not null) visibility.Add("hidden"); if (style.GetFirstChild<SemiHidden>() is not null) visibility.Add("semiHidden"); if (style.GetFirstChild<UnhideWhenUsed>() is not null) visibility.Add("unhideWhenUsed"); if (style.GetFirstChild<PrimaryStyle>() is not null) visibility.Add("quickFormat");
-            var number = type == "paragraph" ? (ResolveNumberingId(styles, id, numbering) is int n && numbering?.Descendants<NumberingInstance>().Any(x => x.NumberID?.Value == n) == true ? "style" : "none") : "-";
+            List<string> visibility = new();
+            if (style.GetFirstChild<Hidden>() is not null)
+            {
+                visibility.Add("hidden");
+            }
+
+            if (style.GetFirstChild<SemiHidden>() is not null)
+            {
+                visibility.Add("semiHidden");
+            }
+
+            if (style.GetFirstChild<UnhideWhenUsed>() is not null)
+            {
+                visibility.Add("unhideWhenUsed");
+            }
+
+            if (style.GetFirstChild<PrimaryStyle>() is not null)
+            {
+                visibility.Add("quickFormat");
+            }
+
+            var number = type == "paragraph" ? (ResolveNumberingId(styles, id, numbering) is int n &&
+                    numbering?.Descendants<NumberingInstance>().Any(x => x.NumberID?.Value == n) == true ? "style" : "none") : "-";
             return $"{type} \"{name}\" id={id} aliases={aliases} visibility={(visibility.Count == 0 ? "-" : string.Join(",", visibility))} numbering={number}";
         }).ToArray();
     }
@@ -85,14 +173,19 @@ public static class WordAuthoring
     {
         using var document = WordprocessingDocument.Open(templatePath, false);
         var body = document.MainDocumentPart?.Document.Body ?? throw new InvalidDataException("DOCX has no main document body.");
-        var diagnostics = new List<Diagnostic>();
+        List<Diagnostic> diagnostics = new();
         var metadata = ReadMetadata(body, templatePath, diagnostics);
         var styles = document.MainDocumentPart!.StyleDefinitionsPart?.Styles;
         var numbering = document.MainDocumentPart.NumberingDefinitionsPart?.Numbering;
-        var lines = new List<string> { $"Template: {Path.GetFileName(templatePath)}", $"frontmatter: {(metadata.Version == 1 ? "present (version 1)" : "absent; compatibility defaults")}" };
-        var ordinals = new Dictionary<Paragraph, int>();
+        List<string> lines = [$"Template: {Path.GetFileName(templatePath)}",
+                $"frontmatter: {(metadata.Version == 1 ? "present (version 1)" : "absent; compatibility defaults")}"];
+        Dictionary<Paragraph, int> ordinals = new();
         var paragraphs = document.MainDocumentPart.Document.Body!.Descendants<Paragraph>().ToArray();
-        for (var i = 0; i < paragraphs.Length; i++) ordinals[paragraphs[i]] = i + 1;
+        for (var i = 0; i < paragraphs.Length; i++)
+        {
+            ordinals[paragraphs[i]] = i + 1;
+        }
+
         foreach (var paragraph in paragraphs)
         {
             var text = ParagraphText(paragraph);
@@ -109,7 +202,11 @@ public static class WordAuthoring
             for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
             {
                 var marker = Regex.Match(LogicalText(rows[rowIndex]).Trim(), @"^\{\{table-rows:([A-Za-z][A-Za-z0-9_-]*)\}\}$");
-                if (!marker.Success) continue;
+                if (!marker.Success)
+                {
+                    continue;
+                }
+
                 var markerParagraph = rows[rowIndex].Descendants<Paragraph>().FirstOrDefault();
                 var locator = markerParagraph is not null && ordinals.TryGetValue(markerParagraph, out var ordinal)
                     ? FormatDocxLocation(HumanLocation(markerParagraph, templatePath, "prepared table", ordinal, styles), workspaceRoot)
@@ -129,7 +226,8 @@ public static class WordAuthoring
             var prototypeParagraph = paragraphs.FirstOrDefault(paragraph => ParagraphText(paragraph) == ParagraphText(prototype.Value.Paragraph));
             var prototypeLocation = prototypeParagraph is null
                 ? $"prototype \"{prototype.Key}\"\nnear: \"{BoundExcerpt(ParagraphText(prototype.Value.Paragraph))}\""
-                : FormatDocxLocation(HumanLocation(prototypeParagraph, templatePath, $"prototype \"{prototype.Key}\"", ordinals[prototypeParagraph], styles), workspaceRoot);
+                : FormatDocxLocation(HumanLocation(prototypeParagraph, templatePath, $"prototype \"{prototype.Key}\"", ordinals[prototypeParagraph], styles),
+                    workspaceRoot);
             lines.Add($"prototype {prototype.Key} role={role} | {prototypeLocation}");
         }
         var presentation = ResolvePresentation(metadata, styles, numbering, templatePath, yolo: false);
@@ -143,42 +241,174 @@ public static class WordAuthoring
                 : "";
             lines.Add($"role {resolution.Role}: configured={metadata.Styles.GetValueOrDefault(resolution.Role, "-")}; strict={resolved}{preview}");
         }
-        foreach (var diagnostic in diagnostics.Concat(presentation.Diagnostics)) lines.Add($"warning {diagnostic.Code}: {diagnostic.Message}");
+        foreach (var diagnostic in diagnostics.Concat(presentation.Diagnostics))
+        {
+            lines.Add($"warning {diagnostic.Code}: {diagnostic.Message}");
+        }
+
         return lines;
     }
 
     private static string? DescribeCandidate(Style? style) => style is null ? null : $"{style.StyleName?.Val?.Value ?? style.StyleId?.Value} (id={style.StyleId?.Value})";
 
-    public static TemplateAnalysis Analyze(string templatePath, YadgDocument model, IReadOnlyDictionary<string, string>? values = null, bool yolo = false)
+    public static TemplateAnalysis Analyze(
+        string templatePath,
+        YadgDocument model,
+        IReadOnlyDictionary<string, string>? values = null,
+        bool yolo = false
+    )
     {
         using var document = WordprocessingDocument.Open(templatePath, false);
         return AnalyzeOpen(document, templatePath, model, values ?? new Dictionary<string, string>(StringComparer.Ordinal), yolo: yolo);
     }
 
-    private static TemplateAnalysis AnalyzeOpen(WordprocessingDocument document, string templatePath, YadgDocument model, IReadOnlyDictionary<string, string> values, TemplateMetadata? supplied = null, bool yolo = false)
+    private static TemplateAnalysis AnalyzeOpen(
+        WordprocessingDocument document,
+        string templatePath,
+        YadgDocument model,
+        IReadOnlyDictionary<string, string> values,
+        TemplateMetadata? supplied = null,
+        bool yolo = false
+    )
     {
-        var diagnostics = new List<Diagnostic>();
-        var placements = new List<TemplatePlacement>();
-        var prepared = new List<PreparedTableBinding>();
+        List<Diagnostic> diagnostics = new();
+        List<TemplatePlacement> placements = new();
+        List<PreparedTableBinding> prepared = new();
         var main = document.MainDocumentPart;
-        if (main?.Document.Body is null) return new(placements, new[] { new Diagnostic("YADG-WORD-001", "DOCX has no main document body.", true, templatePath) }, TemplateMetadata.Defaults);
+        if (main?.Document.Body is null)
+        {
+            return new(placements,
+                new[] { new Diagnostic("YADG-WORD-001", "DOCX has no main document body.", true, templatePath) },
+                TemplateMetadata.Defaults);
+        }
+
         var metadata = supplied ?? ReadMetadata(main.Document.Body, templatePath, diagnostics);
         var styles = main.StyleDefinitionsPart?.Styles;
         var numbering = main.NumberingDefinitionsPart?.Numbering;
-        if (yolo) metadata = RecoverListPrototypes(metadata, styles, numbering, diagnostics, templatePath);
+        if (yolo)
+        {
+            metadata = RecoverListPrototypes(metadata, styles, numbering, diagnostics, templatePath);
+        }
+
         var deferredBlockStyles = metadata.Styles.Where(pair => IsDeferredBlockRole(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-        var presentation = ResolvePresentation(metadata with { Styles = metadata.Styles.Where(pair => !IsDeferredBlockRole(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) }, styles, numbering, templatePath, yolo);
-        var resolvedPresentationRoles = new Dictionary<string, PresentationResolution>(presentation.Roles, StringComparer.Ordinal);
+        var presentation = ResolvePresentation(metadata with { Styles = metadata.Styles.Where(pair => !IsDeferredBlockRole(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) },
+                styles,
+                numbering,
+                templatePath,
+                yolo);
+        Dictionary<string, PresentationResolution> resolvedPresentationRoles = new(presentation.Roles, StringComparer.Ordinal);
         metadata = presentation.Metadata;
-        if (deferredBlockStyles.Count > 0) metadata = metadata with { Styles = new Dictionary<string, string>(metadata.Styles.Concat(deferredBlockStyles), StringComparer.Ordinal) };
+        if (deferredBlockStyles.Count > 0)
+        {
+            metadata = metadata with { Styles = new Dictionary<string, string>(metadata.Styles.Concat(deferredBlockStyles), StringComparer.Ordinal) };
+        }
+
         diagnostics.AddRange(presentation.Diagnostics);
         AnalyzePreparedTables(main.Document.Body, templatePath, model, prepared, diagnostics);
-        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "body", main.Document.Body, yolo);
-        foreach (var header in main.HeaderParts) AnalyzeParagraphs(header.Header.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "header", null, yolo);
-        foreach (var footer in main.FooterParts) AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "footer", null, yolo);
-        if (main.FootnotesPart?.Footnotes is not null) AnalyzeParagraphs(main.FootnotesPart.Footnotes.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "footnote", null, yolo);
-        if (main.EndnotesPart?.Endnotes is not null) AnalyzeParagraphs(main.EndnotesPart.Endnotes.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "endnote", null, yolo);
-        if (main.WordprocessingCommentsPart?.Comments is not null) AnalyzeParagraphs(main.WordprocessingCommentsPart.Comments.Descendants<Paragraph>(), templatePath, model, styles, numbering, metadata, presentation.Roles, placements, prepared, diagnostics, values, "comment", null, yolo);
+        AnalyzeParagraphs(main.Document.Body.Descendants<Paragraph>(),
+                templatePath,
+                model,
+                styles,
+                numbering,
+                metadata,
+                presentation.Roles,
+                placements,
+                prepared,
+                diagnostics,
+                values,
+                "body",
+                main.Document.Body,
+                yolo);
+        foreach (var header in main.HeaderParts)
+        {
+            AnalyzeParagraphs(header.Header.Descendants<Paragraph>(),
+                templatePath,
+                model,
+                styles,
+                numbering,
+                metadata,
+                presentation.Roles,
+                placements,
+                prepared,
+                diagnostics,
+                values,
+                "header",
+                null,
+                yolo);
+        }
+
+        foreach (var footer in main.FooterParts)
+        {
+            AnalyzeParagraphs(footer.Footer.Descendants<Paragraph>(),
+                templatePath,
+                model,
+                styles,
+                numbering,
+                metadata,
+                presentation.Roles,
+                placements,
+                prepared,
+                diagnostics,
+                values,
+                "footer",
+                null,
+                yolo);
+        }
+
+        if (main.FootnotesPart?.Footnotes is not null)
+        {
+            AnalyzeParagraphs(main.FootnotesPart.Footnotes.Descendants<Paragraph>(),
+                templatePath,
+                model,
+                styles,
+                numbering,
+                metadata,
+                presentation.Roles,
+                placements,
+                prepared,
+                diagnostics,
+                values,
+                "footnote",
+                null,
+                yolo);
+        }
+
+        if (main.EndnotesPart?.Endnotes is not null)
+        {
+            AnalyzeParagraphs(main.EndnotesPart.Endnotes.Descendants<Paragraph>(),
+                templatePath,
+                model,
+                styles,
+                numbering,
+                metadata,
+                presentation.Roles,
+                placements,
+                prepared,
+                diagnostics,
+                values,
+                "endnote",
+                null,
+                yolo);
+        }
+
+        if (main.WordprocessingCommentsPart?.Comments is not null)
+        {
+            AnalyzeParagraphs(main.WordprocessingCommentsPart.Comments.Descendants<Paragraph>(),
+                templatePath,
+                model,
+                styles,
+                numbering,
+                metadata,
+                presentation.Roles,
+                placements,
+                prepared,
+                diagnostics,
+                values,
+                "comment",
+                null,
+                yolo);
+        }
+
         metadata = ResolveUsedBlockPresentation(metadata, model, placements, styles, numbering, templatePath, yolo, diagnostics, resolvedPresentationRoles);
         metadata = ResolveUsedCodeInlineStyle(metadata, model, placements, prepared, styles, numbering, diagnostics, templatePath, yolo, out var codeResolution);
         if (codeResolution is not null)
@@ -187,11 +417,29 @@ public static class WordAuthoring
             presentation = presentation with { Metadata = metadata, Roles = resolvedPresentationRoles };
         }
         foreach (var duplicate in placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).GroupBy(p => (p.Kind, p.Id)).Where(g => g.Count() > 1))
-            diagnostics.Add(new("YADG-PLACEMENT-002", $"Structured object '{duplicate.Key.Id}' has more than one direct placement in this template.", true, templatePath));
+        {
+            diagnostics.Add(new("YADG-PLACEMENT-002",
+                $"Structured object '{duplicate.Key.Id}' has more than one direct placement in this template.",
+                true,
+                templatePath));
+        }
+
         foreach (var duplicate in prepared.GroupBy(p => p.Id).Where(g => g.Count() > 1))
-            diagnostics.Add(new("YADG-PLACEMENT-002", $"Structured object '{duplicate.Key}' has more than one prepared placement in this template.", true, templatePath));
+        {
+            diagnostics.Add(new("YADG-PLACEMENT-002",
+                $"Structured object '{duplicate.Key}' has more than one prepared placement in this template.",
+                true,
+                templatePath));
+        }
+
         foreach (var conflict in prepared.Select(p => p.Id).Intersect(placements.Where(p => p.Kind == PlacementKind.Table).Select(p => p.Id), StringComparer.Ordinal))
-            diagnostics.Add(new("YADG-PLACEMENT-003", $"Table '{conflict}' cannot have both prepared and generated direct placement.", true, templatePath));
+        {
+            diagnostics.Add(new("YADG-PLACEMENT-003",
+                $"Table '{conflict}' cannot have both prepared and generated direct placement.",
+                true,
+                templatePath));
+        }
+
         ValidateReferences(document, templatePath, model, metadata, placements, prepared, diagnostics);
         if (yolo)
         {
@@ -199,63 +447,181 @@ public static class WordAuthoring
             {
                 var d = diagnostics[i];
                 if (d.Code is "YADG-VALUE-002" or "YADG-VALUE-UNSUPPORTED" or "YADG-REF-004" or "YADG-REF-005" or "YADG-REF-006")
-                    diagnostics[i] = d with { Code = "YADG-YOLO-UNRESOLVED-001", IsError = false, IsDegradation = true, Message = d.Message + "; fallback: preserve the unresolved source token visibly." };
+                {
+                    diagnostics[i] = d with
+                    {
+                        Code = "YADG-YOLO-UNRESOLVED-001",
+                        IsError = false,
+                        IsDegradation = true,
+                        Message = d.Message + "; fallback: preserve the unresolved source token visibly."
+                    };
+                }
                 else if (d.Code is "YADG-LINK-001" or "YADG-LINK-002" or "YADG-LINK-003")
-                    diagnostics[i] = d with { Code = "YADG-YOLO-UNRESOLVED-001", IsError = false, IsDegradation = true, Message = d.Message + "; fallback: preserve authored link text without asserting a clickable target." };
+                {
+                    diagnostics[i] = d with
+                    {
+                        Code = "YADG-YOLO-UNRESOLVED-001",
+                        IsError = false,
+                        IsDegradation = true,
+                        Message = d.Message + "; fallback: preserve authored link text without asserting a clickable target."
+                    };
+                }
                 else if (d.Code is "YADG-PROT-005" or "YADG-PROT-003" or "YADG-PROT-006")
-                    diagnostics[i] = d with { Code = "YADG-YOLO-PROTOTYPE-001", IsError = false, IsDegradation = true, Message = d.Message + "; fallback: resolve presentation through a compatible resource or built-in example." };
+                {
+                    diagnostics[i] = d with
+                    {
+                        Code = "YADG-YOLO-PROTOTYPE-001",
+                        IsError = false,
+                        IsDegradation = true,
+                        Message = d.Message + "; fallback: resolve presentation through a compatible resource or built-in example."
+                    };
+                }
             }
-            var usedRoles = new HashSet<string>(StringComparer.Ordinal);
+            HashSet<string> usedRoles = new(StringComparer.Ordinal);
             foreach (var placement in placements)
             {
                 var blocks = placement.Kind == PlacementKind.Section ? MarkdownDocumentParser.Resolve(model, placement.SectionReference!, templatePath).Blocks ?? Array.Empty<YadgBlock>() : placement.Kind == PlacementKind.Table ? new YadgBlock[] { model.FindTable(placement.Id)! } : new YadgBlock[] { model.FindFigure(placement.Id)! };
                 foreach (var block in blocks)
                 {
-                    if (block is YadgHeading h) usedRoles.Add($"heading{EffectiveHeadingLevel(h.Level, placement.ContextLevel, placement.SectionReference?.Selection ?? SectionSelection.Section, placement.RootLevel)}");
-                    if (block is YadgList l) usedRoles.Add(l.Ordered ? "ordered" : "unordered");
-                    if (block is YadgTable t) { usedRoles.Add("generatedTable"); if (!string.IsNullOrWhiteSpace(t.Caption)) usedRoles.Add("caption"); }
-                    if (block is YadgFigure f && !string.IsNullOrWhiteSpace(f.AltText)) usedRoles.Add("caption");
-                    if (HasInlineCode(block)) usedRoles.Add("codeInline");
+                    if (block is YadgHeading h)
+                    {
+                        usedRoles.Add($"heading{EffectiveHeadingLevel(h.Level,
+                            placement.ContextLevel,
+                            placement.SectionReference?.Selection ?? SectionSelection.Section,
+                            placement.RootLevel)}");
+                    }
+
+                    if (block is YadgList l)
+                    {
+                        usedRoles.Add(l.Ordered ? "ordered" : "unordered");
+                    }
+
+                    if (block is YadgTable t)
+                    {
+                        usedRoles.Add("generatedTable");
+                        if (!string.IsNullOrWhiteSpace(t.Caption))
+                        {
+                            usedRoles.Add("caption");
+                        }
+                    }
+                    if (block is YadgFigure f && !string.IsNullOrWhiteSpace(f.AltText))
+                    {
+                        usedRoles.Add("caption");
+                    }
+
+                    if (HasInlineCode(block))
+                    {
+                        usedRoles.Add("codeInline");
+                    }
+
                     CollectBlockRoles(block, usedRoles);
                 }
             }
-            if (prepared.Count > 0) { usedRoles.Add("generatedTable"); if (prepared.Any(p => !string.IsNullOrWhiteSpace(model.FindTable(p.Id)?.Caption))) usedRoles.Add("caption"); }
+            if (prepared.Count > 0)
+            {
+                usedRoles.Add("generatedTable");
+                if (prepared.Any(p => !string.IsNullOrWhiteSpace(model.FindTable(p.Id)?.Caption)))
+                {
+                    usedRoles.Add("caption");
+                }
+            }
             diagnostics.RemoveAll(d => d.IsDegradation && !IsUsedRoleDegradation(d, usedRoles));
         }
-        var presentations = new Dictionary<string, PresentationResolution>(resolvedPresentationRoles, StringComparer.Ordinal);
+        Dictionary<string, PresentationResolution> presentations = new(resolvedPresentationRoles, StringComparer.Ordinal);
         foreach (var placement in placements.Where(item => item.Kind == PlacementKind.Section))
-            presentations[$"contextualParagraph:{placement.Id}:{placement.SectionReference?.Selection}"] = new($"contextualParagraph:{placement.Id}", true, PresentationSourceKind.ContextualExample, placement.Id, null, PresentationCapability.ContextualFormatting, true, null, null, Array.Empty<Diagnostic>());
+        {
+            presentations[$"contextualParagraph:{placement.Id}:{placement.SectionReference?.Selection}"] = new($"contextualParagraph:{placement.Id}",
+                true,
+                PresentationSourceKind.ContextualExample,
+                placement.Id,
+                null,
+                PresentationCapability.ContextualFormatting,
+                true,
+                null,
+                null,
+                Array.Empty<Diagnostic>());
+        }
+
         foreach (var binding in prepared)
-            presentations[$"preparedTableRow:{binding.Id}"] = new($"preparedTableRow:{binding.Id}", true, PresentationSourceKind.Prototype, $"table-row:{binding.Id}", null, PresentationCapability.PreparedRow, true, null, null, Array.Empty<Diagnostic>());
+        {
+            presentations[$"preparedTableRow:{binding.Id}"] = new($"preparedTableRow:{binding.Id}",
+                true,
+                PresentationSourceKind.Prototype,
+                $"table-row:{binding.Id}",
+                null,
+                PresentationCapability.PreparedRow,
+                true,
+                null,
+                null,
+                Array.Empty<Diagnostic>());
+        }
+
         if (main.Document.Body.Descendants<Paragraph>().Any(paragraph => TagLike.Matches(ParagraphText(paragraph)).Cast<Match>().Any(match => match.Value.StartsWith("{{value:", StringComparison.Ordinal))))
-            presentations["valueReplacement"] = new("valueReplacement", true, PresentationSourceKind.ContextualExample, "first-tag-character-run", null, PresentationCapability.ContextualFormatting, true, null, null, Array.Empty<Diagnostic>());
+        {
+            presentations["valueReplacement"] = new("valueReplacement",
+                true,
+                PresentationSourceKind.ContextualExample,
+                "first-tag-character-run",
+                null,
+                PresentationCapability.ContextualFormatting,
+                true,
+                null,
+                null,
+                Array.Empty<Diagnostic>());
+        }
+
         return new(placements, diagnostics, metadata, prepared) { Presentation = presentations };
     }
 
     private static bool IsDeferredBlockRole(string role) => role is "blockquote" or "codeBlock";
 
-    private static TemplateMetadata ResolveUsedBlockPresentation(TemplateMetadata metadata, YadgDocument model, IReadOnlyList<TemplatePlacement> placements, Styles? styles, Numbering? numbering, string location, bool yolo, List<Diagnostic> diagnostics, IDictionary<string, PresentationResolution> resolutions)
+    private static TemplateMetadata ResolveUsedBlockPresentation(
+        TemplateMetadata metadata,
+        YadgDocument model,
+        IReadOnlyList<TemplatePlacement> placements,
+        Styles? styles,
+        Numbering? numbering,
+        string location,
+        bool yolo,
+        List<Diagnostic> diagnostics,
+        IDictionary<string, PresentationResolution> resolutions
+    )
     {
-        var required = new HashSet<string>(StringComparer.Ordinal);
+        HashSet<string> required = new(StringComparer.Ordinal);
         foreach (var placement in placements)
         {
             var blocks = placement.Kind == PlacementKind.Section
                 ? MarkdownDocumentParser.Resolve(model, placement.SectionReference!, location).Blocks ?? Array.Empty<YadgBlock>()
                 : placement.Kind == PlacementKind.Table ? new YadgBlock[] { model.FindTable(placement.Id)! } : new YadgBlock[] { model.FindFigure(placement.Id)! };
-            foreach (var block in blocks) CollectBlockRoles(block, required);
+            foreach (var block in blocks)
+            {
+                CollectBlockRoles(block, required);
+            }
         }
-        var stylesToResolve = new Dictionary<string, string>(StringComparer.Ordinal);
+        Dictionary<string, string> stylesToResolve = new(StringComparer.Ordinal);
         foreach (var role in required)
         {
             var fallback = role == "blockquote" ? "Quote" : "HTMLPreformatted";
             stylesToResolve[role] = metadata.Styles.GetValueOrDefault(role, fallback);
         }
-        if (stylesToResolve.Count == 0) return metadata;
+        if (stylesToResolve.Count == 0)
+        {
+            return metadata;
+        }
+
         var result = ResolvePresentation(metadata with { Styles = stylesToResolve }, styles, numbering, location, yolo);
         diagnostics.AddRange(result.Diagnostics);
-        foreach (var pair in result.Roles) resolutions[pair.Key] = pair.Value;
-        var combined = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal);
-        foreach (var role in required) combined[role] = result.Metadata.Styles.GetValueOrDefault(role, stylesToResolve[role]);
+        foreach (var pair in result.Roles)
+        {
+            resolutions[pair.Key] = pair.Value;
+        }
+
+        Dictionary<string, string> combined = new(metadata.Styles, StringComparer.Ordinal);
+        foreach (var role in required)
+        {
+            combined[role] = result.Metadata.Styles.GetValueOrDefault(role, stylesToResolve[role]);
+        }
+
         return metadata with { Styles = combined };
     }
 
@@ -266,11 +632,21 @@ public static class WordAuthoring
             case YadgCodeBlock: roles.Add("codeBlock"); break;
             case YadgBlockQuote quote:
                 roles.Add("blockquote");
-                foreach (var child in quote.Blocks) CollectBlockRoles(child, roles);
+                foreach (var child in quote.Blocks)
+                {
+                    CollectBlockRoles(child, roles);
+                }
+
                 break;
             case YadgList list:
                 foreach (var item in list.Items)
-                    foreach (var nested in item.NestedLists ?? Array.Empty<YadgList>()) CollectBlockRoles(nested, roles);
+                {
+                    foreach (var nested in item.NestedLists ?? Array.Empty<YadgList>())
+                    {
+                        CollectBlockRoles(nested, roles);
+                    }
+                }
+
                 break;
         }
     }
@@ -283,87 +659,184 @@ public static class WordAuthoring
         YadgBlockQuote q => q.Blocks.Any(HasInlineCode),
         _ => false
     };
-    private static bool HasCode(YadgInline i) => i is YadgCode || i is YadgEmphasis e && e.Inlines.Any(HasCode) || i is YadgStrong s && s.Inlines.Any(HasCode) || i is YadgStrike st && st.Inlines.Any(HasCode);
+    private static bool HasCode(YadgInline i) => i is YadgCode || i is YadgEmphasis e && e.Inlines.Any(HasCode) || i is YadgStrong s && s.Inlines.Any(HasCode) ||
+            i is YadgStrike st && st.Inlines.Any(HasCode);
     private static bool IsUsedRoleDegradation(Diagnostic diagnostic, HashSet<string> used)
     {
-        if (diagnostic.Code is "YADG-YOLO-LIST-001" or "YADG-YOLO-LIST-002" or "YADG-YOLO-LIST-003") return used.Contains(diagnostic.Message.Contains("unordered", StringComparison.OrdinalIgnoreCase) ? "unordered" : "ordered");
+        if (diagnostic.Code is "YADG-YOLO-LIST-001" or "YADG-YOLO-LIST-002" or "YADG-YOLO-LIST-003")
+        {
+            return used.Contains(diagnostic.Message.Contains("unordered", StringComparison.OrdinalIgnoreCase) ? "unordered" : "ordered");
+        }
+
         if (diagnostic.Code == "YADG-YOLO-STYLE-001")
         {
             var role = Regex.Match(diagnostic.Message, @"role '([^']+)'");
-            if (!role.Success) role = Regex.Match(diagnostic.Message, @"role '?(heading[1-9])'?");
+            if (!role.Success)
+            {
+                role = Regex.Match(diagnostic.Message, @"role '?(heading[1-9])'?");
+            }
+
             return role.Success ? used.Contains(role.Groups[1].Value) : true;
         }
-        if (diagnostic.Code == "YADG-YOLO-TABLE-001") return used.Contains("generatedTable");
-        if (diagnostic.Code == "YADG-YOLO-CAPTION-001") return used.Contains("caption");
-        if (diagnostic.Code == "YADG-YOLO-PROTOTYPE-001") return diagnostic.Message.Contains("unordered", StringComparison.OrdinalIgnoreCase) ? used.Contains("unordered") : diagnostic.Message.Contains("ordered", StringComparison.OrdinalIgnoreCase) ? used.Contains("ordered") : true;
+        if (diagnostic.Code == "YADG-YOLO-TABLE-001")
+        {
+            return used.Contains("generatedTable");
+        }
+
+        if (diagnostic.Code == "YADG-YOLO-CAPTION-001")
+        {
+            return used.Contains("caption");
+        }
+
+        if (diagnostic.Code == "YADG-YOLO-PROTOTYPE-001")
+        {
+            return diagnostic.Message.Contains("unordered", StringComparison.OrdinalIgnoreCase) ? used.Contains("unordered") : diagnostic.Message.Contains("ordered", StringComparison.OrdinalIgnoreCase) ? used.Contains("ordered") : true;
+        }
+
         return true;
     }
 
-    private static TemplateMetadata RecoverListPrototypes(TemplateMetadata metadata, Styles? styles, Numbering? numbering, List<Diagnostic> diagnostics, string location)
+    private static TemplateMetadata RecoverListPrototypes(
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering,
+        List<Diagnostic> diagnostics,
+        string location
+    )
     {
-        var bindings = new Dictionary<string, string>(metadata.PrototypeBindings, StringComparer.Ordinal);
-        var prototypes = new Dictionary<string, CaptionPrototype>(metadata.ListItemPrototypes, StringComparer.Ordinal);
-        var allPrototypes = new Dictionary<string, CaptionPrototype>(metadata.Prototypes, StringComparer.Ordinal);
+        Dictionary<string, string> bindings = new(metadata.PrototypeBindings, StringComparer.Ordinal);
+        Dictionary<string, CaptionPrototype> prototypes = new(metadata.ListItemPrototypes, StringComparer.Ordinal);
+        Dictionary<string, CaptionPrototype> allPrototypes = new(metadata.Prototypes, StringComparer.Ordinal);
         foreach (var role in new[] { "unorderedListItem", "orderedListItem" })
         {
-            if (!bindings.TryGetValue(role, out var id)) continue;
-            var valid = prototypes.TryGetValue(id, out var prototype) && Regex.Matches(ParagraphText(prototype!.Paragraph), Regex.Escape("{{item}}" )).Count == 1 && ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int numId && numbering?.Elements<NumberingInstance>().Any(n => n.NumberID?.Value == numId) == true;
-            if (valid) continue;
+            if (!bindings.TryGetValue(role, out var id))
+            {
+                continue;
+            }
+
+            var valid = prototypes.TryGetValue(id, out var prototype) &&
+                    Regex.Matches(ParagraphText(prototype!.Paragraph), Regex.Escape("{{item}}")).Count == 1 &&
+    ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int numId &&
+    numbering?.Elements<NumberingInstance>().Any(n => n.NumberID?.Value == numId) == true;
+            if (valid)
+            {
+                continue;
+            }
+
             bindings.Remove(role); prototypes.Remove(id);
-            diagnostics.Add(new("YADG-YOLO-PROTOTYPE-001", $"Configured {role} prototype '{id}' is missing or unusable; fallback: deterministic list resource resolution.", false, location) { IsDegradation = true });
+            diagnostics.Add(new("YADG-YOLO-PROTOTYPE-001",
+                    $"Configured {role} prototype '{id}' is missing or unusable; fallback: deterministic list resource resolution.",
+                    false,
+                    location)
+            { IsDegradation = true });
         }
         foreach (var role in new[] { "figureCaption", "tableCaption" })
         {
-            if (!bindings.TryGetValue(role, out var id)) continue;
-            if (allPrototypes.TryGetValue(id, out var prototype) && prototype.SequenceFields == 1 && prototype.CaptionPlaceholders == 1) continue;
+            if (!bindings.TryGetValue(role, out var id))
+            {
+                continue;
+            }
+
+            if (allPrototypes.TryGetValue(id, out var prototype) && prototype.SequenceFields == 1 && prototype.CaptionPlaceholders == 1)
+            {
+                continue;
+            }
+
             bindings.Remove(role); allPrototypes.Remove(id);
-            diagnostics.Add(new("YADG-YOLO-PROTOTYPE-001", $"Configured {role} prototype '{id}' is missing or unusable; fallback: plain caption without invented numbering.", false, location) { IsDegradation = true });
+            diagnostics.Add(new("YADG-YOLO-PROTOTYPE-001",
+                    $"Configured {role} prototype '{id}' is missing or unusable; fallback: plain caption without invented numbering.",
+                    false,
+                    location)
+            { IsDegradation = true });
         }
         return metadata with { PrototypeBindings = bindings, ListItemPrototypes = prototypes, Prototypes = allPrototypes };
     }
 
-    public static void Author(string templatePath, string outputPath, YadgDocument model, IReadOnlyDictionary<string, string>? values = null, bool yolo = false)
+    public static void Author(
+        string templatePath,
+        string outputPath,
+        YadgDocument model,
+        IReadOnlyDictionary<string, string>? values = null,
+        bool yolo = false
+    )
     {
         values ??= new Dictionary<string, string>(StringComparer.Ordinal);
         using (var analysisDocument = WordprocessingDocument.Open(templatePath, false))
         {
             var analysis = AnalyzeOpen(analysisDocument, templatePath, model, values, yolo: yolo);
-            if (!analysis.IsValid) throw new WordAuthoringException(analysis.Diagnostics.First(d => d.IsError));
+            if (!analysis.IsValid)
+            {
+                throw new WordAuthoringException(analysis.Diagnostics.First(d => d.IsError));
+            }
         }
         File.Copy(templatePath, outputPath, true);
         using var document = WordprocessingDocument.Open(outputPath, true);
-        var outputDiagnostics = new List<Diagnostic>();
+        List<Diagnostic> outputDiagnostics = new();
         var metadata = ReadMetadata(document.MainDocumentPart!.Document.Body!, outputPath, outputDiagnostics);
         RemoveControlRegion(metadata);
         document.MainDocumentPart.Document.Save();
         var analysisOutput = AnalyzeOpen(document, outputPath, model, values, metadata, yolo);
-        if (!analysisOutput.IsValid) throw new WordAuthoringException(analysisOutput.Diagnostics.First(d => d.IsError));
+        if (!analysisOutput.IsValid)
+        {
+            throw new WordAuthoringException(analysisOutput.Diagnostics.First(d => d.IsError));
+        }
+
         metadata = analysisOutput.Metadata;
         metadata = metadata with { HyperlinkRelationships = CreateExternalHyperlinks(model, document.MainDocumentPart!) };
         var direct = analysisOutput.Placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).Select(p => (p.Kind, p.Id)).ToHashSet();
-        foreach (var binding in analysisOutput.PreparedBindings ?? Array.Empty<PreparedTableBinding>()) direct.Add((PlacementKind.Table, binding.Id));
+        foreach (var binding in analysisOutput.PreparedBindings ?? Array.Empty<PreparedTableBinding>())
+        {
+            direct.Add((PlacementKind.Table, binding.Id));
+        }
+
         var targetMap = BuildTargets(model, analysisOutput, document, outputPath);
         foreach (var binding in analysisOutput.PreparedBindings ?? Array.Empty<PreparedTableBinding>())
         {
             var table = model.FindTable(binding.Id)!;
             PopulatePreparedTable(binding, table, targetMap, metadata);
-            if (!targetMap.ContainsKey($"number:{table.Id}") && targetMap.TryGetValue(table.Id, out var tableAnchor)) WrapTableAnchor(binding.Table, StripSectionPrefix(tableAnchor));
+            if (!targetMap.ContainsKey($"number:{table.Id}") && targetMap.TryGetValue(table.Id, out var tableAnchor))
+            {
+                WrapTableAnchor(binding.Table, StripSectionPrefix(tableAnchor));
+            }
+
             if (!string.IsNullOrWhiteSpace(table.Caption))
+            {
                 binding.Table.InsertAfterSelf(CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targetMap));
+            }
         }
         foreach (var placement in analysisOutput.Placements.Reverse())
         {
             var blocks = placement.Kind == PlacementKind.Section
                 ? RebaseBlocks(MarkdownDocumentParser.Resolve(model, placement.SectionReference!, outputPath).Blocks!, placement)
                 : new[] { placement.Kind == PlacementKind.Table ? (YadgBlock)model.FindTable(placement.Id)! : model.FindFigure(placement.Id)! };
-            var elements = new List<OpenXmlElement>();
+            List<OpenXmlElement> elements = new();
             foreach (var block in blocks)
             {
-                if (placement.Kind == PlacementKind.Section && block is YadgTable table && direct.Contains((PlacementKind.Table, table.Id))) continue;
-                if (placement.Kind == PlacementKind.Section && block is YadgFigure figure && direct.Contains((PlacementKind.Figure, figure.Id))) continue;
-                elements.AddRange(CreateElements(block, placement.Anchor, document, metadata, targetMap, yolo, 0, document.MainDocumentPart.StyleDefinitionsPart?.Styles));
+                if (placement.Kind == PlacementKind.Section && block is YadgTable table && direct.Contains((PlacementKind.Table, table.Id)))
+                {
+                    continue;
+                }
+
+                if (placement.Kind == PlacementKind.Section && block is YadgFigure figure &&
+                        direct.Contains((PlacementKind.Figure, figure.Id)))
+                {
+                    continue;
+                }
+
+                elements.AddRange(CreateElements(block,
+                        placement.Anchor,
+                        document,
+                        metadata,
+                        targetMap,
+                        yolo,
+                        0,
+                        document.MainDocumentPart.StyleDefinitionsPart?.Styles));
             }
-            foreach (var element in elements) placement.Anchor.InsertBeforeSelf(element);
+            foreach (var element in elements)
+            {
+                placement.Anchor.InsertBeforeSelf(element);
+            }
+
             placement.Anchor.Remove();
         }
         ReplaceValues(document, values);
@@ -372,11 +845,12 @@ public static class WordAuthoring
 
     private static IReadOnlyDictionary<string, string> CreateExternalHyperlinks(YadgDocument model, MainDocumentPart main)
     {
-        var links = AllLinks(model).Where(link => link.InternalTargetId is null && !string.IsNullOrWhiteSpace(link.Destination) && Uri.TryCreate(link.Destination, UriKind.RelativeOrAbsolute, out _)).Select(link => link.Destination).Distinct(StringComparer.Ordinal);
-        var relationships = new Dictionary<string, string>(StringComparer.Ordinal);
+        var links = AllLinks(model).Where(link => link.InternalTargetId is null && !string.IsNullOrWhiteSpace(link.Destination) &&
+                Uri.TryCreate(link.Destination, UriKind.RelativeOrAbsolute, out _)).Select(link => link.Destination).Distinct(StringComparer.Ordinal);
+        Dictionary<string, string> relationships = new(StringComparer.Ordinal);
         foreach (var destination in links)
         {
-            var uri = new Uri(destination, UriKind.RelativeOrAbsolute);
+            Uri uri = new(destination, UriKind.RelativeOrAbsolute);
             relationships[destination] = main.AddHyperlinkRelationship(uri, true).Id;
         }
         return relationships;
@@ -403,28 +877,62 @@ public static class WordAuthoring
 
     private static string StripSectionPrefix(string value) => value.StartsWith("section:", StringComparison.Ordinal) ? value[8..] : value;
 
-    private static void AnalyzeParagraphs(IEnumerable<Paragraph> paragraphs, string templatePath, YadgDocument model, Styles? styles, Numbering? numbering, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, List<TemplatePlacement> placements, List<PreparedTableBinding> prepared, List<Diagnostic> diagnostics, IReadOnlyDictionary<string, string> values, string location, Body? body = null, bool yolo = false)
+    private static void AnalyzeParagraphs(
+        IEnumerable<Paragraph> paragraphs,
+        string templatePath,
+        YadgDocument model,
+        Styles? styles,
+        Numbering? numbering,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        List<TemplatePlacement> placements,
+        List<PreparedTableBinding> prepared,
+        List<Diagnostic> diagnostics,
+        IReadOnlyDictionary<string, string> values,
+        string location,
+        Body? body = null,
+        bool yolo = false
+    )
     {
-        var paragraphIndex = 0;
+        int paragraphIndex = 0;
         foreach (var paragraph in paragraphs)
         {
             paragraphIndex++;
             var story = StoryFor(paragraph, location);
             var structuralLocation = HumanLocation(paragraph, templatePath, story, paragraphIndex, styles);
-            if (metadata.ControlParagraphs.Contains(paragraph)) continue;
-            if (prepared.Any(p => paragraph.Ancestors<TableRow>().Contains(p.MarkerRow) || paragraph.Ancestors<TableRow>().Contains(p.PrototypeRow))) continue;
+            if (metadata.ControlParagraphs.Contains(paragraph))
+            {
+                continue;
+            }
+
+            if (prepared.Any(p => paragraph.Ancestors<TableRow>().Contains(p.MarkerRow) || paragraph.Ancestors<TableRow>().Contains(p.PrototypeRow)))
+            {
+                continue;
+            }
+
             var logical = ParagraphText(paragraph);
             var matches = TagLike.Matches(logical).Cast<Match>().ToArray();
-            if (matches.Length == 0) continue;
+            if (matches.Length == 0)
+            {
+                continue;
+            }
+
             var valueMatches = matches.Where(m => m.Value.StartsWith("{{value:", StringComparison.Ordinal)).ToArray();
             var valueLocationAllowed = IsSupportedValueLocation(story);
             if (valueMatches.Length > 0)
             {
-                if (!valueLocationAllowed) diagnostics.Add(new("YADG-VALUE-LOCATION", "Workspace value tags are not supported in this Word location.", true, structuralLocation));
+                if (!valueLocationAllowed)
+                {
+                    diagnostics.Add(new("YADG-VALUE-LOCATION", "Workspace value tags are not supported in this Word location.", true, structuralLocation));
+                }
+
                 foreach (var match in valueMatches)
                 {
                     var id = Regex.Match(match.Value, @"^\{\{value:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}$");
-                    if (!id.Success) diagnostics.Add(new("YADG-VALUE-001", $"Malformed workspace value tag '{match.Value}'.", true, structuralLocation));
+                    if (!id.Success)
+                    {
+                        diagnostics.Add(new("YADG-VALUE-001", $"Malformed workspace value tag '{match.Value}'.", true, structuralLocation));
+                    }
                     else if (!values.ContainsKey(id.Groups["id"].Value))
                     {
                         diagnostics.Add(new("YADG-VALUE-002", $"Workspace value '{id.Groups["id"].Value}' is not defined.", true, structuralLocation));
@@ -433,21 +941,47 @@ public static class WordAuthoring
                 }
             }
             var nonValueMatches = matches.Where(m => !m.Value.StartsWith("{{value:", StringComparison.Ordinal)).ToArray();
-            if (valueMatches.Length > 0 && nonValueMatches.Length == 0) continue;
+            if (valueMatches.Length > 0 && nonValueMatches.Length == 0)
+            {
+                continue;
+            }
+
             if (location != "body" || paragraph.Parent is not Body)
-            { diagnostics.Add(new("YADG-WORD-LOCATION", "Non-value YADG tags are supported only as standalone paragraphs in the main document body.", true, structuralLocation)); continue; }
+            {
+                diagnostics.Add(new("YADG-WORD-LOCATION",
+                        "Non-value YADG tags are supported only as standalone paragraphs in the main document body.",
+                        true,
+                        structuralLocation)); continue;
+            }
             foreach (var match in matches)
             {
-                if (match.Value.StartsWith("{{value:", StringComparison.Ordinal)) continue;
-                if (!string.Equals(logical.Trim(), match.Value, StringComparison.Ordinal)) { diagnostics.Add(new("YADG-WORD-BLOCK", $"Block tag '{match.Value}' must be the only non-whitespace paragraph content.", true, structuralLocation)); continue; }
+                if (match.Value.StartsWith("{{value:", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(logical.Trim(), match.Value, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(new("YADG-WORD-BLOCK",
+                            $"Block tag '{match.Value}' must be the only non-whitespace paragraph content.",
+                            true,
+                            structuralLocation)); continue;
+                }
                 var direct = DirectTag.Match(match.Value);
                 if (direct.Success)
                 {
                     var kind = direct.Groups[1].Value == "table" ? PlacementKind.Table : PlacementKind.Figure; var id = direct.Groups[2].Value;
                     if (kind == PlacementKind.Table && model.FindTable(id) is null) { diagnostics.Add(new("YADG-REF-003", $"Tag '{match.Value}' does not resolve to a table.", true, structuralLocation)); continue; }
                     if (kind == PlacementKind.Figure && model.FindFigure(id) is null) { diagnostics.Add(new("YADG-REF-003", $"Tag '{match.Value}' does not resolve to a figure.", true, structuralLocation)); continue; }
-                    if (kind == PlacementKind.Table) ValidateTable(model.FindTable(id)!, styles, metadata, presentation, structuralLocation, diagnostics, yolo);
-                    else ValidateFigure(model.FindFigure(id)!, styles, metadata, presentation, paragraph, structuralLocation, diagnostics, yolo);
+                    if (kind == PlacementKind.Table)
+                    {
+                        ValidateTable(model.FindTable(id)!, styles, metadata, presentation, structuralLocation, diagnostics, yolo);
+                    }
+                    else
+                    {
+                        ValidateFigure(model.FindFigure(id)!, styles, metadata, presentation, paragraph, structuralLocation, diagnostics, yolo);
+                    }
+
                     placements.Add(new(paragraph, kind, id)); continue;
                 }
                 if (SectionReference.TryParseTag(match.Value, out var sectionReference, out _))
@@ -456,10 +990,24 @@ public static class WordAuthoring
                     if (resolved.Diagnostic is not null) { diagnostics.Add(resolved.Diagnostic with { Location = structuralLocation.FilePath, StructuredLocation = structuralLocation }); continue; }
                     var context = body is not null && paragraph.Parent is Body ? ResolveTemplateContext(body, paragraph, styles) : 0;
                     var rootLevel = model.FindSection(sectionReference!.Id)!.Heading.Level;
-                    ValidateBlocks(resolved.Blocks!, styles, numbering, metadata, presentation, paragraph, structuralLocation, diagnostics, context, sectionReference.Selection, rootLevel, yolo);
+                    ValidateBlocks(resolved.Blocks!,
+                            styles,
+                            numbering,
+                            metadata,
+                            presentation,
+                            paragraph,
+                            structuralLocation,
+                            diagnostics,
+                            context,
+                            sectionReference.Selection,
+                            rootLevel,
+                            yolo);
                     placements.Add(new(paragraph, PlacementKind.Section, sectionReference.Id, sectionReference, context, rootLevel));
                 }
-                else diagnostics.Add(new("YADG-TAG-001", $"Malformed or unsupported tag '{match.Value}'.", true, structuralLocation));
+                else
+                {
+                    diagnostics.Add(new("YADG-TAG-001", $"Malformed or unsupported tag '{match.Value}'.", true, structuralLocation));
+                }
             }
         }
     }
@@ -467,32 +1015,61 @@ public static class WordAuthoring
     private static string StoryFor(Paragraph paragraph, string fallback)
         => paragraph.Ancestors().Any(element => element.LocalName == "txbxContent") ? $"{fallback}/text box" : fallback;
 
-    private static DocxLocation HumanLocation(Paragraph paragraph, string templatePath, string story, int ordinal, Styles? styles)
+    private static DocxLocation HumanLocation(
+        Paragraph paragraph,
+        string templatePath,
+        string story,
+        int ordinal,
+        Styles? styles
+    )
     {
         var near = BoundExcerpt(ParagraphText(paragraph));
-        var headings = new List<string>();
+        List<string> headings = new();
         if (story == "body" && paragraph.Parent is Body body)
         {
             foreach (var prior in body.Elements<Paragraph>().TakeWhile(p => p != paragraph))
             {
                 var level = EffectiveOutlineLevel(prior, styles);
-                if (level is not (>= 1 and <= 9)) continue;
-                var text = ParagraphText(prior); if (string.IsNullOrWhiteSpace(text)) continue;
-                while (headings.Count >= level.Value) headings.RemoveAt(headings.Count - 1);
+                if (level is not (>= 1 and <= 9))
+                {
+                    continue;
+                }
+
+                var text = ParagraphText(prior);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                while (headings.Count >= level.Value)
+                {
+                    headings.RemoveAt(headings.Count - 1);
+                }
+
                 headings.Add($"\"{BoundExcerpt(text, 80)}\"");
             }
         }
         var textBox = paragraph.Ancestors().FirstOrDefault(element => element.LocalName == "txbxContent");
         var effectiveStory = textBox is null ? story : $"{story}/text box";
         var paraId = paragraph.GetAttributes().FirstOrDefault(attribute => attribute.LocalName == "paraId" && attribute.NamespaceUri == "http://schemas.microsoft.com/office/word/2010/wordml").Value;
-        return new(templatePath, effectiveStory, headings, ordinal, near, paragraph.Ancestors().FirstOrDefault(element => element is Header or Footer)?.LocalName, string.IsNullOrEmpty(paraId) ? null : paraId);
+        return new(templatePath,
+                effectiveStory,
+                headings,
+                ordinal,
+                near,
+                paragraph.Ancestors().FirstOrDefault(element => element is Header or Footer)?.LocalName,
+                string.IsNullOrEmpty(paraId) ? null : paraId);
     }
 
     private static string FormatDocxLocation(DocxLocation location, string? workspaceRoot) => location.Format(DisplayPath(location.FilePath, workspaceRoot));
 
     private static string DisplayPath(string path, string? workspaceRoot)
     {
-        if (workspaceRoot is null) return path;
+        if (workspaceRoot is null)
+        {
+            return path;
+        }
+
         var root = Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var fullPath = Path.GetFullPath(path);
         return fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(workspaceRoot, fullPath).Replace('\\', '/') : path;
@@ -504,7 +1081,13 @@ public static class WordAuthoring
         return normalized.Length <= limit ? normalized : normalized[..limit] + "…";
     }
 
-    private static void AnalyzePreparedTables(Body body, string location, YadgDocument model, List<PreparedTableBinding> bindings, List<Diagnostic> diagnostics)
+    private static void AnalyzePreparedTables(
+        Body body,
+        string location,
+        YadgDocument model,
+        List<PreparedTableBinding> bindings,
+        List<Diagnostic> diagnostics
+    )
     {
         foreach (var table in body.Descendants<Table>().Where(t => t.Ancestors<Table>().FirstOrDefault() is null))
         {
@@ -516,11 +1099,19 @@ public static class WordAuthoring
                 if (!match.Success)
                 {
                     if (TagLike.Matches(markerText).Cast<Match>().Any(m => m.Value.StartsWith("{{table-rows:", StringComparison.Ordinal)))
+                    {
                         diagnostics.Add(new("YADG-PREPARED-001", "Prepared marker row must contain only one table-rows marker and whitespace.", true, location));
+                    }
+
                     continue;
                 }
-                if (!string.Equals(markerText.Trim(), match.Value, StringComparison.Ordinal) || rows[i].Elements<TableCell>().SelectMany(c => c.Descendants<Text>()).Any(t => t.Text?.Contains("{{table-rows:", StringComparison.Ordinal) == true && !markerText.Trim().Equals(match.Value, StringComparison.Ordinal)))
+                if (!string.Equals(markerText.Trim(), match.Value, StringComparison.Ordinal) ||
+    rows[i].Elements<TableCell>().SelectMany(c => c.Descendants<Text>()).Any(t => t.Text?.Contains("{{table-rows:", StringComparison.Ordinal) == true &&
+                        !markerText.Trim().Equals(match.Value, StringComparison.Ordinal)))
+                {
                     diagnostics.Add(new("YADG-PREPARED-001", "Prepared marker row must contain only one table-rows marker and whitespace.", true, location));
+                }
+
                 var id = match.Groups[1].Value;
                 var semantic = model.FindTable(id);
                 if (semantic is null) { diagnostics.Add(new("YADG-REF-003", $"Prepared marker '{match.Value}' does not resolve to a table.", true, location)); continue; }
@@ -533,17 +1124,25 @@ public static class WordAuthoring
     }
 
     private static bool IsSupportedValueLocation(string location)
-        => location is "body" or "header" or "footer" or "footnote" or "endnote" or "comment" || location.EndsWith("/text box", StringComparison.Ordinal);
+        => location is "body" or "header" or "footer" or "footnote" or "endnote" or "comment" ||
+            location.EndsWith("/text box", StringComparison.Ordinal);
 
     private static string ParagraphText(Paragraph paragraph)
         => string.Concat(paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).Select(t => t.Text));
 
-    private static int ResolveTemplateContext(Body body, Paragraph placement, Styles? styles)
+    private static int ResolveTemplateContext(
+        Body body,
+        Paragraph placement,
+        Styles? styles
+    )
     {
         foreach (var paragraph in body.Elements<Paragraph>().TakeWhile(p => !ReferenceEquals(p, placement)).Reverse())
         {
             var level = EffectiveOutlineLevel(paragraph, styles);
-            if (level is >= 1 and <= 9) return level.Value;
+            if (level is >= 1 and <= 9)
+            {
+                return level.Value;
+            }
         }
         return 0;
     }
@@ -551,45 +1150,124 @@ public static class WordAuthoring
     private static int? EffectiveOutlineLevel(Paragraph paragraph, Styles? styles)
     {
         var direct = paragraph.ParagraphProperties?.OutlineLevel?.Val?.Value;
-        if (direct is not null) return direct + 1;
+        if (direct is not null)
+        {
+            return direct + 1;
+        }
+
         var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        HashSet<string> seen = new(StringComparer.Ordinal);
         while (styles is not null && !string.IsNullOrEmpty(styleId) && seen.Add(styleId))
         {
             var style = styles.Descendants<Style>().FirstOrDefault(s => s.StyleId?.Value == styleId);
-            if (style is null) break;
+            if (style is null)
+            {
+                break;
+            }
+
             var outline = style.StyleParagraphProperties?.OutlineLevel?.Val?.Value;
-            if (outline is not null) return outline + 1;
+            if (outline is not null)
+            {
+                return outline + 1;
+            }
+
             styleId = style.BasedOn?.Val?.Value;
         }
         return null;
     }
 
-    private static void ValidatePrototype(TableRow prototype, YadgTable semantic, string id, string location, List<Diagnostic> diagnostics)
+    private static void ValidatePrototype(
+        TableRow prototype,
+        YadgTable semantic,
+        string id,
+        string location,
+        List<Diagnostic> diagnostics
+    )
     {
         if ((semantic.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(semantic.GridRows?.SelectMany(r => r) ?? Array.Empty<YadgTableCell>()).Any(cell => cell.ColumnSpan > 1 || cell.RowSpan > 1 || cell.Paragraphs.Count != 1))
-            diagnostics.Add(new("YADG-PREPARED-010", $"Prepared table '{id}' supports only rectangular single-paragraph cells; merged cells and multiple cell paragraphs are unsupported for prepared row population.", true, location));
+        {
+            diagnostics.Add(new("YADG-PREPARED-010",
+                $"Prepared table '{id}' supports only rectangular single-paragraph cells; merged cells and multiple cell paragraphs are unsupported for prepared row population.",
+                true,
+                location));
+        }
+
         var cells = prototype.Elements<TableCell>().ToArray();
         if (cells.Length != semantic.Header.Count)
-            diagnostics.Add(new("YADG-PREPARED-003", $"Prepared table '{id}' prototype has {cells.Length} cells but the semantic table has {semantic.Header.Count} columns.", true, location));
-        if (prototype.Descendants<GridSpan>().Any(g => (g.Val?.Value ?? 1) > 1)) diagnostics.Add(new("YADG-PREPARED-004", $"Prepared table '{id}' prototype cannot contain horizontal grid spans.", true, location));
-        if (prototype.Descendants<VerticalMerge>().Any()) diagnostics.Add(new("YADG-PREPARED-005", $"Prepared table '{id}' prototype cannot contain vertical merges.", true, location));
+        {
+            diagnostics.Add(new("YADG-PREPARED-003",
+                $"Prepared table '{id}' prototype has {cells.Length} cells but the semantic table has {semantic.Header.Count} columns.",
+                true,
+                location));
+        }
+
+        if (prototype.Descendants<GridSpan>().Any(g => (g.Val?.Value ?? 1) > 1))
+        {
+            diagnostics.Add(new("YADG-PREPARED-004", $"Prepared table '{id}' prototype cannot contain horizontal grid spans.", true, location));
+        }
+
+        if (prototype.Descendants<VerticalMerge>().Any())
+        {
+            diagnostics.Add(new("YADG-PREPARED-005", $"Prepared table '{id}' prototype cannot contain vertical merges.", true, location));
+        }
+
         foreach (var cell in cells)
         {
             var paragraphCount = cell.Elements<Paragraph>().Count();
             if (paragraphCount != 1 || cell.Elements<OpenXmlElement>().Any(e => e is not Paragraph && e is not TableCellProperties))
-                diagnostics.Add(new("YADG-PREPARED-006", $"Each prepared table '{id}' prototype cell must contain exactly one ordinary paragraph.", true, location));
-            if (cell.Descendants<Table>().Any() || cell.Descendants<Drawing>().Any() || cell.Descendants<SdtElement>().Any() || cell.Descendants<BookmarkStart>().Any() || cell.Descendants<BookmarkEnd>().Any() || cell.Descendants<SimpleField>().Any() || cell.Descendants<FieldChar>().Any() || cell.Descendants<FieldCode>().Any())
-                diagnostics.Add(new("YADG-PREPARED-007", $"Prepared table '{id}' prototype contains a forbidden nested structure, field, bookmark, drawing, or content control.", true, location));
+            {
+                diagnostics.Add(new("YADG-PREPARED-006",
+                    $"Each prepared table '{id}' prototype cell must contain exactly one ordinary paragraph.",
+                    true,
+                    location));
+            }
+
+            if (cell.Descendants<Table>().Any() || cell.Descendants<Drawing>().Any() || cell.Descendants<SdtElement>().Any() ||
+                    cell.Descendants<BookmarkStart>().Any() ||
+    cell.Descendants<BookmarkEnd>().Any() ||
+    cell.Descendants<SimpleField>().Any() ||
+    cell.Descendants<FieldChar>().Any() ||
+    cell.Descendants<FieldCode>().Any())
+            {
+                diagnostics.Add(new("YADG-PREPARED-007",
+                    $"Prepared table '{id}' prototype contains a forbidden nested structure, field, bookmark, drawing, or content control.",
+                    true,
+                    location));
+            }
+
             var text = LogicalText(cell);
             if (CellTag.Matches(text).Count != 1)
-                diagnostics.Add(new("YADG-PREPARED-008", $"Each prepared table '{id}' prototype cell must contain exactly one logical {{cell}} placeholder.", true, location));
+            {
+                diagnostics.Add(new("YADG-PREPARED-008",
+                    $"Each prepared table '{id}' prototype cell must contain exactly one logical {{cell}} placeholder.",
+                    true,
+                    location));
+            }
+
             foreach (var tag in TagLike.Matches(text).Cast<Match>())
-                if (!string.Equals(tag.Value, "{{cell}}", StringComparison.Ordinal)) diagnostics.Add(new("YADG-PREPARED-009", $"Prepared table '{id}' prototype contains forbidden YADG tag '{tag.Value}'.", true, location));
+            {
+                if (!string.Equals(tag.Value, "{{cell}}", StringComparison.Ordinal))
+                {
+                    diagnostics.Add(new("YADG-PREPARED-009", $"Prepared table '{id}' prototype contains forbidden YADG tag '{tag.Value}'.", true, location));
+                }
+            }
         }
     }
 
-    private static void ValidateBlocks(IEnumerable<YadgBlock> blocks, Styles? styles, Numbering? numbering, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, Paragraph anchor, DocxLocation location, List<Diagnostic> diagnostics, int contextLevel = 0, SectionSelection selection = SectionSelection.Section, int rootLevel = 0, bool yolo = false)
+    private static void ValidateBlocks(
+        IEnumerable<YadgBlock> blocks,
+        Styles? styles,
+        Numbering? numbering,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        Paragraph anchor,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        int contextLevel = 0,
+        SectionSelection selection = SectionSelection.Section,
+        int rootLevel = 0,
+        bool yolo = false
+    )
     {
         foreach (var block in blocks)
         {
@@ -597,21 +1275,70 @@ public static class WordAuthoring
             {
                 case YadgHeading heading:
                     var effective = EffectiveHeadingLevel(heading.Level, contextLevel, selection, rootLevel);
-                    if (effective > 9) diagnostics.Add(new("YADG-WORD-HEADING-OVERFLOW", $"Markdown heading level {heading.Level} rebases to unsupported effective Word heading level {effective}.", true, location));
-                    else if (presentation.TryGetValue($"heading{effective}", out var headingResolution) && !headingResolution.StrictResolved && !yolo) diagnostics.Add(new("YADG-WORD-STYLE", $"Heading role 'heading{effective}' has no compatible template paragraph style.", true, location));
+                    if (effective > 9)
+                    {
+                        diagnostics.Add(new("YADG-WORD-HEADING-OVERFLOW",
+                        $"Markdown heading level {heading.Level} rebases to unsupported effective Word heading level {effective}.",
+                        true,
+                        location));
+                    }
+                    else if (presentation.TryGetValue($"heading{effective}", out var headingResolution) && !headingResolution.StrictResolved &&
+                        !yolo)
+                    {
+                        diagnostics.Add(new("YADG-WORD-STYLE", $"Heading role 'heading{effective}' has no compatible template paragraph style.", true, location));
+                    }
+
                     break;
                 case YadgList list:
                     ValidateList(list, styles, numbering, metadata, presentation, location, diagnostics, yolo);
-                    foreach (var nested in list.Items.SelectMany(item => item.NestedLists ?? Array.Empty<YadgList>())) ValidateBlocks(new YadgBlock[] { nested }, styles, numbering, metadata, presentation, anchor, location, diagnostics, contextLevel, selection, rootLevel, yolo);
+                    foreach (var nested in list.Items.SelectMany(item => item.NestedLists ?? Array.Empty<YadgList>()))
+                    {
+                        ValidateBlocks(new YadgBlock[] { nested },
+                        styles,
+                        numbering,
+                        metadata,
+                        presentation,
+                        anchor,
+                        location,
+                        diagnostics,
+                        contextLevel,
+                        selection,
+                        rootLevel,
+                        yolo);
+                    }
+
                     break;
                 case YadgTable table: ValidateTable(table, styles, metadata, presentation, location, diagnostics, yolo); break;
                 case YadgFigure figure: ValidateFigure(figure, styles, metadata, presentation, anchor, location, diagnostics, yolo); break;
-                case YadgBlockQuote quote: ValidateBlocks(quote.Blocks, styles, numbering, metadata, presentation, anchor, location, diagnostics, contextLevel, selection, rootLevel, yolo); break;
+                case YadgBlockQuote quote:
+                    ValidateBlocks(quote.Blocks,
+                        styles,
+                        numbering,
+                        metadata,
+                        presentation,
+                        anchor,
+                        location,
+                        diagnostics,
+                        contextLevel,
+                        selection,
+                        rootLevel,
+                        yolo); break;
             }
         }
     }
 
-    private static TemplateMetadata ResolveUsedCodeInlineStyle(TemplateMetadata metadata, YadgDocument model, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, Styles? styles, Numbering? numbering, List<Diagnostic> diagnostics, string location, bool yolo, out PresentationResolution? resolution)
+    private static TemplateMetadata ResolveUsedCodeInlineStyle(
+        TemplateMetadata metadata,
+        YadgDocument model,
+        IReadOnlyList<TemplatePlacement> placements,
+        IReadOnlyList<PreparedTableBinding> prepared,
+        Styles? styles,
+        Numbering? numbering,
+        List<Diagnostic> diagnostics,
+        string location,
+        bool yolo,
+        out PresentationResolution? resolution
+    )
     {
         resolution = null;
         IEnumerable<YadgBlock> selectedBlocks()
@@ -621,12 +1348,30 @@ public static class WordAuthoring
                 if (placement.Kind == PlacementKind.Section)
                 {
                     var resolved = MarkdownDocumentParser.Resolve(model, placement.SectionReference!, location);
-                    if (resolved.Blocks is not null) foreach (var block in resolved.Blocks) yield return block;
+                    if (resolved.Blocks is not null)
+                    {
+                        foreach (var block in resolved.Blocks)
+                        {
+                            yield return block;
+                        }
+                    }
                 }
-                else if (placement.Kind == PlacementKind.Table && model.FindTable(placement.Id) is { } table) yield return table;
-                else if (placement.Kind == PlacementKind.Figure && model.FindFigure(placement.Id) is { } figure) yield return figure;
+                else if (placement.Kind == PlacementKind.Table && model.FindTable(placement.Id) is { } table)
+                {
+                    yield return table;
+                }
+                else if (placement.Kind == PlacementKind.Figure && model.FindFigure(placement.Id) is { } figure)
+                {
+                    yield return figure;
+                }
             }
-            foreach (var binding in prepared) if (model.FindTable(binding.Id) is { } table) yield return table;
+            foreach (var binding in prepared)
+            {
+                if (model.FindTable(binding.Id) is { } table)
+                {
+                    yield return table;
+                }
+            }
         }
         IEnumerable<YadgInline> allInlines(YadgBlock block) => block switch
         {
@@ -637,69 +1382,178 @@ public static class WordAuthoring
             _ => Array.Empty<YadgInline>()
         };
         IEnumerable<YadgInline> descendants(IEnumerable<YadgInline> inlines) => inlines.SelectMany(inline => inline switch { YadgEmphasis e => new[] { inline }.Concat(descendants(e.Inlines)), YadgStrong s => new[] { inline }.Concat(descendants(s.Inlines)), YadgStrike st => new[] { inline }.Concat(descendants(st.Inlines)), YadgLink link => new[] { inline }.Concat(descendants(link.Inlines)), _ => new[] { inline } });
-        if (!selectedBlocks().SelectMany(allInlines).SelectMany(inline => descendants(new[] { inline })).Any(inline => inline is YadgCode)) return metadata;
+        if (!selectedBlocks().SelectMany(allInlines).SelectMany(inline => descendants(new[] { inline })).Any(inline => inline is YadgCode))
+        {
+            return metadata;
+        }
+
         var selector = metadata.Styles.GetValueOrDefault("codeInline", "__missing_codeInline__");
-        var stylesMap = new Dictionary<string, string>(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = selector };
+        Dictionary<string, string> stylesMap = new(metadata.Styles, StringComparer.Ordinal) { ["codeInline"] = selector };
         var resolved = ResolvePresentation(metadata with { Styles = stylesMap }, styles, numbering, location, yolo);
         diagnostics.AddRange(resolved.Diagnostics);
         resolution = resolved.Roles["codeInline"];
         if (!resolution.StrictResolved && !yolo && !resolved.Diagnostics.Any(d => d.IsError))
-            diagnostics.Add(new("YADG-WORD-STYLE", selector == "__missing_codeInline__" ? "Styled inline code requires a character style role 'codeInline'. Configure it in template front matter and inspect available styles with yadg inspect styles." : $"Style selector '{selector}' does not resolve to a usable character style. Run yadg inspect styles.", true, location));
-        else if (!resolution.StrictResolved && resolution.YoloBuiltinFallback is not null && !resolved.Diagnostics.Any(d => d.Code == "YADG-YOLO-CODE-001"))
-            diagnostics.Add(new("YADG-YOLO-CODE-001", $"Configured inline-code style '{selector}' is unavailable; fallback: ordinary text.", false, location) { IsDegradation = true });
+        {
+            diagnostics.Add(new("YADG-WORD-STYLE",
+                selector == "__missing_codeInline__" ? "Styled inline code requires a character style role 'codeInline'. Configure it in template front matter and inspect available styles with yadg inspect styles." : $"Style selector '{selector}' does not resolve to a usable character style. Run yadg inspect styles.",
+                true,
+                location));
+        }
+        else if (!resolution.StrictResolved && resolution.YoloBuiltinFallback is not null &&
+                !resolved.Diagnostics.Any(d => d.Code == "YADG-YOLO-CODE-001"))
+        {
+            diagnostics.Add(new("YADG-YOLO-CODE-001",
+                $"Configured inline-code style '{selector}' is unavailable; fallback: ordinary text.",
+                false,
+                location)
+            { IsDegradation = true });
+        }
+
         return resolved.Metadata;
     }
 
-    private static void ValidateList(YadgList list, Styles? styles, Numbering? numbering, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, DocxLocation location, List<Diagnostic> diagnostics, bool yolo = false)
+    private static void ValidateList(
+        YadgList list,
+        Styles? styles,
+        Numbering? numbering,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        bool yolo = false
+    )
     {
         var role = list.Ordered ? "ordered" : "unordered";
         presentation.TryGetValue(role, out var resolution);
-        if (resolution?.SourceKind == PresentationSourceKind.BuiltinFallback && yolo) return;
+        if (resolution?.SourceKind == PresentationSourceKind.BuiltinFallback && yolo)
+        {
+            return;
+        }
+
         if (resolution?.SourceKind == PresentationSourceKind.Prototype && resolution.StrictResolved)
         {
             var prototypeId = resolution.SourceId!;
             if (!metadata.ListItemPrototypes.TryGetValue(prototypeId, out var prototype)) { diagnostics.Add(new("YADG-WORD-LIST", $"Configured list prototype '{prototypeId}' is missing.", true, location)); return; }
-            if (ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is not int prototypeNum || ListCapability(styles, numbering, prototypeNum, list.Level) != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet)) diagnostics.Add(new("YADG-WORD-LIST", $"List prototype '{prototypeId}' has no valid effective {(list.Ordered ? "ordered" : "bullet")} numbering at level {list.Level + 1}.", true, location));
+            if (ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is not int prototypeNum ||
+                    ListCapability(styles, numbering, prototypeNum, list.Level) != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet))
+            {
+                diagnostics.Add(new("YADG-WORD-LIST",
+                    $"List prototype '{prototypeId}' has no valid effective {(list.Ordered ? "ordered" : "bullet")} numbering at level {list.Level + 1}.",
+                    true,
+                    location));
+            }
+
             return;
         }
         var style = StyleFor(metadata, role, list.Ordered ? "ListNumber" : "ListBullet");
-        if (!HasStyle(styles, style)) { if (yolo) diagnostics.Add(new("YADG-YOLO-LIST-001", $"List style '{style}' is unavailable; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.", false, location) { IsDegradation = true }); else diagnostics.Add(new("YADG-WORD-LIST", $"Missing required list style '{style}'. Run yadg inspect styles to discover available styles.", true, location)); return; }
+        if (!HasStyle(styles, style))
+        {
+            if (yolo)
+            {
+                diagnostics.Add(new("YADG-YOLO-LIST-001",
+                    $"List style '{style}' is unavailable; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.",
+                    false,
+                    location)
+                { IsDegradation = true });
+            }
+            else
+            {
+                diagnostics.Add(new("YADG-WORD-LIST",
+                    $"Missing required list style '{style}'. Run yadg inspect styles to discover available styles.",
+                    true,
+                    location));
+            }
+
+            return;
+        }
         var numId = ResolveNumberingId(styles!, style, numbering);
         var capability = numId is int resolvedNum ? ListCapability(styles, numbering, resolvedNum, list.Level) : ListNumberingCapability.None;
-        if (capability != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet)) { if (yolo) diagnostics.Add(new("YADG-YOLO-LIST-002", $"List style '{style}' has no usable {(list.Ordered ? "ordered" : "bullet")} numbering; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.", false, location) { IsDegradation = true }); else diagnostics.Add(new("YADG-WORD-LIST", $"List style '{style}' does not resolve to valid {(list.Ordered ? "ordered" : "bullet")} numbering. Run yadg inspect styles or bind an unorderedListItem/orderedListItem prototype.", true, location)); }
+        if (capability != (list.Ordered ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet))
+        {
+            if (yolo)
+            {
+                diagnostics.Add(new("YADG-YOLO-LIST-002",
+                    $"List style '{style}' has no usable {(list.Ordered ? "ordered" : "bullet")} numbering; fallback: builtin:{(list.Ordered ? "ordered" : "unordered")}-list-v1.",
+                    false,
+                    location)
+                { IsDegradation = true });
+            }
+            else
+            {
+                diagnostics.Add(new("YADG-WORD-LIST",
+                    $"List style '{style}' does not resolve to valid {(list.Ordered ? "ordered" : "bullet")} numbering. Run yadg inspect styles or bind an unorderedListItem/orderedListItem prototype.",
+                    true,
+                    location));
+            }
+        }
     }
 
-    private static int? ResolveParagraphNumberingId(Paragraph paragraph, Styles? styles, Numbering? numbering = null)
+    private static int? ResolveParagraphNumberingId(
+        Paragraph paragraph,
+        Styles? styles,
+        Numbering? numbering = null
+    )
     {
         var direct = paragraph.ParagraphProperties?.NumberingProperties?.NumberingId?.Val?.Value;
-        if (direct is not null) return direct;
+        if (direct is not null)
+        {
+            return direct;
+        }
+
         var id = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
         return id is null || styles is null ? null : ResolveNumberingId(styles, id, numbering);
     }
 
     private static int? ResolveNumberingId(Styles styles, string styleId)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        HashSet<string> seen = new(StringComparer.Ordinal);
         while (seen.Add(styleId))
         {
             var style = styles.Descendants<Style>().FirstOrDefault(s => s.StyleId?.Value == styleId);
-            if (style is null) return null;
+            if (style is null)
+            {
+                return null;
+            }
+
             var direct = style.StyleParagraphProperties?.NumberingProperties?.NumberingId?.Val?.Value;
-            if (direct is not null) return direct;
+            if (direct is not null)
+            {
+                return direct;
+            }
+
             styleId = style.BasedOn?.Val?.Value ?? string.Empty;
-            if (styleId.Length == 0) return null;
+            if (styleId.Length == 0)
+            {
+                return null;
+            }
         }
         return null;
     }
 
-    private static int? ResolveNumberingId(Styles styles, string styleId, Numbering? numbering)
+    private static int? ResolveNumberingId(
+        Styles styles,
+        string styleId,
+        Numbering? numbering
+    )
     {
         var direct = ResolveNumberingId(styles, styleId);
-        if (direct is not null) return direct;
-        if (numbering is null) return null;
-        var styleChain = new HashSet<string>(StringComparer.Ordinal);
+        if (direct is not null)
+        {
+            return direct;
+        }
+
+        if (numbering is null)
+        {
+            return null;
+        }
+
+        HashSet<string> styleChain = new(StringComparer.Ordinal);
         var chainId = styleId;
-        while (chainId.Length > 0 && styleChain.Add(chainId)) chainId = styles.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == chainId)?.BasedOn?.Val?.Value ?? string.Empty;
+        while (chainId.Length > 0 && styleChain.Add(chainId))
+        {
+            chainId = styles.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == chainId)?.BasedOn?.Val?.Value ?? string.Empty;
+        }
+
         var abstractIds = numbering.Elements<NumberingInstance>().Where(instance =>
         {
             var abstractId = instance.AbstractNumId?.Val?.Value;
@@ -709,12 +1563,18 @@ public static class WordAuthoring
         return abstractIds.Length == 1 ? abstractIds[0] : null;
     }
 
-    private static PresentationResolutionSet ResolvePresentation(TemplateMetadata metadata, Styles? styles, Numbering? numbering, string location, bool yolo)
+    private static PresentationResolutionSet ResolvePresentation(
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering,
+        string location,
+        bool yolo
+    )
     {
         var available = styles?.Elements<Style>().ToArray() ?? Array.Empty<Style>();
-        var resolvedStyles = new Dictionary<string, string>(StringComparer.Ordinal);
-        var resolutions = new Dictionary<string, PresentationResolution>(StringComparer.Ordinal);
-        var diagnostics = new List<Diagnostic>();
+        Dictionary<string, string> resolvedStyles = new(StringComparer.Ordinal);
+        Dictionary<string, PresentationResolution> resolutions = new(StringComparer.Ordinal);
+        List<Diagnostic> diagnostics = new();
         foreach (var (role, selector) in metadata.Styles.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             var expectedType = role == "generatedTable" ? StyleValues.Table : role == "codeInline" ? StyleValues.Character : StyleValues.Paragraph;
@@ -729,23 +1589,45 @@ public static class WordAuthoring
                 _ => PresentationCapability.Paragraph
             };
             var prototypeRole = role switch { "unordered" => "unorderedListItem", "ordered" => "orderedListItem", "caption" => "figureCaption", _ => null };
-            if (role == "caption" && !metadata.PrototypeBindings.ContainsKey("figureCaption")) prototypeRole = "tableCaption";
-            if (prototypeRole is not null && metadata.PrototypeBindings.TryGetValue(prototypeRole, out var prototypeId) && metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
+            if (role == "caption" && !metadata.PrototypeBindings.ContainsKey("figureCaption"))
+            {
+                prototypeRole = "tableCaption";
+            }
+
+            if (prototypeRole is not null && metadata.PrototypeBindings.TryGetValue(prototypeRole, out var prototypeId) &&
+                    metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
             {
                 var prototypeValid = role is "unordered" or "ordered"
-                    ? Regex.Matches(ParagraphText(prototype.Paragraph), Regex.Escape("{{item}}")).Count == 1 && ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int id && numbering?.Elements<NumberingInstance>().Any(instance => instance.NumberID?.Value == id) == true && ListCapability(styles, numbering, id, ParagraphLevel(prototype.Paragraph)) == (role == "unordered" ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered)
+                    ? Regex.Matches(ParagraphText(prototype.Paragraph), Regex.Escape("{{item}}")).Count == 1 &&
+                        ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int id &&
+    numbering?.Elements<NumberingInstance>().Any(instance => instance.NumberID?.Value == id) == true &&
+    ListCapability(styles, numbering, id, ParagraphLevel(prototype.Paragraph)) == (role == "unordered" ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered)
                     : role == "caption" && prototype.SequenceFields == 1 && prototype.CaptionPlaceholders == 1;
                 if (prototypeValid)
                 {
-                    resolutions[role] = new(role, true, PresentationSourceKind.Prototype, prototypeId, null, capability, true, null, null, Array.Empty<Diagnostic>());
+                    resolutions[role] = new(role,
+                            true,
+                            PresentationSourceKind.Prototype,
+                            prototypeId,
+                            null,
+                            capability,
+                            true,
+                            null,
+                            null,
+                            Array.Empty<Diagnostic>());
                     resolvedStyles[role] = selector;
                     continue;
                 }
             }
             var selected = ResolveExactStyle(available, selector);
-            var strictSource = selected is not null && selected.Type?.Value == expectedType && RoleCapabilitySatisfied(role, selected, available, numbering, capability);
-            if ((role is "unordered" or "ordered") && metadata.PrototypeBindings.ContainsKey(role == "unordered" ? "unorderedListItem" : "orderedListItem"))
+            var strictSource = selected is not null && selected.Type?.Value == expectedType &&
+                    RoleCapabilitySatisfied(role, selected, available, numbering, capability);
+            if ((role is "unordered" or "ordered") &&
+                    metadata.PrototypeBindings.ContainsKey(role == "unordered" ? "unorderedListItem" : "orderedListItem"))
+            {
                 strictSource = false;
+            }
+
             var related = strictSource ? null : FindRoleCandidate(available, role, expectedType, numbering);
             var builtin = role switch
             {
@@ -761,24 +1643,47 @@ public static class WordAuthoring
             var sourceKind = strictSource ? (selector == StyleFor(metadata, role, selector) ? PresentationSourceKind.ConfiguredResource : PresentationSourceKind.CompatibilityDefault) : (PresentationSourceKind?)null;
             string? sourceId = strictSource ? selected?.StyleId?.Value : null;
             string? displayName = strictSource ? selected?.StyleName?.Val?.Value : null;
-            var roleDiagnostics = new List<Diagnostic>();
+            List<Diagnostic> roleDiagnostics = new();
             if (selected is null && !yolo)
             {
-                var selectorMatches = available.Where(style => string.Equals(style.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) || (style.Aliases?.Val?.Value ?? "").Split(',').Any(alias => string.Equals(alias.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
+                var selectorMatches = available.Where(style => string.Equals(style.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) ||
+                        (style.Aliases?.Val?.Value ?? "").Split(',').Any(alias => string.Equals(alias.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
                 if (selectorMatches.Length > 1)
-                    roleDiagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' is ambiguous: {string.Join(", ", selectorMatches.Select(style => $"{style.StyleName?.Val?.Value ?? style.StyleId?.Value} (id={style.StyleId?.Value})"))}. Run yadg inspect styles.", true, location));
+                {
+                    roleDiagnostics.Add(new("YADG-WORD-STYLE",
+    $"Style selector '{selector}' is ambiguous: {string.Join(", ",
+                        selectorMatches.Select(style => $"{style.StyleName?.Val?.Value ?? style.StyleId?.Value} (id={style.StyleId?.Value})"))}. Run yadg inspect styles.",
+    true,
+    location));
+                }
             }
             if (selected is not null && selected.Type?.Value != expectedType && !yolo)
-                roleDiagnostics.Add(new("YADG-WORD-STYLE", $"Style selector '{selector}' resolves to {StyleTypeName(selected.Type?.Value)}; role '{role}' requires {StyleTypeName(expectedType)}. Run yadg inspect styles.", true, location));
+            {
+                roleDiagnostics.Add(new("YADG-WORD-STYLE",
+                    $"Style selector '{selector}' resolves to {StyleTypeName(selected.Type?.Value)}; role '{role}' requires {StyleTypeName(expectedType)}. Run yadg inspect styles.",
+                    true,
+                    location));
+            }
+
             if (!strictSource && !yolo && role is ("blockquote" or "codeBlock"))
-                roleDiagnostics.Add(new("YADG-WORD-STYLE", $"Template paragraph style '{selector}' is required for Markdown {role} presentation; bind styles.{role} to an existing compatible paragraph style and run yadg inspect styles.", true, location));
+            {
+                roleDiagnostics.Add(new("YADG-WORD-STYLE",
+                    $"Template paragraph style '{selector}' is required for Markdown {role} presentation; bind styles.{role} to an existing compatible paragraph style and run yadg inspect styles.",
+                    true,
+                    location));
+            }
+
             if (!strictSource && yolo)
             {
                 if (related is not null)
                 {
                     chosen = related; sourceKind = PresentationSourceKind.RelatedTemplateResource; sourceId = related.StyleId?.Value; displayName = related.StyleName?.Val?.Value;
                     var code = role is "unordered" or "ordered" ? "YADG-YOLO-LIST-003" : role == "codeInline" ? "YADG-YOLO-CODE-001" : "YADG-YOLO-STYLE-001";
-                    roleDiagnostics.Add(new(code, $"Configured role '{role}' selector '{selector}' is unavailable or lacks its required capability; fallback: related template style '{displayName ?? sourceId}'.", false, location) { IsDegradation = true });
+                    roleDiagnostics.Add(new(code,
+                            $"Configured role '{role}' selector '{selector}' is unavailable or lacks its required capability; fallback: related template style '{displayName ?? sourceId}'.",
+                            false,
+                            location)
+                    { IsDegradation = true });
                 }
                 else if (builtin is not null)
                 {
@@ -786,24 +1691,55 @@ public static class WordAuthoring
                     sourceId = builtin; displayName = null;
                     var code = role is "unordered" or "ordered" ? "YADG-YOLO-LIST-002" : role == "generatedTable" ? "YADG-YOLO-TABLE-001" : role == "caption" ? "YADG-YOLO-CAPTION-001" : role == "codeInline" ? "YADG-YOLO-CODE-001" : "YADG-YOLO-STYLE-001";
                     var fallback = role == "codeInline" ? "ordinary text" : builtin;
-                    roleDiagnostics.Add(new(code, $"Configured role '{role}' selector '{selector}' is unavailable or lacks its required capability; fallback: {fallback}.", false, location) { IsDegradation = true });
+                    roleDiagnostics.Add(new(code,
+                            $"Configured role '{role}' selector '{selector}' is unavailable or lacks its required capability; fallback: {fallback}.",
+                            false,
+                            location)
+                    { IsDegradation = true });
                 }
             }
-            if (chosen is not null && (selected is not null && selected.Type?.Value == expectedType || yolo && related?.StyleId?.Value == chosen.StyleId?.Value)) resolvedStyles[role] = chosen.StyleId?.Value ?? selector;
-            else if (sourceId is not null && sourceId.StartsWith("builtin:", StringComparison.Ordinal)) resolvedStyles[role] = sourceId;
-            else resolvedStyles[role] = selector;
+            resolvedStyles[role] = chosen is not null &&
+    (selected is not null && selected.Type?.Value == expectedType ||
+                    yolo && related?.StyleId?.Value == chosen.StyleId?.Value) ? chosen.StyleId?.Value ?? selector : sourceId is not null && sourceId.StartsWith("builtin:", StringComparison.Ordinal) ? sourceId : selector;
             diagnostics.AddRange(roleDiagnostics);
-            resolutions[role] = new(role, strictSource, sourceKind, sourceId, displayName, capability, strictSource || sourceKind is PresentationSourceKind.RelatedTemplateResource or PresentationSourceKind.BuiltinFallback or PresentationSourceKind.PlainRepresentation, related is null ? null : DescribeCandidate(related), builtin, roleDiagnostics);
+            resolutions[role] = new(role,
+    strictSource,
+    sourceKind,
+    sourceId,
+    displayName,
+    capability,
+    strictSource ||
+                    sourceKind is PresentationSourceKind.RelatedTemplateResource or PresentationSourceKind.BuiltinFallback or PresentationSourceKind.PlainRepresentation,
+    related is null ? null : DescribeCandidate(related),
+    builtin,
+    roleDiagnostics);
         }
         foreach (var binding in metadata.PrototypeBindings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             var role = binding.Key switch { "unorderedListItem" => "unordered", "orderedListItem" => "ordered", "figureCaption" => "figureCaption", "tableCaption" => "tableCaption", _ => binding.Key };
-            if (resolutions.ContainsKey(role)) continue;
+            if (resolutions.ContainsKey(role))
+            {
+                continue;
+            }
+
             var exists = metadata.Prototypes.TryGetValue(binding.Value, out var prototype);
-            var valid = exists && (binding.Key is "unorderedListItem" or "orderedListItem"
-                ? Regex.Matches(ParagraphText(prototype!.Paragraph), Regex.Escape("{{item}}")).Count == 1 && ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int id && numbering?.Elements<NumberingInstance>().Any(instance => instance.NumberID?.Value == id) == true && ListCapability(styles, numbering, id, ParagraphLevel(prototype.Paragraph)) == (binding.Key == "unorderedListItem" ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered)
+            var valid = exists &&
+    (binding.Key is "unorderedListItem" or "orderedListItem"
+                ? Regex.Matches(ParagraphText(prototype!.Paragraph), Regex.Escape("{{item}}")).Count == 1 &&
+                    ResolveParagraphNumberingId(prototype.Paragraph, styles, numbering) is int id &&
+    numbering?.Elements<NumberingInstance>().Any(instance => instance.NumberID?.Value == id) == true &&
+    ListCapability(styles, numbering, id, ParagraphLevel(prototype.Paragraph)) == (binding.Key == "unorderedListItem" ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered)
                 : prototype!.SequenceFields == 1 && prototype.CaptionPlaceholders == 1);
-            resolutions[role] = new(role, valid, exists ? PresentationSourceKind.Prototype : null, binding.Value, null, binding.Key is "unorderedListItem" ? PresentationCapability.BulletNumbering : binding.Key is "orderedListItem" ? PresentationCapability.OrderedNumbering : PresentationCapability.SequenceField, valid, null, null, Array.Empty<Diagnostic>());
+            resolutions[role] = new(role,
+                    valid,
+                    exists ? PresentationSourceKind.Prototype : null,
+                    binding.Value,
+                    null,
+                    binding.Key is "unorderedListItem" ? PresentationCapability.BulletNumbering : binding.Key is "orderedListItem" ? PresentationCapability.OrderedNumbering : PresentationCapability.SequenceField,
+                    valid,
+                    null,
+                    null,
+                    Array.Empty<Diagnostic>());
         }
         return new(metadata with { Styles = resolvedStyles }, resolutions, diagnostics);
     }
@@ -811,15 +1747,33 @@ public static class WordAuthoring
     private static Style? ResolveExactStyle(Style[] styles, string selector)
     {
         var byId = styles.FirstOrDefault(style => string.Equals(style.StyleId?.Value, selector, StringComparison.Ordinal));
-        if (byId is not null) return byId;
-        var matches = styles.Where(style => string.Equals(style.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) || (style.Aliases?.Val?.Value ?? "").Split(',').Any(alias => string.Equals(alias.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
+        if (byId is not null)
+        {
+            return byId;
+        }
+
+        var matches = styles.Where(style => string.Equals(style.StyleName?.Val?.Value, selector, StringComparison.OrdinalIgnoreCase) ||
+                (style.Aliases?.Val?.Value ?? "").Split(',').Any(alias => string.Equals(alias.Trim(), selector, StringComparison.OrdinalIgnoreCase))).ToArray();
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    private static bool RoleCapabilitySatisfied(string role, Style style, Style[] styles, Numbering? numbering, PresentationCapability capability)
+    private static bool RoleCapabilitySatisfied(
+        string role,
+        Style style,
+        Style[] styles,
+        Numbering? numbering,
+        PresentationCapability capability
+    )
     {
-        if (capability == PresentationCapability.BulletNumbering) return GetStyleListCapability(new Styles(styles.Select(s => (Style)s.CloneNode(true))), numbering, style.StyleId?.Value) == ListNumberingCapability.Bullet;
-        if (capability == PresentationCapability.OrderedNumbering) return GetStyleListCapability(new Styles(styles.Select(s => (Style)s.CloneNode(true))), numbering, style.StyleId?.Value) == ListNumberingCapability.Ordered;
+        if (capability == PresentationCapability.BulletNumbering)
+        {
+            return GetStyleListCapability(new Styles(styles.Select(s => (Style)s.CloneNode(true))), numbering, style.StyleId?.Value) == ListNumberingCapability.Bullet;
+        }
+
+        if (capability == PresentationCapability.OrderedNumbering)
+        {
+            return GetStyleListCapability(new Styles(styles.Select(s => (Style)s.CloneNode(true))), numbering, style.StyleId?.Value) == ListNumberingCapability.Ordered;
+        }
         // A selected paragraph style is a valid heading presentation even when its
         // outline metadata is absent. Outline metadata is used for context discovery,
         // while strict style ownership remains compatible with existing templates.
@@ -828,39 +1782,83 @@ public static class WordAuthoring
 
     private static int? GetEffectiveStyleOutline(Style[] styles, Style style)
     {
-        var current = style; var seen = new HashSet<string>(StringComparer.Ordinal);
+        var current = style; HashSet<string> seen = new(StringComparer.Ordinal);
         while (current.StyleId?.Value is string id && seen.Add(id))
         {
-            if (current.StyleParagraphProperties?.OutlineLevel?.Val?.Value is int level) return level;
+            if (current.StyleParagraphProperties?.OutlineLevel?.Val?.Value is int level)
+            {
+                return level;
+            }
+
             var basedOn = current.BasedOn?.Val?.Value;
-            if (string.IsNullOrEmpty(basedOn)) break;
+            if (string.IsNullOrEmpty(basedOn))
+            {
+                break;
+            }
+
             current = styles.FirstOrDefault(candidate => candidate.StyleId?.Value == basedOn)!;
-            if (current is null) break;
+            if (current is null)
+            {
+                break;
+            }
         }
         return null;
     }
 
     private static int ParagraphLevel(Paragraph paragraph) => paragraph.ParagraphProperties?.NumberingProperties?.NumberingLevelReference?.Val?.Value ?? 0;
 
-    private static ListNumberingCapability GetStyleListCapability(Styles styles, Numbering? numbering, string? styleId)
+    private static ListNumberingCapability GetStyleListCapability(
+        Styles styles,
+        Numbering? numbering,
+        string? styleId
+    )
     {
-        if (string.IsNullOrWhiteSpace(styleId) || numbering is null) return ListNumberingCapability.None;
+        if (string.IsNullOrWhiteSpace(styleId) || numbering is null)
+        {
+            return ListNumberingCapability.None;
+        }
+
         var numberId = ResolveNumberingId(styles, styleId, numbering);
-        if (numberId is null) return ListNumberingCapability.None;
-        var chain = new HashSet<string>(StringComparer.Ordinal); var current = styleId;
-        while (!string.IsNullOrEmpty(current) && chain.Add(current)) current = styles.Elements<Style>().FirstOrDefault(item => item.StyleId?.Value == current)?.BasedOn?.Val?.Value ?? string.Empty;
+        if (numberId is null)
+        {
+            return ListNumberingCapability.None;
+        }
+
+        HashSet<string> chain = new(StringComparer.Ordinal); var current = styleId;
+        while (!string.IsNullOrEmpty(current) && chain.Add(current))
+        {
+            current = styles.Elements<Style>().FirstOrDefault(item => item.StyleId?.Value == current)?.BasedOn?.Val?.Value ?? string.Empty;
+        }
+
         var instance = numbering.Elements<NumberingInstance>().FirstOrDefault(item => item.NumberID?.Value == numberId);
         var abstractId = instance?.AbstractNumId?.Val?.Value;
         var abstractNumbering = numbering.Elements<AbstractNum>().FirstOrDefault(item => item.AbstractNumberId?.Value == abstractId);
-        if (abstractNumbering is null) return ListNumberingCapability.None;
+        if (abstractNumbering is null)
+        {
+            return ListNumberingCapability.None;
+        }
+
         var effective = abstractNumbering.Elements<Level>().FirstOrDefault(level => level.ParagraphStyleIdInLevel?.Val?.Value is string associated && chain.Contains(associated)) ?? abstractNumbering.Elements<Level>().FirstOrDefault(level => (level.LevelIndex?.Value ?? 0) == 0);
-        if (effective is null) return ListNumberingCapability.None;
+        if (effective is null)
+        {
+            return ListNumberingCapability.None;
+        }
+
         return ClassifyNumberFormat(effective.NumberingFormat?.Val?.Value);
     }
 
-    private static ListNumberingCapability ListCapability(Styles? styles, Numbering? numbering, int numberId, int levelIndex)
+    private static ListNumberingCapability ListCapability(
+        Styles? styles,
+        Numbering? numbering,
+        int numberId,
+        int levelIndex
+    )
     {
-        if (numbering is null) return ListNumberingCapability.None;
+        if (numbering is null)
+        {
+            return ListNumberingCapability.None;
+        }
+
         var instance = numbering.Elements<NumberingInstance>().FirstOrDefault(item => item.NumberID?.Value == numberId);
         var abstractId = instance?.AbstractNumId?.Val?.Value;
         var abstractNumbering = numbering.Elements<AbstractNum>().FirstOrDefault(item => item.AbstractNumberId?.Value == abstractId);
@@ -871,46 +1869,88 @@ public static class WordAuthoring
 
     private static ListNumberingCapability ClassifyNumberFormat(NumberFormatValues? format)
     {
-        if (format is null || format == NumberFormatValues.None) return ListNumberingCapability.None;
+        if (format is null || format == NumberFormatValues.None)
+        {
+            return ListNumberingCapability.None;
+        }
+
         return format == NumberFormatValues.Bullet ? ListNumberingCapability.Bullet : ListNumberingCapability.Ordered;
     }
 
-    private static Style? FindRoleCandidate(Style[] styles, string role, StyleValues expected, Numbering? numbering)
+    private static Style? FindRoleCandidate(
+        Style[] styles,
+        string role,
+        StyleValues expected,
+        Numbering? numbering
+    )
     {
         IEnumerable<Style> eligible = styles.Where(s => s.Type?.Value == expected);
         if (role is "unordered" or "ordered")
         {
-            var allStyles = new Styles(styles.Select(s => (Style)s.CloneNode(true)));
+            Styles allStyles = new(styles.Select(s => (Style)s.CloneNode(true)));
             var required = role == "ordered" ? ListNumberingCapability.Ordered : ListNumberingCapability.Bullet;
             eligible = eligible.Where(s => GetStyleListCapability(allStyles, numbering, s.StyleId?.Value) == required);
         }
-        else if (role is "codeInline" or "codeBlock") eligible = eligible.Where(s => { var hint = (s.StyleName?.Val?.Value ?? "") + " " + (s.Aliases?.Val?.Value ?? "") + " " + (s.StyleId?.Value ?? ""); return hint.Contains("code", StringComparison.OrdinalIgnoreCase) || hint.Contains("source", StringComparison.OrdinalIgnoreCase) || hint.Contains("mono", StringComparison.OrdinalIgnoreCase) || hint.Contains("preformatted", StringComparison.OrdinalIgnoreCase); });
-        else if (role == "blockquote") eligible = eligible.Where(s => { var hint = (s.StyleName?.Val?.Value ?? "") + " " + (s.Aliases?.Val?.Value ?? "") + " " + (s.StyleId?.Value ?? ""); return hint.Contains("quote", StringComparison.OrdinalIgnoreCase); });
+        else if (role is "codeInline" or "codeBlock")
+        {
+            eligible = eligible.Where(s =>
+            {
+                var hint = (s.StyleName?.Val?.Value ?? "") + " " + (s.Aliases?.Val?.Value ?? "") + " " + (s.StyleId?.Value ?? ""); return hint.Contains("code", StringComparison.OrdinalIgnoreCase) ||
+                    hint.Contains("source", StringComparison.OrdinalIgnoreCase) ||
+    hint.Contains("mono", StringComparison.OrdinalIgnoreCase) ||
+    hint.Contains("preformatted", StringComparison.OrdinalIgnoreCase);
+            });
+        }
+        else if (role == "blockquote")
+        {
+            eligible = eligible.Where(s => { var hint = (s.StyleName?.Val?.Value ?? "") + " " + (s.Aliases?.Val?.Value ?? "") + " " + (s.StyleId?.Value ?? ""); return hint.Contains("quote", StringComparison.OrdinalIgnoreCase); });
+        }
         else if (role.StartsWith("heading", StringComparison.Ordinal))
         {
             var level = int.Parse(role[7..]) - 1;
-            eligible = eligible.Where(s => s.StyleParagraphProperties?.OutlineLevel?.Val?.Value == level || (s.StyleName?.Val?.Value ?? "").Equals("Heading" + (level + 1), StringComparison.OrdinalIgnoreCase));
+            eligible = eligible.Where(s => s.StyleParagraphProperties?.OutlineLevel?.Val?.Value == level ||
+                    (s.StyleName?.Val?.Value ?? "").Equals("Heading" + (level + 1), StringComparison.OrdinalIgnoreCase));
         }
         else if (role == "generatedTable") { }
-        else if (role == "caption") eligible = eligible.Where(s => (s.StyleName?.Val?.Value ?? "").Contains("caption", StringComparison.OrdinalIgnoreCase) || (s.StyleId?.Value ?? "").Contains("caption", StringComparison.OrdinalIgnoreCase));
-        else eligible = eligible.Where(s => (s.StyleName?.Val?.Value ?? "").Contains(role, StringComparison.OrdinalIgnoreCase));
+        else
+        {
+            eligible = role == "caption" ? eligible.Where(s => (s.StyleName?.Val?.Value ?? "").Contains("caption", StringComparison.OrdinalIgnoreCase) ||
+                (s.StyleId?.Value ?? "").Contains("caption", StringComparison.OrdinalIgnoreCase)) : eligible.Where(s => (s.StyleName?.Val?.Value ?? "").Contains(role, StringComparison.OrdinalIgnoreCase));
+        }
+
         return eligible.OrderBy(s => RoleSpecificHintRank(s, styles, role)).ThenBy(s => NormalizeVisibleName(s.StyleName?.Val?.Value ?? ""), StringComparer.Ordinal).ThenBy(s => s.StyleId?.Value ?? "", StringComparer.Ordinal).FirstOrDefault();
     }
 
     private static string NormalizeVisibleName(string value) => Regex.Replace(value.Trim(), @"\s+", " ").ToUpperInvariant();
 
-    private static int RoleSpecificHintRank(Style style, Style[] styles, string role)
+    private static int RoleSpecificHintRank(
+        Style style,
+        Style[] styles,
+        string role
+    )
     {
-        if (role is not ("unordered" or "ordered")) return 0;
+        if (role is not ("unordered" or "ordered"))
+        {
+            return 0;
+        }
+
         var cue = role == "ordered" ? "number" : "bullet";
         var basedOn = style.BasedOn?.Val?.Value;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        HashSet<string> seen = new(StringComparer.Ordinal);
         while (!string.IsNullOrEmpty(basedOn) && seen.Add(basedOn))
         {
             var parent = styles.FirstOrDefault(s => s.StyleId?.Value == basedOn);
-            if (parent is null) break;
+            if (parent is null)
+            {
+                break;
+            }
+
             var parentText = (parent.StyleName?.Val?.Value ?? "") + " " + (parent.StyleId?.Value ?? "") + " " + (parent.Aliases?.Val?.Value ?? "");
-            if (parentText.Contains(cue, StringComparison.OrdinalIgnoreCase)) return 0;
+            if (parentText.Contains(cue, StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+
             basedOn = parent.BasedOn?.Val?.Value;
         }
         var own = (style.StyleName?.Val?.Value ?? "") + " " + (style.StyleId?.Value ?? "") + " " + (style.Aliases?.Val?.Value ?? "");
@@ -919,32 +1959,89 @@ public static class WordAuthoring
 
     private static string StyleTypeName(StyleValues? type) => type == StyleValues.Paragraph ? "paragraph" : type == StyleValues.Character ? "character" : type == StyleValues.Table ? "table" : type == StyleValues.Numbering ? "numbering" : "unknown";
 
-    private static void ValidateTable(YadgTable table, Styles? styles, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, DocxLocation location, List<Diagnostic> diagnostics, bool yolo)
+    private static void ValidateTable(
+        YadgTable table,
+        Styles? styles,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        bool yolo
+    )
     {
         if (presentation.TryGetValue("generatedTable", out var tableResolution) && !tableResolution.StrictResolved && !yolo)
-            diagnostics.Add(new("YADG-WORD-TABLE", $"Generated-table role '{StyleFor(metadata, "generatedTable", "TableGrid")}' is unavailable or not a concrete table style; run yadg inspect styles.", true, location));
-        if (string.IsNullOrWhiteSpace(table.Caption)) return;
+        {
+            diagnostics.Add(new("YADG-WORD-TABLE",
+                $"Generated-table role '{StyleFor(metadata, "generatedTable", "TableGrid")}' is unavailable or not a concrete table style; run yadg inspect styles.",
+                true,
+                location));
+        }
+
+        if (string.IsNullOrWhiteSpace(table.Caption))
+        {
+            return;
+        }
+
         var captionRole = metadata.PrototypeBindings.ContainsKey("tableCaption") ? "tableCaption" : "caption";
         if (presentation.TryGetValue(captionRole, out var captionResolution) && !captionResolution.StrictResolved && !yolo)
-            diagnostics.Add(new("YADG-WORD-STYLE", "Table caption presentation is unresolved; run yadg inspect template and yadg inspect styles.", true, location));
+        {
+            diagnostics.Add(new("YADG-WORD-STYLE",
+                "Table caption presentation is unresolved; run yadg inspect template and yadg inspect styles.",
+                true,
+                location));
+        }
     }
 
-    private static void ValidateFigure(YadgFigure figure, Styles? styles, TemplateMetadata metadata, IReadOnlyDictionary<string, PresentationResolution> presentation, Paragraph anchor, DocxLocation location, List<Diagnostic> diagnostics, bool yolo = false)
+    private static void ValidateFigure(
+        YadgFigure figure,
+        Styles? styles,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        Paragraph anchor,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        bool yolo = false
+    )
     {
-        if (figure.Asset is null && figure.GeneratedSvg is null) { if (!yolo) diagnostics.Add(new("YADG-FIGURE-008", $"Figure '{figure.Id}' has no validated image asset.", true, location)); return; }
+        if (figure.Asset is null && figure.GeneratedSvg is null)
+        {
+            if (!yolo)
+            {
+                diagnostics.Add(new("YADG-FIGURE-008", $"Figure '{figure.Id}' has no validated image asset.", true, location));
+            }
+
+            return;
+        }
         if (!string.IsNullOrEmpty(figure.AltText))
         {
             var captionRole = metadata.PrototypeBindings.ContainsKey("figureCaption") ? "figureCaption" : "caption";
             if (presentation.TryGetValue(captionRole, out var captionResolution) && !captionResolution.StrictResolved && !yolo)
-                diagnostics.Add(new("YADG-WORD-STYLE", "Figure caption presentation is unresolved; run yadg inspect template and yadg inspect styles.", true, location));
+            {
+                diagnostics.Add(new("YADG-WORD-STYLE",
+                    "Figure caption presentation is unresolved; run yadg inspect template and yadg inspect styles.",
+                    true,
+                    location));
+            }
         }
-        if (EffectiveWidth(anchor) <= 0) diagnostics.Add(new("YADG-FIGURE-009", $"Cannot determine effective text width for figure '{figure.Id}'.", true, location));
+        if (EffectiveWidth(anchor) <= 0)
+        {
+            diagnostics.Add(new("YADG-FIGURE-009", $"Cannot determine effective text width for figure '{figure.Id}'.", true, location));
+        }
     }
 
     private static bool HasStyle(Styles? styles, string id) => styles?.Descendants<Style>().Any(s => s.StyleId?.Value == id) == true;
-    private static string StyleFor(TemplateMetadata metadata, string role, string fallback) => metadata.Styles.TryGetValue(role, out var value) ? value : fallback;
+    private static string StyleFor(
+        TemplateMetadata metadata,
+        string role,
+        string fallback
+    ) => metadata.Styles.TryGetValue(role, out var value) ? value : fallback;
 
-    private static int EffectiveHeadingLevel(int sourceLevel, int contextLevel, SectionSelection selection, int rootLevel)
+    private static int EffectiveHeadingLevel(
+        int sourceLevel,
+        int contextLevel,
+        SectionSelection selection,
+        int rootLevel
+    )
         => selection == SectionSelection.Section
             ? contextLevel + 1 + (sourceLevel - rootLevel)
             : contextLevel + (sourceLevel - rootLevel);
@@ -952,13 +2049,22 @@ public static class WordAuthoring
     private static IReadOnlyList<YadgBlock> RebaseBlocks(IReadOnlyList<YadgBlock> blocks, TemplatePlacement placement)
     {
         var rootLevel = placement.RootLevel;
-        if (rootLevel == 0) return blocks;
+        if (rootLevel == 0)
+        {
+            return blocks;
+        }
+
         return blocks.Select(block => block is YadgHeading heading
             ? heading with { Level = EffectiveHeadingLevel(heading.Level, placement.ContextLevel, placement.SectionReference!.Selection, rootLevel) }
             : block).ToArray();
     }
 
-    private static void PopulatePreparedTable(PreparedTableBinding binding, YadgTable semantic, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata)
+    private static void PopulatePreparedTable(
+        PreparedTableBinding binding,
+        YadgTable semantic,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
         var prototype = binding.PrototypeRow;
         foreach (var sourceRow in semantic.Rows)
@@ -976,26 +2082,39 @@ public static class WordAuthoring
         prototype.Remove();
     }
 
-    private static void PopulatePreparedCell(Paragraph prototype, IReadOnlyList<YadgInline> source, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata)
+    private static void PopulatePreparedCell(
+        Paragraph prototype,
+        IReadOnlyList<YadgInline> source,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
         var combined = LogicalText(prototype);
         var start = combined.IndexOf("{{cell}}", StringComparison.Ordinal);
-        if (start < 0) return;
+        if (start < 0)
+        {
+            return;
+        }
+
         var end = start + "{{cell}}".Length;
         var runs = prototype.Elements<Run>().ToArray();
         Run? baseRun = null;
-        var runOffset = 0;
+        int runOffset = 0;
         foreach (var run in runs)
         {
             var runText = string.Concat(run.Descendants<Text>().Select(t => t.Text));
             if (start >= runOffset && start < runOffset + runText.Length) { baseRun = run; break; }
             runOffset += runText.Length;
         }
-        var result = new Paragraph();
-        if (prototype.ParagraphProperties is not null) result.Append(prototype.ParagraphProperties.CloneNode(true));
+        Paragraph result = new();
+        if (prototype.ParagraphProperties is not null)
+        {
+            result.Append(prototype.ParagraphProperties.CloneNode(true));
+        }
+
         var generated = CreatePreparedRuns(source, targets, baseRun?.RunProperties, metadata);
-        var offset = 0;
-        var inserted = false;
+        int offset = 0;
+        bool inserted = false;
         foreach (var child in prototype.Elements())
         {
             if (child is not Run run)
@@ -1014,9 +2133,24 @@ public static class WordAuthoring
             {
                 var before = Math.Max(0, Math.Min(text.Length, start - offset));
                 var afterStart = Math.Max(0, Math.Min(text.Length, end - offset));
-                if (before > 0) result.Append(TextRun(run, text[..before]));
-                if (!inserted) { foreach (var generatedRun in generated) result.Append(generatedRun); inserted = true; }
-                if (afterStart < text.Length) result.Append(TextRun(run, text[afterStart..]));
+                if (before > 0)
+                {
+                    result.Append(TextRun(run, text[..before]));
+                }
+
+                if (!inserted)
+                {
+                    foreach (var generatedRun in generated)
+                    {
+                        result.Append(generatedRun);
+                    }
+
+                    inserted = true;
+                }
+                if (afterStart < text.Length)
+                {
+                    result.Append(TextRun(run, text[afterStart..]));
+                }
             }
             offset = rangeEnd;
         }
@@ -1026,17 +2160,26 @@ public static class WordAuthoring
 
     private static Run TextRun(Run source, string value)
     {
-        var result = new Run();
-        if (source.RunProperties is not null) result.Append(source.RunProperties.CloneNode(true));
+        Run result = new();
+        if (source.RunProperties is not null)
+        {
+            result.Append(source.RunProperties.CloneNode(true));
+        }
+
         result.Append(new Text(value) { Space = SpaceProcessingModeValues.Preserve });
         return result;
     }
 
-    private static IReadOnlyList<Run> CreatePreparedRuns(IReadOnlyList<YadgInline> source, IReadOnlyDictionary<string, string> targets, RunProperties? baseProperties, TemplateMetadata metadata)
+    private static IReadOnlyList<Run> CreatePreparedRuns(
+        IReadOnlyList<YadgInline> source,
+        IReadOnlyDictionary<string, string> targets,
+        RunProperties? baseProperties,
+        TemplateMetadata metadata
+    )
     {
-        var temporary = new Paragraph();
+        Paragraph temporary = new();
         AppendInlines(temporary, source, targets, metadata: metadata);
-        var result = new List<Run>();
+        List<Run> result = new();
         foreach (var run in temporary.Elements<Run>())
         {
             var clone = (Run)run.CloneNode(true);
@@ -1044,7 +2187,7 @@ public static class WordAuthoring
         }
         if (baseProperties is not null)
         {
-            var holder = new Paragraph(result);
+            Paragraph holder = new(result);
             ApplyBaseRunFormatting(holder, baseProperties);
             result = holder.Elements<Run>().Select(r => (Run)r.CloneNode(true)).ToList();
         }
@@ -1053,53 +2196,108 @@ public static class WordAuthoring
 
     private static void ApplyBaseRunFormatting(Paragraph paragraph, RunProperties? baseProperties)
     {
-        if (baseProperties is null) return;
+        if (baseProperties is null)
+        {
+            return;
+        }
+
         foreach (var run in paragraph.Elements<Run>())
         {
             var existing = run.RunProperties;
             var combined = (RunProperties)baseProperties.CloneNode(true);
-            if (existing?.Bold is not null && combined.Bold is null) combined.Append(existing.Bold.CloneNode(true));
-            if (existing?.Italic is not null && combined.Italic is null) combined.Append(existing.Italic.CloneNode(true));
-            if (existing?.RunStyle is not null) combined.RunStyle = (RunStyle)existing.RunStyle.CloneNode(true);
+            if (existing?.Bold is not null && combined.Bold is null)
+            {
+                combined.Append(existing.Bold.CloneNode(true));
+            }
+
+            if (existing?.Italic is not null && combined.Italic is null)
+            {
+                combined.Append(existing.Italic.CloneNode(true));
+            }
+
+            if (existing?.RunStyle is not null)
+            {
+                combined.RunStyle = (RunStyle)existing.RunStyle.CloneNode(true);
+            }
+
             run.RunProperties = combined;
         }
     }
 
-    private static IEnumerable<OpenXmlElement> CreateElements(YadgBlock block, Paragraph anchor, WordprocessingDocument document, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets, bool yolo = false, int quoteDepth = 0, Styles? styles = null)
+    private static IEnumerable<OpenXmlElement> CreateElements(
+        YadgBlock block,
+        Paragraph anchor,
+        WordprocessingDocument document,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        bool yolo = false,
+        int quoteDepth = 0,
+        Styles? styles = null
+    )
     {
         switch (block)
         {
             case YadgHeading heading: yield return CreateParagraph(heading, anchor, metadata, targets); break;
             case YadgParagraph paragraph: yield return quoteDepth == 0 ? CreateParagraph(paragraph, anchor, metadata, targets) : CreateBlockQuoteParagraph(paragraph, anchor, metadata, targets, quoteDepth, yolo, styles); break;
             case YadgList list:
-                var builtins = new Dictionary<bool, int>();
-                foreach (var element in CreateListElements(list, anchor, document, metadata, targets, yolo, builtins)) yield return element;
+                Dictionary<bool, int> builtins = new();
+                foreach (var element in CreateListElements(list, anchor, document, metadata, targets, yolo, builtins))
+                {
+                    yield return element;
+                }
+
                 break;
             case YadgCodeBlock code:
                 foreach (var line in code.Text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
                 {
-                    var paragraph = new Paragraph();
+                    Paragraph paragraph = new();
                     var style = StyleFor(metadata, "codeBlock", "HTMLPreformatted");
-                    if (style.StartsWith("builtin:", StringComparison.Ordinal) && yolo) paragraph.Append(new ParagraphProperties());
-                    else paragraph.Append(new ParagraphProperties(new ParagraphStyleId { Val = style }));
+                    if (style.StartsWith("builtin:", StringComparison.Ordinal) && yolo)
+                    {
+                        paragraph.Append(new ParagraphProperties());
+                    }
+                    else
+                    {
+                        paragraph.Append(new ParagraphProperties(new ParagraphStyleId { Val = style }));
+                    }
+
                     paragraph.Append(new Run(new Text(line) { Space = SpaceProcessingModeValues.Preserve }));
                     yield return paragraph;
                 }
                 break;
             case YadgBlockQuote quote:
-                foreach (var child in quote.Blocks) foreach (var element in CreateElements(child, anchor, document, metadata, targets, yolo, quoteDepth + 1, styles)) yield return element;
+                foreach (var child in quote.Blocks)
+                {
+                    foreach (var element in CreateElements(child, anchor, document, metadata, targets, yolo, quoteDepth + 1, styles))
+                    {
+                        yield return element;
+                    }
+                }
+
                 break;
             case YadgTable table:
                 yield return CreateTable(table, metadata, targets);
-                if (!string.IsNullOrWhiteSpace(table.Caption)) yield return CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targets);
+                if (!string.IsNullOrWhiteSpace(table.Caption))
+                {
+                    yield return CreateCaption(table.Id, table.Caption!, "tableCaption", metadata, targets);
+                }
+
                 break;
             case YadgFigure figure:
                 var figureParagraph = figure.Asset is null && figure.GeneratedSvg is null && yolo
                     ? new Paragraph(new Run(new Text($"[YADG figure \"{figure.Id}\" unavailable: {BoundExcerpt(figure.AssetPath, 90)}{(string.IsNullOrWhiteSpace(figure.AltText) ? "" : " — " + BoundExcerpt(figure.AltText, 90))}]")))
                     : CreateFigureParagraph(figure, anchor, document);
-                if (!targets.ContainsKey($"number:{figure.Id}") && targets.TryGetValue(figure.Id, out var figureAnchor)) WrapParagraphBookmark(figureParagraph, StripSectionPrefix(figureAnchor));
+                if (!targets.ContainsKey($"number:{figure.Id}") && targets.TryGetValue(figure.Id, out var figureAnchor))
+                {
+                    WrapParagraphBookmark(figureParagraph, StripSectionPrefix(figureAnchor));
+                }
+
                 yield return figureParagraph;
-                if (!string.IsNullOrEmpty(figure.AltText)) yield return CreateCaption(figure.Id, figure.AltText, "figureCaption", metadata, targets);
+                if (!string.IsNullOrEmpty(figure.AltText))
+                {
+                    yield return CreateCaption(figure.Id, figure.AltText, "figureCaption", metadata, targets);
+                }
+
                 break;
             case YadgDiagram diagram:
                 yield return CreateSvgParagraph(diagram.SvgContent, "anonymous-diagram", anchor, document);
@@ -1107,12 +2305,27 @@ public static class WordAuthoring
         }
     }
 
-    private static Paragraph CreateBlockQuoteParagraph(YadgParagraph block, Paragraph anchor, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets, int quoteDepth, bool yolo, Styles? styles)
+    private static Paragraph CreateBlockQuoteParagraph(
+        YadgParagraph block,
+        Paragraph anchor,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        int quoteDepth,
+        bool yolo,
+        Styles? styles
+    )
     {
         var style = StyleFor(metadata, "blockquote", "Quote");
-        var paragraph = new Paragraph();
-        if (style.StartsWith("builtin:", StringComparison.Ordinal) && yolo) paragraph.Append(new ParagraphProperties());
-        else paragraph.Append(new ParagraphProperties(new ParagraphStyleId { Val = style }));
+        Paragraph paragraph = new();
+        if (style.StartsWith("builtin:", StringComparison.Ordinal) && yolo)
+        {
+            paragraph.Append(new ParagraphProperties());
+        }
+        else
+        {
+            paragraph.Append(new ParagraphProperties(new ParagraphStyleId { Val = style }));
+        }
+
         if (quoteDepth > 1)
         {
             var properties = paragraph.ParagraphProperties ?? paragraph.PrependChild(new ParagraphProperties());
@@ -1126,75 +2339,148 @@ public static class WordAuthoring
 
     private static int EffectiveStyleLeftIndent(Styles? styles, string styleId)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        HashSet<string> seen = new(StringComparer.Ordinal);
         while (styles is not null && !string.IsNullOrEmpty(styleId) && seen.Add(styleId))
         {
             var style = styles.Elements<Style>().FirstOrDefault(candidate => candidate.StyleId?.Value == styleId);
-            if (style is null) break;
-            if (int.TryParse(style.StyleParagraphProperties?.Indentation?.Left?.Value, out var left)) return left;
+            if (style is null)
+            {
+                break;
+            }
+
+            if (int.TryParse(style.StyleParagraphProperties?.Indentation?.Left?.Value, out var left))
+            {
+                return left;
+            }
+
             styleId = style.BasedOn?.Val?.Value ?? string.Empty;
         }
         return 0;
     }
 
-    private static IEnumerable<OpenXmlElement> CreateListElements(YadgList list, Paragraph anchor, WordprocessingDocument document, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets, bool yolo, Dictionary<bool, int> builtins)
+    private static IEnumerable<OpenXmlElement> CreateListElements(
+        YadgList list,
+        Paragraph anchor,
+        WordprocessingDocument document,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        bool yolo,
+        Dictionary<bool, int> builtins
+    )
     {
-        if (list.Level > 8) yield break;
+        if (list.Level > 8)
+        {
+            yield break;
+        }
+
         foreach (var item in list.Items)
         {
             yield return CreateListParagraph(item, list.Ordered, list.Level, metadata, targets, document, yolo, builtins);
             foreach (var nested in item.NestedLists ?? Array.Empty<YadgList>())
-                foreach (var element in CreateListElements(nested, anchor, document, metadata, targets, yolo, builtins)) yield return element;
+            {
+                foreach (var element in CreateListElements(nested, anchor, document, metadata, targets, yolo, builtins))
+                {
+                    yield return element;
+                }
+            }
         }
     }
 
-    private static Paragraph CreateParagraph(YadgBlock block, Paragraph anchor, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets)
+    private static Paragraph CreateParagraph(
+        YadgBlock block,
+        Paragraph anchor,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets
+    )
     {
-        var paragraph = new Paragraph();
+        Paragraph paragraph = new();
         if (block is YadgHeading heading)
         {
             var role = StyleFor(metadata, $"heading{heading.Level}", $"Heading{heading.Level}");
             paragraph.Append(role.StartsWith("builtin:", StringComparison.Ordinal) ? new ParagraphProperties(new OutlineLevel { Val = heading.Level - 1 }) : new ParagraphProperties(new ParagraphStyleId { Val = role }));
         }
-        else if (anchor.ParagraphProperties is not null) paragraph.Append(anchor.ParagraphProperties.CloneNode(true));
-        AppendInlines(paragraph, block is YadgHeading h ? new[] { new YadgText(h.Text) } : ((YadgParagraph)block).Inlines, targets, metadata: metadata);
-        if (block is YadgHeading headingWithId && headingWithId.Id is not null && targets.TryGetValue(headingWithId.Id, out var headingBookmark) && headingBookmark.StartsWith("section:", StringComparison.Ordinal)) WrapParagraphBookmark(paragraph, headingBookmark[8..]);
+        else if (anchor.ParagraphProperties is not null)
+        {
+            paragraph.Append(anchor.ParagraphProperties.CloneNode(true));
+        }
+
+        AppendInlines(paragraph,
+                block is YadgHeading h ? new[] { new YadgText(h.Text) } : ((YadgParagraph)block).Inlines,
+                targets,
+                metadata: metadata);
+        if (block is YadgHeading headingWithId && headingWithId.Id is not null &&
+                targets.TryGetValue(headingWithId.Id, out var headingBookmark) &&
+    headingBookmark.StartsWith("section:", StringComparison.Ordinal))
+        {
+            WrapParagraphBookmark(paragraph, headingBookmark[8..]);
+        }
+
         return paragraph;
     }
 
-    private static Paragraph CreateListParagraph(YadgListItem item, bool ordered, int level, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets, WordprocessingDocument document, bool yolo, Dictionary<bool, int> builtins)
+    private static Paragraph CreateListParagraph(
+        YadgListItem item,
+        bool ordered,
+        int level,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        WordprocessingDocument document,
+        bool yolo,
+        Dictionary<bool, int> builtins
+    )
     {
         var key = ordered ? "orderedListItem" : "unorderedListItem";
-        if (metadata.PrototypeBindings.TryGetValue(key, out var prototypeId) && metadata.ListItemPrototypes.TryGetValue(prototypeId, out var prototype))
+        if (metadata.PrototypeBindings.TryGetValue(key, out var prototypeId) &&
+                metadata.ListItemPrototypes.TryGetValue(prototypeId, out var prototype))
         {
             var clone = (Paragraph)prototype.Paragraph.CloneNode(true);
             ReplaceListItemPlaceholder(clone, item.Inlines, targets, metadata);
             if (level > 0) { var props = clone.ParagraphProperties ?? clone.PrependChild(new ParagraphProperties()); var num = props.NumberingProperties ?? props.AppendChild(new NumberingProperties()); num.NumberingLevelReference = new NumberingLevelReference { Val = level }; }
-            if (item.TaskChecked is bool task) clone.PrependChild(new Run(new Text(task ? "☒ " : "☐ ") { Space = SpaceProcessingModeValues.Preserve }));
+            if (item.TaskChecked is bool task)
+            {
+                clone.PrependChild(new Run(new Text(task ? "☒ " : "☐ ") { Space = SpaceProcessingModeValues.Preserve }));
+            }
+
             return clone;
         }
         var style = StyleFor(metadata, ordered ? "ordered" : "unordered", ordered ? "ListNumber" : "ListBullet");
         var properties = style.StartsWith("builtin:", StringComparison.Ordinal) && yolo
-            ? new ParagraphProperties(new NumberingProperties(new NumberingLevelReference { Val = level }, new NumberingId { Val = GetBuiltinNumbering(document, ordered, builtins) }))
+            ? new ParagraphProperties(new NumberingProperties(new NumberingLevelReference { Val = level },
+                new NumberingId { Val = GetBuiltinNumbering(document, ordered, builtins) }))
             : new ParagraphProperties(new ParagraphStyleId { Val = style }, new NumberingProperties(new NumberingLevelReference { Val = level }));
-        var paragraph = new Paragraph(properties);
-        if (item.TaskChecked is bool taskChecked) paragraph.Append(new Run(new Text(taskChecked ? "☒ " : "☐ ") { Space = SpaceProcessingModeValues.Preserve }));
+        Paragraph paragraph = new(properties);
+        if (item.TaskChecked is bool taskChecked)
+        {
+            paragraph.Append(new Run(new Text(taskChecked ? "☒ " : "☐ ") { Space = SpaceProcessingModeValues.Preserve }));
+        }
+
         AppendInlines(paragraph, item.Inlines, targets, metadata: metadata); return paragraph;
     }
 
-    private static int GetBuiltinNumbering(WordprocessingDocument document, bool ordered, Dictionary<bool, int> cache)
+    private static int GetBuiltinNumbering(
+        WordprocessingDocument document,
+        bool ordered,
+        Dictionary<bool, int> cache
+    )
     {
-        if (cache.TryGetValue(ordered, out var existing)) return existing;
+        if (cache.TryGetValue(ordered, out var existing))
+        {
+            return existing;
+        }
+
         var main = document.MainDocumentPart!;
         var part = main.NumberingDefinitionsPart ?? main.AddNewPart<NumberingDefinitionsPart>();
         var numbering = part.Numbering ??= new Numbering();
-        var abstractId = Math.Max(0, numbering.Elements<AbstractNum>().Select(x => (int?)x.AbstractNumberId?.Value).Max() ?? -1) + 1;
-        var numId = Math.Max(0, numbering.Elements<NumberingInstance>().Select(x => (int?)x.NumberID?.Value).Max() ?? 0) + 1;
-        var abstractNumber = new AbstractNum { AbstractNumberId = abstractId, MultiLevelType = new MultiLevelType { Val = MultiLevelValues.Multilevel } };
+        var abstractId = Math.Max(0, numbering.Elements<AbstractNum>().Select(x => (x.AbstractNumberId?.Value)).Max() ?? -1) + 1;
+        var numId = Math.Max(0, numbering.Elements<NumberingInstance>().Select(x => (x.NumberID?.Value)).Max() ?? 0) + 1;
+        AbstractNum abstractNumber = new() { AbstractNumberId = abstractId, MultiLevelType = new MultiLevelType { Val = MultiLevelValues.Multilevel } };
         for (var index = 0; index < 9; index++)
         {
-            var level = new Level { LevelIndex = index };
-            level.Append(new StartNumberingValue { Val = 1 }, new NumberingFormat { Val = ordered ? NumberFormatValues.Decimal : NumberFormatValues.Bullet }, new LevelText { Val = ordered ? $"%{index + 1}." : "•" }, new LevelJustification { Val = LevelJustificationValues.Left });
+            Level level = new() { LevelIndex = index };
+            level.Append(new StartNumberingValue { Val = 1 },
+                    new NumberingFormat { Val = ordered ? NumberFormatValues.Decimal : NumberFormatValues.Bullet },
+                    new LevelText { Val = ordered ? $"%{index + 1}." : "•" },
+                    new LevelJustification { Val = LevelJustificationValues.Left });
             abstractNumber.Append(level);
         }
         numbering.Append(abstractNumber);
@@ -1202,157 +2488,328 @@ public static class WordAuthoring
         numbering.Save(); cache[ordered] = numId; return numId;
     }
 
-    private static void ReplaceListItemPlaceholder(Paragraph paragraph, IReadOnlyList<YadgInline> inlines, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata)
+    private static void ReplaceListItemPlaceholder(
+        Paragraph paragraph,
+        IReadOnlyList<YadgInline> inlines,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
         var texts = paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).ToArray();
         var combined = string.Concat(texts.Select(t => t.Text));
         const string marker = "{{item}}";
         var at = combined.IndexOf(marker, StringComparison.Ordinal);
-        if (at < 0 || combined.IndexOf(marker, at + marker.Length, StringComparison.Ordinal) >= 0) return;
-        var endAt = at + marker.Length; var offset = 0; var startIndex = -1; var endIndex = -1;
+        if (at < 0 || combined.IndexOf(marker, at + marker.Length, StringComparison.Ordinal) >= 0)
+        {
+            return;
+        }
+
+        var endAt = at + marker.Length; int offset = 0; var startIndex = -1; var endIndex = -1;
         for (var i = 0; i < texts.Length; i++)
         {
             var next = offset + (texts[i].Text?.Length ?? 0);
-            if (startIndex < 0 && at >= offset && at < next) startIndex = i;
+            if (startIndex < 0 && at >= offset && at < next)
+            {
+                startIndex = i;
+            }
+
             if (endAt > offset && endAt <= next) { endIndex = i; break; }
             offset = next;
         }
-        if (startIndex < 0 || endIndex < 0) return;
+        if (startIndex < 0 || endIndex < 0)
+        {
+            return;
+        }
+
         var startOffset = texts.Take(startIndex).Sum(t => t.Text?.Length ?? 0);
         var endOffset = texts.Take(endIndex).Sum(t => t.Text?.Length ?? 0);
         var startLocal = at - startOffset; var endLocal = endAt - endOffset;
         var startText = texts[startIndex]; var endText = texts[endIndex];
         var startRun = startText.Ancestors<Run>().FirstOrDefault();
-        if (startRun is null) return;
+        if (startRun is null)
+        {
+            return;
+        }
+
         var prefix = (startText.Text ?? string.Empty)[..startLocal];
         var suffix = (endText.Text ?? string.Empty)[endLocal..];
         startText.Text = prefix; startText.Space = SpaceProcessingModeValues.Preserve;
         if (startIndex == endIndex) { }
         else
         {
-            for (var i = startIndex + 1; i < endIndex; i++) texts[i].Text = string.Empty;
+            for (var i = startIndex + 1; i < endIndex; i++)
+            {
+                texts[i].Text = string.Empty;
+            }
+
             endText.Text = suffix; endText.Space = SpaceProcessingModeValues.Preserve;
         }
-        var generated = new Paragraph();
-        AppendInlines(generated, inlines, targets, startRun.RunProperties?.Italic is not null, startRun.RunProperties?.Bold is not null, metadata);
+        Paragraph generated = new();
+        AppendInlines(generated,
+                inlines,
+                targets,
+                startRun.RunProperties?.Italic is not null,
+                startRun.RunProperties?.Bold is not null,
+                metadata);
         ApplyBaseRunFormatting(generated, startRun.RunProperties);
         OpenXmlElement insertionPoint = startRun;
         foreach (var child in generated.Elements<Run>()) { insertionPoint.InsertAfterSelf(child.CloneNode(true)); insertionPoint = insertionPoint.NextSibling()!; }
         if (startIndex == endIndex && suffix.Length > 0)
         {
-            var suffixRun = new Run(); if (startRun.RunProperties is not null) suffixRun.Append(startRun.RunProperties.CloneNode(true));
+            Run suffixRun = new();
+            if (startRun.RunProperties is not null)
+            {
+                suffixRun.Append(startRun.RunProperties.CloneNode(true));
+            }
+
             suffixRun.Append(new Text(suffix) { Space = SpaceProcessingModeValues.Preserve });
             insertionPoint.InsertAfterSelf(suffixRun);
         }
     }
 
-    private static Table CreateTable(YadgTable table, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets)
+    private static Table CreateTable(
+        YadgTable table,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets
+    )
     {
         var selectedStyle = StyleFor(metadata, "generatedTable", "TableGrid");
-        var properties = new TableProperties(new TableLayout { Type = TableLayoutValues.Autofit }, new TableLook { FirstRow = OnOffValue.FromBoolean(true) });
-        if (!selectedStyle.StartsWith("builtin:", StringComparison.Ordinal)) properties.Append(new TableStyle { Val = selectedStyle });
-        var result = new Table(properties);
+        TableProperties properties = new(new TableLayout { Type = TableLayoutValues.Autofit }, new TableLook { FirstRow = OnOffValue.FromBoolean(true) });
+        if (!selectedStyle.StartsWith("builtin:", StringComparison.Ordinal))
+        {
+            properties.Append(new TableStyle { Val = selectedStyle });
+        }
+
+        Table result = new(properties);
         var gridHeader = table.GridHeader;
         var gridRows = table.GridRows;
         var width = gridHeader?.Sum(c => c.ColumnSpan) ?? table.Header.Count;
         result.Append(new TableGrid(Enumerable.Range(0, width).Select(_ => new GridColumn())));
         if (gridHeader is not null)
         {
-            var active = new YadgTableCell?[width];
+            YadgTableCell?[] active = new YadgTableCell?[width];
             result.Append(CreateGridRow(gridHeader, true, width, active, targets, metadata, table.Id));
-            if (gridRows is not null) foreach (var row in gridRows) result.Append(CreateGridRow(row, false, width, active, targets, metadata, table.Id));
+            if (gridRows is not null)
+            {
+                foreach (var row in gridRows)
+                {
+                    result.Append(CreateGridRow(row, false, width, active, targets, metadata, table.Id));
+                }
+            }
         }
         else
         {
-            var header = new TableRow(new TableRowProperties(new TableHeader())); foreach (var cell in table.Header) header.Append(CreateCell(new[] { cell }, null, null, targets, metadata)); result.Append(header);
-            foreach (var row in table.Rows) { var tableRow = new TableRow(); foreach (var cell in row) tableRow.Append(CreateCell(new[] { cell }, null, null, targets, metadata)); result.Append(tableRow); }
+            TableRow header = new(new TableRowProperties(new TableHeader()));
+            foreach (var cell in table.Header)
+            {
+                header.Append(CreateCell(new[] { cell }, null, null, targets, metadata));
+            }
+
+            result.Append(header);
+            foreach (var row in table.Rows)
+            {
+                TableRow tableRow = new();
+                foreach (var cell in row)
+                {
+                    tableRow.Append(CreateCell(new[] { cell }, null, null, targets, metadata));
+                }
+
+                result.Append(tableRow);
+            }
         }
-        if (!targets.ContainsKey($"number:{table.Id}") && targets.TryGetValue(table.Id, out var bookmark)) WrapTableAnchor(result, StripSectionPrefix(bookmark));
+        if (!targets.ContainsKey($"number:{table.Id}") && targets.TryGetValue(table.Id, out var bookmark))
+        {
+            WrapTableAnchor(result, StripSectionPrefix(bookmark));
+        }
+
         return result;
     }
 
     private static void WrapTableAnchor(Table table, string bookmark)
     {
         var paragraph = table.Elements<TableRow>().SelectMany(row => row.Elements<TableCell>()).SelectMany(cell => cell.Elements<Paragraph>()).FirstOrDefault();
-        if (paragraph is not null) WrapParagraphBookmark(paragraph, bookmark);
+        if (paragraph is not null)
+        {
+            WrapParagraphBookmark(paragraph, bookmark);
+        }
     }
 
-    private static TableRow CreateGridRow(IReadOnlyList<YadgTableCell> cells, bool header, int width, YadgTableCell?[] active, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata, string tableId)
+    private static TableRow CreateGridRow(
+        IReadOnlyList<YadgTableCell> cells,
+        bool header,
+        int width,
+        YadgTableCell?[] active,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata,
+        string tableId
+    )
     {
-        var row = new TableRow(); if (header) row.Append(new TableRowProperties(new TableHeader()));
+        TableRow row = new();
+        if (header)
+        {
+            row.Append(new TableRowProperties(new TableHeader()));
+        }
+
         if (cells.Any(cell => cell.StartColumn < 0) || cells.GroupBy(cell => cell.StartColumn).Any(group => group.Count() != 1))
+        {
             throw new InvalidDataException($"Grid table '{tableId}' has ambiguous cell start columns; complete geometry validation must succeed before Word authoring.");
+        }
+
         var byColumn = cells.ToDictionary(c => c.StartColumn);
         for (var col = 0; col < width;)
         {
             if (byColumn.TryGetValue(col, out var cell))
             {
                 var span = cell.ColumnSpan;
-                if (span < 1 || col + span > width) throw new InvalidDataException($"Grid table '{tableId}' cell at column {col + 1} exceeds its validated table width.");
+                if (span < 1 || col + span > width)
+                {
+                    throw new InvalidDataException($"Grid table '{tableId}' cell at column {col + 1} exceeds its validated table width.");
+                }
+
                 row.Append(CreateCell(cell.Paragraphs, span > 1 ? span : null, cell.RowSpan > 1 ? MergedCellValues.Restart : null, targets, metadata));
-                for (var i = col; i < col + span; i++) active[i] = cell.RowSpan > 1 ? cell : null;
+                for (var i = col; i < col + span; i++)
+                {
+                    active[i] = cell.RowSpan > 1 ? cell : null;
+                }
+
                 col += span;
             }
             else if (active[col] is { } merged)
             {
-                var span = 1; while (col + span < width && ReferenceEquals(active[col + span], merged)) span++;
+                int span = 1;
+                while (col + span < width && ReferenceEquals(active[col + span], merged))
+                {
+                    span++;
+                }
+
                 row.Append(CreateCell(new[] { Array.Empty<YadgInline>() }, span > 1 ? span : null, MergedCellValues.Continue, targets, metadata));
                 var remainingMerge = merged.RowSpan > 2 ? merged with { RowSpan = merged.RowSpan - 1 } : null;
-                for (var i = col; i < col + span; i++) active[i] = remainingMerge;
+                for (var i = col; i < col + span; i++)
+                {
+                    active[i] = remainingMerge;
+                }
+
                 col += span;
             }
-            else throw new InvalidDataException($"Grid table '{tableId}' is missing a structural cell at row position {col + 1}; no synthetic cell was authored.");
+            else
+            {
+                throw new InvalidDataException($"Grid table '{tableId}' is missing a structural cell at row position {col + 1}; no synthetic cell was authored.");
+            }
         }
         return row;
     }
 
-    private static TableCell CreateCell(IReadOnlyList<IReadOnlyList<YadgInline>> paragraphs, int? columnSpan, MergedCellValues? verticalMerge, IReadOnlyDictionary<string, string> targets, TemplateMetadata metadata)
+    private static TableCell CreateCell(
+        IReadOnlyList<IReadOnlyList<YadgInline>> paragraphs,
+        int? columnSpan,
+        MergedCellValues? verticalMerge,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
-        var props = new TableCellProperties(); if (columnSpan is int span) props.Append(new GridSpan { Val = span }); if (verticalMerge is not null) props.Append(new VerticalMerge { Val = verticalMerge });
-        var cell = new TableCell(); if (props.ChildElements.Count > 0) cell.Append(props);
-        foreach (var inlines in paragraphs) { var paragraph = new Paragraph(); AppendInlines(paragraph, inlines, targets, metadata: metadata); cell.Append(paragraph); }
-        if (paragraphs.Count == 0) cell.Append(new Paragraph()); return cell;
+        TableCellProperties props = new();
+        if (columnSpan is int span)
+        {
+            props.Append(new GridSpan { Val = span });
+        }
+
+        if (verticalMerge is not null)
+        {
+            props.Append(new VerticalMerge { Val = verticalMerge });
+        }
+
+        TableCell cell = new();
+        if (props.ChildElements.Count > 0)
+        {
+            cell.Append(props);
+        }
+
+        foreach (var inlines in paragraphs) { Paragraph paragraph = new(); AppendInlines(paragraph, inlines, targets, metadata: metadata); cell.Append(paragraph); }
+        if (paragraphs.Count == 0)
+        {
+            cell.Append(new Paragraph());
+        }
+
+        return cell;
     }
 
-    private static Paragraph CreateFigureParagraph(YadgFigure figure, Paragraph anchor, WordprocessingDocument document)
+    private static Paragraph CreateFigureParagraph(
+        YadgFigure figure,
+        Paragraph anchor,
+        WordprocessingDocument document
+    )
     {
-        if (figure.GeneratedSvg is not null) return CreateSvgParagraph(figure.GeneratedSvg, figure.Id, anchor, document);
+        if (figure.GeneratedSvg is not null)
+        {
+            return CreateSvgParagraph(figure.GeneratedSvg, figure.Id, anchor, document);
+        }
+
         var asset = figure.Asset!; var main = document.MainDocumentPart!; var partType = asset.Format == "PNG" ? ImagePartType.Png : ImagePartType.Jpeg; var part = main.AddImagePart(partType);
-        using (var stream = File.OpenRead(asset.FullPath)) part.FeedData(stream);
+        using (var stream = File.OpenRead(asset.FullPath))
+        {
+            part.FeedData(stream);
+        }
+
         var relation = main.GetIdOfPart(part); var width = Math.Min((long)asset.WidthPixels * 9525, EffectiveWidth(anchor)); var height = Math.Max(1, (long)asset.HeightPixels * 9525 * width / ((long)asset.WidthPixels * 9525));
-        var drawing = new Drawing(new DW.Inline(new DW.Extent { Cx = width, Cy = height }, new DW.DocProperties { Id = 1U, Name = figure.Id }, new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }), new A.Graphic(new A.GraphicData(new PIC.Picture(new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = figure.AssetPath }, new PIC.NonVisualPictureDrawingProperties()), new PIC.BlipFill(new A.Blip { Embed = relation }, new A.Stretch(new A.FillRectangle())), new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = width, Cy = height }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }))) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })));
+        Drawing drawing = new(new DW.Inline(new DW.Extent { Cx = width, Cy = height },
+    new DW.DocProperties { Id = 1U, Name = figure.Id },
+    new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
+    new A.Graphic(new A.GraphicData(new PIC.Picture(new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = figure.AssetPath }, new PIC.NonVisualPictureDrawingProperties()),
+    new PIC.BlipFill(new A.Blip { Embed = relation }, new A.Stretch(new A.FillRectangle())),
+    new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = width, Cy = height }),
+                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle })))
+    { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })));
         return new Paragraph(new Run(drawing));
     }
 
-    private static Paragraph CreateSvgParagraph(string svg, string name, Paragraph anchor, WordprocessingDocument document)
+    private static Paragraph CreateSvgParagraph(
+        string svg,
+        string name,
+        Paragraph anchor,
+        WordprocessingDocument document
+    )
     {
         var root = System.Xml.Linq.XDocument.Parse(svg).Root ?? throw new InvalidDataException("Generated diagram SVG has no root element.");
         var sourceWidth = double.Parse(root.Attribute("width")!.Value, System.Globalization.CultureInfo.InvariantCulture);
         var sourceHeight = double.Parse(root.Attribute("height")!.Value, System.Globalization.CultureInfo.InvariantCulture);
         var main = document.MainDocumentPart!;
         var part = main.AddImagePart(ImagePartType.Svg);
-        using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(svg))) part.FeedData(stream);
+        using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(svg)))
+        {
+            part.FeedData(stream);
+        }
+
         var relation = main.GetIdOfPart(part);
         var width = Math.Min((long)Math.Round(sourceWidth * 9525), EffectiveWidth(anchor));
         var height = Math.Max(1, (long)Math.Round(sourceHeight * 9525 * width / (sourceWidth * 9525)));
-        var blip = new A.Blip { Embed = relation };
-        var extension = new OpenXmlUnknownElement("a:extLst", "http://schemas.openxmlformats.org/drawingml/2006/main");
-        var ext = new OpenXmlUnknownElement("a:ext", "http://schemas.openxmlformats.org/drawingml/2006/main");
+        A.Blip blip = new() { Embed = relation };
+        OpenXmlUnknownElement extension = new("a:extLst", "http://schemas.openxmlformats.org/drawingml/2006/main");
+        OpenXmlUnknownElement ext = new("a:ext", "http://schemas.openxmlformats.org/drawingml/2006/main");
         ext.SetAttribute(new OpenXmlAttribute("uri", string.Empty, "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"));
-        var svgBlip = new OpenXmlUnknownElement("asvg:svgBlip", "http://schemas.microsoft.com/office/drawing/2016/SVG/main");
+        OpenXmlUnknownElement svgBlip = new("asvg:svgBlip", "http://schemas.microsoft.com/office/drawing/2016/SVG/main");
         svgBlip.SetAttribute(new OpenXmlAttribute("r:embed", "http://schemas.openxmlformats.org/officeDocument/2006/relationships", relation));
         ext.Append(svgBlip);
         extension.Append(ext);
         blip.Append(extension);
-        var picture = new PIC.Picture(
+        PIC.Picture picture = new(
             new PIC.NonVisualPictureProperties(new PIC.NonVisualDrawingProperties { Id = 0U, Name = name }, new PIC.NonVisualPictureDrawingProperties()),
             new PIC.BlipFill(blip, new A.Stretch(new A.FillRectangle())),
-            new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = width, Cy = height }), new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
-        var drawing = new Drawing(new DW.Inline(new DW.Extent { Cx = width, Cy = height }, new DW.DocProperties { Id = 1U, Name = name }, new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }), new A.Graphic(new A.GraphicData(picture) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })));
+            new PIC.ShapeProperties(new A.Transform2D(new A.Offset { X = 0L, Y = 0L }, new A.Extents { Cx = width, Cy = height }),
+                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
+        Drawing drawing = new(new DW.Inline(new DW.Extent { Cx = width, Cy = height },
+                new DW.DocProperties { Id = 1U, Name = name },
+                new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
+                new A.Graphic(new A.GraphicData(picture) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })));
         return new Paragraph(new Run(drawing));
     }
 
-    private static Paragraph CreateCaption(string targetId, string text, string binding, TemplateMetadata metadata, IReadOnlyDictionary<string, string> targets)
+    private static Paragraph CreateCaption(
+        string targetId,
+        string text,
+        string binding,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets
+    )
     {
         if (metadata.PrototypeBindings.TryGetValue(binding, out var id) && metadata.Prototypes.TryGetValue(id, out var prototype))
         {
@@ -1360,13 +2817,19 @@ public static class WordAuthoring
             ReplaceLogicalText(clone, "{{caption}}", text);
             if (targets.TryGetValue($"number:{targetId}", out var bookmark))
             {
-                if (bookmark.StartsWith("label:", StringComparison.Ordinal)) WrapCaptionPrefixAndSequence(clone, bookmark[6..]);
-                else WrapSequenceInBookmark(clone, bookmark);
+                if (bookmark.StartsWith("label:", StringComparison.Ordinal))
+                {
+                    WrapCaptionPrefixAndSequence(clone, bookmark[6..]);
+                }
+                else
+                {
+                    WrapSequenceInBookmark(clone, bookmark);
+                }
             }
             return clone;
         }
         var captionStyle = StyleFor(metadata, "caption", "Caption");
-        var plain = new Paragraph(captionStyle.StartsWith("builtin:", StringComparison.Ordinal) ? new ParagraphProperties() : new ParagraphProperties(new ParagraphStyleId { Val = captionStyle }));
+        Paragraph plain = new(captionStyle.StartsWith("builtin:", StringComparison.Ordinal) ? new ParagraphProperties() : new ParagraphProperties(new ParagraphStyleId { Val = captionStyle }));
         AppendInlines(plain, new[] { new YadgText(text) }, targets);
         return plain;
     }
@@ -1377,63 +2840,114 @@ public static class WordAuthoring
         var width = page?.Width?.Value ?? 0; var left = margins?.Left?.Value ?? 0; var right = margins?.Right?.Value ?? 0; return Math.Max(0, ((long)width - left - right) * 635L);
     }
 
-    private static void AppendInlines(Paragraph paragraph, IReadOnlyList<YadgInline> inlines, IReadOnlyDictionary<string, string> targets, bool italic = false, bool bold = false, TemplateMetadata? metadata = null)
+    private static void AppendInlines(
+        Paragraph paragraph,
+        IReadOnlyList<YadgInline> inlines,
+        IReadOnlyDictionary<string, string> targets,
+        bool italic = false,
+        bool bold = false,
+        TemplateMetadata? metadata = null
+    )
     {
-        foreach (var inline in inlines) switch (inline)
+        foreach (var inline in inlines)
         {
-            case YadgText text: var run = new Run(); if (italic || bold) run.Append(new RunProperties { Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null }); run.Append(new Text(text.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(run); break;
-            case YadgLiteralText literal: var literalRun = new Run(); if (italic || bold) literalRun.Append(new RunProperties { Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null }); literalRun.Append(new Text(literal.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(literalRun); break;
-            case YadgReference reference:
-                if (targets.TryGetValue($"number:{reference.Id}", out var bookmark)) paragraph.Append(CreateRefRun(bookmark));
-                else paragraph.Append(new Run(new Text($"[@{reference.Id}]") { Space = SpaceProcessingModeValues.Preserve }));
-                break;
-            case YadgLink link:
-                var destinationBookmark = link.InternalTargetId is not null && targets.TryGetValue(link.InternalTargetId, out var target) ? StripSectionPrefix(target) : null;
-                var relationshipId = link.InternalTargetId is null && metadata?.HyperlinkRelationships.TryGetValue(link.Destination, out var relation) == true ? relation : null;
-                var linkedContent = new Paragraph(); AppendInlines(linkedContent, link.Inlines, targets, italic, bold, metadata);
-                if (destinationBookmark is null && relationshipId is null) paragraph.Append(linkedContent.ChildElements.Select(element => element.CloneNode(true)));
-                else
-                {
-                    var hyperlink = destinationBookmark is not null ? new Hyperlink { Anchor = destinationBookmark } : new Hyperlink { Id = relationshipId };
-                    hyperlink.Append(linkedContent.ChildElements.Select(element => element.CloneNode(true)));
-                    paragraph.Append(hyperlink);
-                }
-                break;
-            case YadgHardBreak: paragraph.Append(new Run(new Break())); break;
-            case YadgSoftBreak: paragraph.Append(new Run(new Text(" "))); break;
-            case YadgCode code:
-                var codeRun = new Run(); var codeProps = new RunProperties { RunStyle = metadata?.Styles.TryGetValue("codeInline", out var codeStyle) == true && !codeStyle.StartsWith("builtin:", StringComparison.Ordinal) ? new RunStyle { Val = codeStyle } : null, Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null };
-                if (codeProps.ChildElements.Count > 0) codeRun.Append(codeProps); codeRun.Append(new Text(code.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(codeRun); break;
-            case YadgEmphasis emphasis: AppendInlines(paragraph, emphasis.Inlines, targets, true, bold, metadata); break;
-            case YadgStrong strong: AppendInlines(paragraph, strong.Inlines, targets, italic, true, metadata); break;
-            case YadgStrike strike:
-                var begin = paragraph.ChildElements.Count;
-                AppendInlines(paragraph, strike.Inlines, targets, italic, bold, metadata);
-                foreach (var strikeRun in paragraph.ChildElements.Skip(begin).SelectMany(element => element is Run run ? new[] { run }.Concat(run.Descendants<Run>()) : element.Descendants<Run>()))
-                {
-                    var strikeProps = strikeRun.RunProperties ?? strikeRun.PrependChild(new RunProperties());
-                    if (strikeProps.Strike is null) strikeProps.Append(new Strike());
-                }
-                break;
+            switch (inline)
+            {
+                case YadgText text: Run run = new(); if (italic || bold) { run.Append(new RunProperties { Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null }); } run.Append(new Text(text.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(run); break;
+                case YadgLiteralText literal: Run literalRun = new(); if (italic || bold) { literalRun.Append(new RunProperties { Italic = italic ? new Italic() : null, Bold = bold ? new Bold() : null }); } literalRun.Append(new Text(literal.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(literalRun); break;
+                case YadgReference reference:
+                    if (targets.TryGetValue($"number:{reference.Id}", out var bookmark))
+                    {
+                        paragraph.Append(CreateRefRun(bookmark));
+                    }
+                    else
+                    {
+                        paragraph.Append(new Run(new Text($"[@{reference.Id}]") { Space = SpaceProcessingModeValues.Preserve }));
+                    }
+
+                    break;
+                case YadgLink link:
+                    var destinationBookmark = link.InternalTargetId is not null && targets.TryGetValue(link.InternalTargetId, out var target) ? StripSectionPrefix(target) : null;
+                    var relationshipId = link.InternalTargetId is null &&
+                        metadata?.HyperlinkRelationships.TryGetValue(link.Destination, out var relation) == true ? relation : null;
+                    Paragraph linkedContent = new(); AppendInlines(linkedContent, link.Inlines, targets, italic, bold, metadata);
+                    if (destinationBookmark is null && relationshipId is null)
+                    {
+                        paragraph.Append(linkedContent.ChildElements.Select(element => element.CloneNode(true)));
+                    }
+                    else
+                    {
+                        var hyperlink = destinationBookmark is not null ? new Hyperlink { Anchor = destinationBookmark } : new Hyperlink { Id = relationshipId };
+                        hyperlink.Append(linkedContent.ChildElements.Select(element => element.CloneNode(true)));
+                        paragraph.Append(hyperlink);
+                    }
+                    break;
+                case YadgHardBreak: paragraph.Append(new Run(new Break())); break;
+                case YadgSoftBreak: paragraph.Append(new Run(new Text(" "))); break;
+                case YadgCode code:
+                    Run codeRun = new(); RunProperties codeProps = new()
+                    {
+                        RunStyle = metadata?.Styles.TryGetValue("codeInline", out var codeStyle) == true &&
+                        !codeStyle.StartsWith("builtin:", StringComparison.Ordinal) ? new RunStyle { Val = codeStyle } : null,
+                        Italic = italic ? new Italic() : null,
+                        Bold = bold ? new Bold() : null
+                    };
+                    if (codeProps.ChildElements.Count > 0)
+                    {
+                        codeRun.Append(codeProps);
+                    }
+
+                    codeRun.Append(new Text(code.Value) { Space = SpaceProcessingModeValues.Preserve }); paragraph.Append(codeRun); break;
+                case YadgEmphasis emphasis: AppendInlines(paragraph, emphasis.Inlines, targets, true, bold, metadata); break;
+                case YadgStrong strong: AppendInlines(paragraph, strong.Inlines, targets, italic, true, metadata); break;
+                case YadgStrike strike:
+                    var begin = paragraph.ChildElements.Count;
+                    AppendInlines(paragraph, strike.Inlines, targets, italic, bold, metadata);
+                    foreach (var strikeRun in paragraph.ChildElements.Skip(begin).SelectMany(element => element is Run run ? new[] { run }.Concat(run.Descendants<Run>()) : element.Descendants<Run>()))
+                    {
+                        var strikeProps = strikeRun.RunProperties ?? strikeRun.PrependChild(new RunProperties());
+                        if (strikeProps.Strike is null)
+                        {
+                            strikeProps.Append(new Strike());
+                        }
+                    }
+                    break;
+            }
         }
     }
 
     private static Run CreateRefRun(string target)
     {
-        if (target.StartsWith("label:", StringComparison.Ordinal)) target = target[6..];
+        if (target.StartsWith("label:", StringComparison.Ordinal))
+        {
+            target = target[6..];
+        }
+
         var paragraphNumber = target.StartsWith("section:", StringComparison.Ordinal);
         var bookmark = paragraphNumber ? target[8..] : target;
         var instruction = paragraphNumber ? $" REF {bookmark} \\p \\h " : $" REF {bookmark} \\h ";
-        return new Run(new FieldChar { FieldCharType = FieldCharValues.Begin }, new FieldCode(instruction), new FieldChar { FieldCharType = FieldCharValues.Separate }, new Text("0"), new FieldChar { FieldCharType = FieldCharValues.End });
+        return new Run(new FieldChar { FieldCharType = FieldCharValues.Begin },
+                new FieldCode(instruction),
+                new FieldChar { FieldCharType = FieldCharValues.Separate },
+                new Text("0"),
+                new FieldChar { FieldCharType = FieldCharValues.End });
     }
 
-    private static TemplateMetadata ReadMetadata(Body body, string location, List<Diagnostic> diagnostics)
+    private static TemplateMetadata ReadMetadata(
+        Body body,
+        string location,
+        List<Diagnostic> diagnostics
+    )
     {
         var paragraphs = body.Elements<Paragraph>().ToArray();
         var nonEmpty = paragraphs.FirstOrDefault(p => !string.IsNullOrWhiteSpace(ParagraphText(p)));
-        if (nonEmpty is null || !string.Equals(ParagraphText(nonEmpty).Trim(), "{{yadg:frontmatter}}", StringComparison.Ordinal)) return TemplateMetadata.Defaults;
-        var controls = new List<Paragraph> { nonEmpty };
-        var lines = new List<string>(); var end = -1;
+        if (nonEmpty is null || !string.Equals(ParagraphText(nonEmpty).Trim(), "{{yadg:frontmatter}}", StringComparison.Ordinal))
+        {
+            return TemplateMetadata.Defaults;
+        }
+
+        List<Paragraph> controls = [nonEmpty];
+        List<string> lines = new(); var end = -1;
         var start = Array.IndexOf(paragraphs, nonEmpty) + 1;
         for (var i = start; i < paragraphs.Length; i++)
         {
@@ -1442,94 +2956,232 @@ public static class WordAuthoring
             lines.Add(text);
         }
         if (end < 0) { diagnostics.Add(new("YADG-FM-001", "Front matter has no closing marker.", true, location)); return TemplateMetadata.Defaults with { ControlParagraphs = controls }; }
-        var styles = new Dictionary<string, string>(TemplateMetadata.Defaults.Styles, StringComparer.Ordinal); var bindings = new Dictionary<string, string>(StringComparer.Ordinal); var state = ""; var versionSeen = false;
+        Dictionary<string, string> styles = new(TemplateMetadata.Defaults.Styles, StringComparer.Ordinal); Dictionary<string, string> bindings = new(StringComparer.Ordinal); string state = ""; bool versionSeen = false;
         foreach (var raw in lines)
         {
-            var indent = raw.Length - raw.TrimStart().Length; var line = raw.Trim(); if (line.Length == 0) continue;
-            var colon = line.IndexOf(':'); if (colon < 0) { diagnostics.Add(new("YADG-FM-002", $"Malformed front matter line '{raw}'.", true, location)); continue; }
+            var indent = raw.Length - raw.TrimStart().Length; var line = raw.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var colon = line.IndexOf(':');
+            if (colon < 0) { diagnostics.Add(new("YADG-FM-002", $"Malformed front matter line '{raw}'.", true, location)); continue; }
             var key = line[..colon].Trim(); var value = line[(colon + 1)..].Trim().Trim('\"', '\'');
-            if (key == "version") { if (!versionSeen && value != "1") diagnostics.Add(new("YADG-FM-003", "Front matter version must be 1.", true, location)); else if (versionSeen) diagnostics.Add(new("YADG-FM-006", "Duplicate front matter key 'version'.", true, location)); versionSeen = true; state = "version"; continue; }
+            if (key == "version")
+            {
+                if (!versionSeen && value != "1")
+                {
+                    diagnostics.Add(new("YADG-FM-003", "Front matter version must be 1.", true, location));
+                }
+                else if (versionSeen)
+                {
+                    diagnostics.Add(new("YADG-FM-006", "Duplicate front matter key 'version'.", true, location));
+                }
+
+                versionSeen = true; state = "version"; continue;
+            }
             if (key is "styles" or "headings" or "lists" or "prototypes") { state = key; continue; }
-            if (key is "generatedTable" or "caption" or "codeInline" or "blockquote" or "codeBlock") { if (indent > 2) diagnostics.Add(new("YADG-FM-004", $"Unknown front matter key '{key}'.", true, location)); else styles[key] = value; continue; }
+            if (key is "generatedTable" or "caption" or "codeInline" or "blockquote" or "codeBlock")
+            {
+                if (indent > 2)
+                {
+                    diagnostics.Add(new("YADG-FM-004", $"Unknown front matter key '{key}'.", true, location));
+                }
+                else
+                {
+                    styles[key] = value;
+                }
+
+                continue;
+            }
             if (state == "headings" && Regex.IsMatch(key, "^[1-9]$")) { styles[$"heading{key}"] = value; continue; }
             if (state == "lists" && key is "unordered" or "ordered") { styles[key] = value; continue; }
-            if (state == "prototypes" && key is "figureCaption" or "tableCaption" or "unorderedListItem" or "orderedListItem") { if (!bindings.TryAdd(key, value)) diagnostics.Add(new("YADG-FM-005", $"Duplicate front matter binding '{key}'.", true, location)); continue; }
+            if (state == "prototypes" && key is "figureCaption" or "tableCaption" or "unorderedListItem" or "orderedListItem")
+            {
+                if (!bindings.TryAdd(key, value))
+                {
+                    diagnostics.Add(new("YADG-FM-005", $"Duplicate front matter binding '{key}'.", true, location));
+                }
+
+                continue;
+            }
             diagnostics.Add(new("YADG-FM-006", $"Unknown front matter key '{key}'.", true, location));
         }
-        if (!versionSeen) diagnostics.Add(new("YADG-FM-003", "Front matter must declare version: 1.", true, location));
-        var prototypeMap = new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal); var index = end + 1;
-        while (index < paragraphs.Length && LogicalText(paragraphs[index]).Trim().StartsWith("{{yadg:prototype:", StringComparison.Ordinal))
+        if (!versionSeen)
+        {
+            diagnostics.Add(new("YADG-FM-003", "Front matter must declare version: 1.", true, location));
+        }
+
+        Dictionary<string, CaptionPrototype> prototypeMap = new(StringComparer.Ordinal); var index = end + 1;
+        while (index < paragraphs.Length &&
+                LogicalText(paragraphs[index]).Trim().StartsWith("{{yadg:prototype:", StringComparison.Ordinal))
         {
             var marker = ParagraphText(paragraphs[index]).Trim(); var id = Regex.Match(marker, @"^\{\{yadg:prototype:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}$"); controls.Add(paragraphs[index]); index++;
             if (!id.Success) { diagnostics.Add(new("YADG-PROT-001", $"Malformed prototype marker '{marker}'.", true, location)); continue; }
-            var inside = new List<Paragraph>();
-            while (index < paragraphs.Length && !ParagraphText(paragraphs[index]).Trim().Equals($"{{{{/yadg:prototype:{id.Groups["id"].Value}}}}}", StringComparison.Ordinal)) { inside.Add(paragraphs[index]); controls.Add(paragraphs[index]); index++; }
+            List<Paragraph> inside = new();
+            while (index < paragraphs.Length &&
+                    !ParagraphText(paragraphs[index]).Trim().Equals($"{{{{/yadg:prototype:{id.Groups["id"].Value}}}}}", StringComparison.Ordinal)) { inside.Add(paragraphs[index]); controls.Add(paragraphs[index]); index++; }
             if (index >= paragraphs.Length) { diagnostics.Add(new("YADG-PROT-002", $"Prototype '{id.Groups["id"].Value}' has no closing marker.", true, location)); break; }
             controls.Add(paragraphs[index]); index++;
             if (inside.Count != 1) { diagnostics.Add(new("YADG-PROT-003", $"Prototype '{id.Groups["id"].Value}' must contain exactly one paragraph.", true, location)); continue; }
             var clone = (Paragraph)inside[0].CloneNode(true); var text = LogicalText(clone); var seq = CountSequenceFields(clone);
-            var proto = new CaptionPrototype(id.Groups["id"].Value, clone, seq, Regex.Matches(text, Regex.Escape("{{caption}}")).Count);
-            if (!prototypeMap.TryAdd(proto.Id, proto)) diagnostics.Add(new("YADG-PROT-004", $"Duplicate prototype ID '{proto.Id}'.", true, location));
+            CaptionPrototype proto = new(id.Groups["id"].Value, clone, seq, Regex.Matches(text, Regex.Escape("{{caption}}")).Count);
+            if (!prototypeMap.TryAdd(proto.Id, proto))
+            {
+                diagnostics.Add(new("YADG-PROT-004", $"Duplicate prototype ID '{proto.Id}'.", true, location));
+            }
+
             var listPrototype = bindings.Any(b => b.Key is "unorderedListItem" or "orderedListItem" && b.Value == proto.Id);
             var placeholder = listPrototype ? "{{item}}" : "{{caption}}";
             var placeholderCount = Regex.Matches(text, Regex.Escape(placeholder)).Count;
-            if (listPrototype ? placeholderCount != 1 || seq != 0 : seq != 1 || proto.CaptionPlaceholders != 1) diagnostics.Add(new("YADG-PROT-005", listPrototype ? $"List prototype '{proto.Id}' must contain exactly one {{item}} placeholder and no SEQ field." : $"Caption prototype '{proto.Id}' must contain exactly one SEQ field and one {{caption}} placeholder.", true, location));
-            if (Regex.Matches(text, @"\{\{[^{}]+\}\}").Cast<Match>().Any(m => !string.Equals(m.Value, placeholder, StringComparison.Ordinal))) diagnostics.Add(new("YADG-PROT-007", $"Prototype '{proto.Id}' contains another YADG placeholder.", true, location));
+            if (listPrototype ? placeholderCount != 1 || seq != 0 : seq != 1 || proto.CaptionPlaceholders != 1)
+            {
+                diagnostics.Add(new("YADG-PROT-005",
+                    listPrototype ? $"List prototype '{proto.Id}' must contain exactly one {{item}} placeholder and no SEQ field." : $"Caption prototype '{proto.Id}' must contain exactly one SEQ field and one {{caption}} placeholder.",
+                    true,
+                    location));
+            }
+
+            if (Regex.Matches(text, @"\{\{[^{}]+\}\}").Cast<Match>().Any(m => !string.Equals(m.Value, placeholder, StringComparison.Ordinal)))
+            {
+                diagnostics.Add(new("YADG-PROT-007", $"Prototype '{proto.Id}' contains another YADG placeholder.", true, location));
+            }
         }
-        if (paragraphs.Skip(index).Any(p => LogicalText(p).Trim().Equals("{{yadg:frontmatter}}", StringComparison.Ordinal))) diagnostics.Add(new("YADG-FM-007", "Duplicate front matter is not supported.", true, location));
-        foreach (var binding in bindings.Values) if (!prototypeMap.ContainsKey(binding)) diagnostics.Add(new("YADG-PROT-006", $"Configured prototype '{binding}' does not exist.", true, location));
-        var listPrototypes = new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal);
-        foreach (var kind in new[] { "unorderedListItem", "orderedListItem" }) if (bindings.TryGetValue(kind, out var id) && prototypeMap.TryGetValue(id, out var prototype)) listPrototypes[id] = prototype;
+        if (paragraphs.Skip(index).Any(p => LogicalText(p).Trim().Equals("{{yadg:frontmatter}}", StringComparison.Ordinal)))
+        {
+            diagnostics.Add(new("YADG-FM-007", "Duplicate front matter is not supported.", true, location));
+        }
+
+        foreach (var binding in bindings.Values)
+        {
+            if (!prototypeMap.ContainsKey(binding))
+            {
+                diagnostics.Add(new("YADG-PROT-006", $"Configured prototype '{binding}' does not exist.", true, location));
+            }
+        }
+
+        Dictionary<string, CaptionPrototype> listPrototypes = new(StringComparer.Ordinal);
+        foreach (var kind in new[] { "unorderedListItem", "orderedListItem" })
+        {
+            if (bindings.TryGetValue(kind, out var id) && prototypeMap.TryGetValue(id, out var prototype))
+            {
+                listPrototypes[id] = prototype;
+            }
+        }
+
         return new TemplateMetadata(1, styles, bindings, prototypeMap, controls) { ListItemPrototypes = listPrototypes };
     }
 
     private static string LogicalText(OpenXmlElement element) => string.Concat(element.Descendants<Text>().Select(t => t.Text));
-    private static void RemoveControlRegion(TemplateMetadata metadata) { foreach (var paragraph in metadata.ControlParagraphs.ToArray()) paragraph.Remove(); }
+    private static void RemoveControlRegion(TemplateMetadata metadata)
+    {
+        foreach (var paragraph in metadata.ControlParagraphs.ToArray())
+        {
+            paragraph.Remove();
+        }
+    }
 
     private static void ReplaceValues(WordprocessingDocument document, IReadOnlyDictionary<string, string> values)
     {
         var main = document.MainDocumentPart!;
-        var stories = new List<IEnumerable<Paragraph>> { main.Document.Body?.Descendants<Paragraph>() ?? Array.Empty<Paragraph>() };
+        List<IEnumerable<Paragraph>> stories = [main.Document.Body?.Descendants<Paragraph>() ?? Array.Empty<Paragraph>()];
         stories.AddRange(main.HeaderParts.Select(p => p.Header.Descendants<Paragraph>()));
         stories.AddRange(main.FooterParts.Select(p => p.Footer.Descendants<Paragraph>()));
-        if (main.FootnotesPart?.Footnotes is not null) stories.Add(main.FootnotesPart.Footnotes.Descendants<Paragraph>());
-        if (main.EndnotesPart?.Endnotes is not null) stories.Add(main.EndnotesPart.Endnotes.Descendants<Paragraph>());
-        if (main.WordprocessingCommentsPart?.Comments is not null) stories.Add(main.WordprocessingCommentsPart.Comments.Descendants<Paragraph>());
+        if (main.FootnotesPart?.Footnotes is not null)
+        {
+            stories.Add(main.FootnotesPart.Footnotes.Descendants<Paragraph>());
+        }
+
+        if (main.EndnotesPart?.Endnotes is not null)
+        {
+            stories.Add(main.EndnotesPart.Endnotes.Descendants<Paragraph>());
+        }
+
+        if (main.WordprocessingCommentsPart?.Comments is not null)
+        {
+            stories.Add(main.WordprocessingCommentsPart.Comments.Descendants<Paragraph>());
+        }
+
         foreach (var paragraph in stories.SelectMany(p => p).Distinct())
         {
             var combined = ParagraphText(paragraph);
             var matches = Regex.Matches(combined, @"\{\{value:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}").Cast<Match>().ToArray();
             foreach (var match in matches.Reverse())
-                if (values.TryGetValue(match.Groups["id"].Value, out var replacement)) ReplaceLogicalText(paragraph, match.Value, replacement);
+            {
+                if (values.TryGetValue(match.Groups["id"].Value, out var replacement))
+                {
+                    ReplaceLogicalText(paragraph, match.Value, replacement);
+                }
+            }
         }
     }
 
-    private static void ReplaceLogicalText(Paragraph paragraph, string oldText, string replacement)
+    private static void ReplaceLogicalText(
+        Paragraph paragraph,
+        string oldText,
+        string replacement
+    )
     {
-        var texts = paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).ToArray(); var combined = string.Concat(texts.Select(t => t.Text)); var at = combined.IndexOf(oldText, StringComparison.Ordinal); if (at < 0) return;
-        var endAt = at + oldText.Length; var offset = 0; var startIndex = 0; var endIndex = 0;
-        for (var i = 0; i < texts.Length; i++) { var next = offset + texts[i].Text.Length; if (at >= offset && at < next) startIndex = i; if (endAt > offset && endAt <= next) { endIndex = i; break; } offset = next; }
+        var texts = paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).ToArray(); var combined = string.Concat(texts.Select(t => t.Text)); var at = combined.IndexOf(oldText, StringComparison.Ordinal);
+        if (at < 0)
+        {
+            return;
+        }
+
+        var endAt = at + oldText.Length; int offset = 0; int startIndex = 0; int endIndex = 0;
+        for (var i = 0; i < texts.Length; i++)
+        {
+            var next = offset + texts[i].Text.Length;
+            if (at >= offset && at < next)
+            {
+                startIndex = i;
+            }
+
+            if (endAt > offset && endAt <= next) { endIndex = i; break; }
+            offset = next;
+        }
         var startOffset = texts.Take(startIndex).Sum(t => t.Text.Length); var endOffset = texts.Take(endIndex).Sum(t => t.Text.Length);
         var startLocal = at - startOffset; var endLocal = endAt - endOffset;
-        if (startIndex == endIndex) texts[startIndex].Text = texts[startIndex].Text[..startLocal] + replacement + texts[startIndex].Text[endLocal..];
+        if (startIndex == endIndex)
+        {
+            texts[startIndex].Text = texts[startIndex].Text[..startLocal] + replacement + texts[startIndex].Text[endLocal..];
+        }
         else
         {
             texts[startIndex].Text = texts[startIndex].Text[..startLocal] + replacement;
-            for (var i = startIndex + 1; i < endIndex; i++) texts[i].Text = string.Empty;
+            for (var i = startIndex + 1; i < endIndex; i++)
+            {
+                texts[i].Text = string.Empty;
+            }
+
             texts[endIndex].Text = texts[endIndex].Text[endLocal..];
         }
-        foreach (var text in texts) text.Space = SpaceProcessingModeValues.Preserve;
+        foreach (var text in texts)
+        {
+            text.Space = SpaceProcessingModeValues.Preserve;
+        }
     }
 
     private static void WrapSequenceInBookmark(Paragraph paragraph, string name)
     {
-        var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_"); if (!char.IsLetter(safe[0])) safe = "yadg_" + safe;
+        var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_");
+        if (!char.IsLetter(safe[0]))
+        {
+            safe = "yadg_" + safe;
+        }
+
         var start = paragraph.Descendants<FieldChar>().FirstOrDefault(f => f.FieldCharType?.Value == FieldCharValues.Begin);
         var end = paragraph.Descendants<FieldChar>().LastOrDefault(f => f.FieldCharType?.Value == FieldCharValues.End);
         var bookmarkId = Convert.ToInt64(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(safe)))[..8], 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (start is null || end is null)
         {
-            var simple = paragraph.Descendants<SimpleField>().FirstOrDefault(); if (simple is null) return;
+            var simple = paragraph.Descendants<SimpleField>().FirstOrDefault();
+            if (simple is null)
+            {
+                return;
+            }
+
             simple.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe }); simple.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId }); return;
         }
         OpenXmlElement startRun = start.Ancestors<Run>().FirstOrDefault() ?? (OpenXmlElement)start;
@@ -1540,13 +3192,28 @@ public static class WordAuthoring
     private static void WrapCaptionPrefixAndSequence(Paragraph paragraph, string name)
     {
         if (!TryGetCaptionLabelRange(paragraph, requirePlaceholder: false, out var range, out var reason) || range is null)
-            throw new WordAuthoringException(new("YADG-REF-006", $"Cannot create a label-number reference bookmark: {reason} Update the selected caption prototype so its label is literal text immediately before one complete SEQ field, followed by the caption placeholder.", true, "template caption prototype"));
+        {
+            throw new WordAuthoringException(new("YADG-REF-006",
+                $"Cannot create a label-number reference bookmark: {reason} Update the selected caption prototype so its label is literal text immediately before one complete SEQ field, followed by the caption placeholder.",
+                true,
+                "template caption prototype"));
+        }
+
         InsertBookmarkAroundNodes(range.FirstNode, range.LastNode, name);
     }
 
-    private static void InsertBookmarkAroundNodes(OpenXmlElement firstNode, OpenXmlElement lastNode, string name)
+    private static void InsertBookmarkAroundNodes(
+        OpenXmlElement firstNode,
+        OpenXmlElement lastNode,
+        string name
+    )
     {
-        var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_"); if (!char.IsLetter(safe[0])) safe = "yadg_" + safe;
+        var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_");
+        if (!char.IsLetter(safe[0]))
+        {
+            safe = "yadg_" + safe;
+        }
+
         var bookmarkId = Convert.ToInt64(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(safe)))[..8], 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
         firstNode.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe });
         lastNode.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId });
@@ -1555,7 +3222,12 @@ public static class WordAuthoring
     private static void WrapParagraphBookmark(Paragraph paragraph, string name)
     {
         var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_"); var bookmarkId = Convert.ToInt64(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(safe)))[..8], 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var firstRun = paragraph.Elements<Run>().FirstOrDefault(); var lastRun = paragraph.Elements<Run>().LastOrDefault(); if (firstRun is null || lastRun is null) return;
+        var firstRun = paragraph.Elements<Run>().FirstOrDefault(); var lastRun = paragraph.Elements<Run>().LastOrDefault();
+        if (firstRun is null || lastRun is null)
+        {
+            return;
+        }
+
         firstRun.InsertBeforeSelf(new BookmarkStart { Id = bookmarkId, Name = safe }); lastRun.InsertAfterSelf(new BookmarkEnd { Id = bookmarkId });
     }
 
@@ -1568,7 +3240,12 @@ public static class WordAuthoring
         return simple + ReadComplexFields(paragraph).Count(field => IsSequenceInstruction(field.Instruction));
     }
 
-    private static bool TryGetCaptionLabelRange(Paragraph paragraph, bool requirePlaceholder, out CaptionLabelRange? range, out string reason)
+    private static bool TryGetCaptionLabelRange(
+        Paragraph paragraph,
+        bool requirePlaceholder,
+        out CaptionLabelRange? range,
+        out string reason
+    )
     {
         range = null;
         var simpleSequences = paragraph.Descendants<SimpleField>().Where(field => IsSequenceInstruction(field.Instruction?.Value)).ToArray();
@@ -1650,10 +3327,17 @@ public static class WordAuthoring
     }
 
     private static bool IsSequenceInstruction(string? instruction) =>
-        Regex.IsMatch(instruction ?? string.Empty, @"^\s*SEQ\s+[^\s\\]+(?=\s|\\|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        Regex.IsMatch(instruction ?? string.Empty,
+            @"^\s*SEQ\s+[^\s\\]+(?=\s|\\|$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private static bool IsDirectFieldBoundary(OpenXmlElement node, FieldCharValues type, Paragraph paragraph) =>
-        node is FieldChar field && field.FieldCharType?.Value == type && field.Ancestors<Run>().FirstOrDefault()?.Parent == paragraph;
+    private static bool IsDirectFieldBoundary(
+        OpenXmlElement node,
+        FieldCharValues type,
+        Paragraph paragraph
+    ) =>
+        node is FieldChar field && field.FieldCharType?.Value == type &&
+            field.Ancestors<Run>().FirstOrDefault()?.Parent == paragraph;
 
     private static bool IsFieldBoundaryRun(Run run, FieldCharValues type) =>
         run.ChildElements.Count(element => element is FieldChar field && field.FieldCharType?.Value == type) == 1 &&
@@ -1664,8 +3348,8 @@ public static class WordAuthoring
 
     private static List<ComplexFieldRange> ReadComplexFields(Paragraph paragraph)
     {
-        var stack = new Stack<ComplexFieldState>();
-        var completed = new List<ComplexFieldRange>();
+        Stack<ComplexFieldState> stack = new();
+        List<ComplexFieldRange> completed = new();
         foreach (var node in paragraph.Descendants().Where(element => element is FieldChar or FieldCode))
         {
             if (node is FieldChar fieldChar)
@@ -1673,12 +3357,19 @@ public static class WordAuthoring
                 var type = fieldChar.FieldCharType?.Value;
                 if (type == FieldCharValues.Begin)
                 {
-                    if (stack.Count > 0) stack.Peek().ContainsNestedField = true;
+                    if (stack.Count > 0)
+                    {
+                        stack.Peek().ContainsNestedField = true;
+                    }
+
                     stack.Push(new ComplexFieldState(fieldChar));
                 }
                 else if (type == FieldCharValues.Separate)
                 {
-                    if (stack.Count > 0 && stack.Peek().SeparateNode is null) stack.Peek().SeparateNode = fieldChar;
+                    if (stack.Count > 0 && stack.Peek().SeparateNode is null)
+                    {
+                        stack.Peek().SeparateNode = fieldChar;
+                    }
                 }
                 else if (type == FieldCharValues.End && stack.Count > 0)
                 {
@@ -1687,7 +3378,9 @@ public static class WordAuthoring
                 }
             }
             else if (node is FieldCode code && stack.Count > 0 && stack.Peek().SeparateNode is null)
+            {
                 stack.Peek().Instruction.Append(code.Text);
+            }
         }
         while (stack.Count > 0)
         {
@@ -1697,7 +3390,15 @@ public static class WordAuthoring
         return completed;
     }
 
-    private static void ValidateReferences(WordprocessingDocument document, string location, YadgDocument model, TemplateMetadata metadata, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, List<Diagnostic> diagnostics)
+    private static void ValidateReferences(
+        WordprocessingDocument document,
+        string location,
+        YadgDocument model,
+        TemplateMetadata metadata,
+        IReadOnlyList<TemplatePlacement> placements,
+        IReadOnlyList<PreparedTableBinding> prepared,
+        List<Diagnostic> diagnostics
+    )
     {
         var styles = document.MainDocumentPart?.StyleDefinitionsPart?.Styles; var numbering = document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering;
         var targets = BuildTargets(model, placements, prepared, metadata, styles, numbering, diagnostics, location);
@@ -1709,85 +3410,191 @@ public static class WordAuthoring
             if (model.ReferenceFormatting.For(target) == "label-number" && target is YadgFigure or YadgTable)
             {
                 var binding = target is YadgFigure ? "figureCaption" : "tableCaption";
-                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
-                { diagnostics.Add(new("YADG-REF-006", $"Reference '[@{reference.Id}]' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.", true, location)); continue; }
+                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) ||
+                        !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
+                {
+                    diagnostics.Add(new("YADG-REF-006",
+                            $"Reference '[@{reference.Id}]' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.",
+                            true,
+                            location)); continue;
+                }
                 if (!HasCaptionLabel(prototype, out var reason))
-                { diagnostics.Add(new("YADG-REF-006", $"Reference '[@{reference.Id}]' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.", true, location)); continue; }
+                {
+                    diagnostics.Add(new("YADG-REF-006",
+                            $"Reference '[@{reference.Id}]' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.",
+                            true,
+                            location)); continue;
+                }
             }
-            if (!targets.ContainsKey($"number:{reference.Id}")) diagnostics.Add(new("YADG-REF-005", $"Semantic reference '[@{reference.Id}]' has no uniquely rendered numbered target in this template.", true, location));
+            if (!targets.ContainsKey($"number:{reference.Id}"))
+            {
+                diagnostics.Add(new("YADG-REF-005",
+                    $"Semantic reference '[@{reference.Id}]' has no uniquely rendered numbered target in this template.",
+                    true,
+                    location));
+            }
         }
         foreach (var link in blocks.SelectMany(LinksIn))
         {
             if (link.InternalTargetId is string id)
             {
-                if (!Regex.IsMatch(id, "^[A-Za-z][A-Za-z0-9_-]*$")) { diagnostics.Add(new("YADG-LINK-001", $"Internal Markdown link '{link.Destination}' must contain one explicit stable ID fragment.", true, location)); continue; }
+                if (!Regex.IsMatch(id, "^[A-Za-z][A-Za-z0-9_-]*$"))
+                {
+                    diagnostics.Add(new("YADG-LINK-001",
+                            $"Internal Markdown link '{link.Destination}' must contain one explicit stable ID fragment.",
+                            true,
+                            location)); continue;
+                }
                 if (model.FindObject(id) is null) { diagnostics.Add(new("YADG-LINK-001", $"Internal Markdown link target '#{id}' does not match a workspace semantic ID.", true, location)); continue; }
-                if (!targets.ContainsKey(id)) diagnostics.Add(new("YADG-LINK-002", $"Internal Markdown link target '#{id}' is not rendered exactly once in this template.", true, location));
+                if (!targets.ContainsKey(id))
+                {
+                    diagnostics.Add(new("YADG-LINK-002",
+                        $"Internal Markdown link target '#{id}' is not rendered exactly once in this template.",
+                        true,
+                        location));
+                }
             }
             else if (string.IsNullOrWhiteSpace(link.Destination) || !Uri.TryCreate(link.Destination, UriKind.RelativeOrAbsolute, out _))
+            {
                 diagnostics.Add(new("YADG-LINK-003", $"Markdown link destination '{link.Destination}' is not a valid URL or file link.", true, location));
+            }
         }
     }
 
-    private static IReadOnlyDictionary<string, string> BuildTargets(YadgDocument model, TemplateAnalysis analysis, WordprocessingDocument document, string location)
+    private static IReadOnlyDictionary<string, string> BuildTargets(
+        YadgDocument model,
+        TemplateAnalysis analysis,
+        WordprocessingDocument document,
+        string location
+    )
     {
-        var diagnostics = new List<Diagnostic>(); var result = BuildTargets(model, analysis.Placements, analysis.PreparedBindings ?? Array.Empty<PreparedTableBinding>(), analysis.Metadata, document.MainDocumentPart?.StyleDefinitionsPart?.Styles, document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering, diagnostics, location);
-        if (diagnostics.Any(d => d.IsError)) throw new WordAuthoringException(diagnostics.First(d => d.IsError));
+        List<Diagnostic> diagnostics = new(); var result = BuildTargets(model,
+                analysis.Placements,
+                analysis.PreparedBindings ?? Array.Empty<PreparedTableBinding>(),
+                analysis.Metadata,
+                document.MainDocumentPart?.StyleDefinitionsPart?.Styles,
+                document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering,
+                diagnostics,
+                location);
+        if (diagnostics.Any(d => d.IsError))
+        {
+            throw new WordAuthoringException(diagnostics.First(d => d.IsError));
+        }
+
         return result;
     }
 
-    private static Dictionary<string, string> BuildTargets(YadgDocument model, IReadOnlyList<TemplatePlacement> placements, IReadOnlyList<PreparedTableBinding> prepared, TemplateMetadata metadata, Styles? styles, Numbering? numbering, List<Diagnostic> diagnostics, string location)
+    private static Dictionary<string, string> BuildTargets(
+        YadgDocument model,
+        IReadOnlyList<TemplatePlacement> placements,
+        IReadOnlyList<PreparedTableBinding> prepared,
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering,
+        List<Diagnostic> diagnostics,
+        string location
+    )
     {
         var direct = placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).Select(p => (p.Kind, p.Id)).ToHashSet();
-        foreach (var binding in prepared) direct.Add((PlacementKind.Table, binding.Id));
-        var counts = new Dictionary<string, int>(StringComparer.Ordinal); var sections = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var binding in prepared)
+        {
+            direct.Add((PlacementKind.Table, binding.Id));
+        }
+
+        Dictionary<string, int> counts = new(StringComparer.Ordinal); HashSet<string> sections = new(StringComparer.Ordinal);
         foreach (var placement in placements)
         {
             var blocks = placement.Kind == PlacementKind.Section
-                ? RebaseBlocks(MarkdownDocumentParser.Resolve(model, placement.SectionReference!, location).Blocks ?? Array.Empty<YadgBlock>(), placement)
+                ? RebaseBlocks(MarkdownDocumentParser.Resolve(model, placement.SectionReference!, location).Blocks ?? Array.Empty<YadgBlock>(),
+                    placement)
                 : placement.Kind == PlacementKind.Table ? new YadgBlock[] { model.FindTable(placement.Id)! } : new YadgBlock[] { model.FindFigure(placement.Id)! };
             foreach (var block in blocks)
             {
-                if (placement.Kind == PlacementKind.Section && block is YadgHeading heading && placement.SectionReference!.Selection == SectionSelection.Section && heading.Id is not null) { counts[heading.Id] = counts.GetValueOrDefault(heading.Id) + 1; sections.Add(heading.Id); }
-                if (block is YadgTable table && (!direct.Contains((PlacementKind.Table, table.Id)) || placement.Kind == PlacementKind.Table)) counts[table.Id] = counts.GetValueOrDefault(table.Id) + 1;
-                if (block is YadgFigure figure && (!direct.Contains((PlacementKind.Figure, figure.Id)) || placement.Kind == PlacementKind.Figure)) counts[figure.Id] = counts.GetValueOrDefault(figure.Id) + 1;
+                if (placement.Kind == PlacementKind.Section && block is YadgHeading heading &&
+                        placement.SectionReference!.Selection == SectionSelection.Section &&
+    heading.Id is not null) { counts[heading.Id] = counts.GetValueOrDefault(heading.Id) + 1; sections.Add(heading.Id); }
+                if (block is YadgTable table &&
+                        (!direct.Contains((PlacementKind.Table, table.Id)) || placement.Kind == PlacementKind.Table))
+                {
+                    counts[table.Id] = counts.GetValueOrDefault(table.Id) + 1;
+                }
+
+                if (block is YadgFigure figure &&
+                        (!direct.Contains((PlacementKind.Figure, figure.Id)) || placement.Kind == PlacementKind.Figure))
+                {
+                    counts[figure.Id] = counts.GetValueOrDefault(figure.Id) + 1;
+                }
             }
         }
-        foreach (var binding in prepared) counts[binding.Id] = counts.GetValueOrDefault(binding.Id) + 1;
-        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var binding in prepared)
+        {
+            counts[binding.Id] = counts.GetValueOrDefault(binding.Id) + 1;
+        }
+
+        Dictionary<string, string> result = new(StringComparer.Ordinal);
         foreach (var (id, count) in counts)
         {
             var target = model.FindObject(id);
-            if (count != 1) continue;
+            if (count != 1)
+            {
+                continue;
+            }
+
             var bookmark = BookmarkName(id);
             result[id] = target is YadgSection ? "section:" + bookmark : bookmark;
-            var numberValid = true;
-            if (target is YadgFigure figure) numberValid = !string.IsNullOrWhiteSpace(figure.AltText) && metadata.PrototypeBindings.TryGetValue("figureCaption", out var figurePrototype) && metadata.Prototypes.ContainsKey(figurePrototype);
-            if (target is YadgTable table) numberValid = !string.IsNullOrWhiteSpace(table.Caption) && metadata.PrototypeBindings.TryGetValue("tableCaption", out var tablePrototype) && metadata.Prototypes.ContainsKey(tablePrototype);
+            bool numberValid = true;
+            if (target is YadgFigure figure)
+            {
+                numberValid = !string.IsNullOrWhiteSpace(figure.AltText) &&
+                    metadata.PrototypeBindings.TryGetValue("figureCaption", out var figurePrototype) &&
+    metadata.Prototypes.ContainsKey(figurePrototype);
+            }
+
+            if (target is YadgTable table)
+            {
+                numberValid = !string.IsNullOrWhiteSpace(table.Caption) &&
+                    metadata.PrototypeBindings.TryGetValue("tableCaption", out var tablePrototype) &&
+    metadata.Prototypes.ContainsKey(tablePrototype);
+            }
+
             if (target is YadgSection section)
             {
                 var placement = placements.FirstOrDefault(p => p.Kind == PlacementKind.Section && p.Id == id && p.SectionReference!.Selection == SectionSelection.Section);
                 var effective = placement is null ? section.Heading.Level : EffectiveHeadingLevel(section.Heading.Level, placement.ContextLevel, placement.SectionReference!.Selection, placement.RootLevel);
                 numberValid = sections.Contains(id) && HasEffectiveNumbering(effective, metadata, styles, numbering);
             }
-            if (!numberValid || target is null) continue;
+            if (!numberValid || target is null)
+            {
+                continue;
+            }
+
             var referenceMode = model.ReferenceFormatting.For(target);
             if (referenceMode == "label-number" && target is YadgFigure or YadgTable)
             {
                 var binding = target is YadgFigure ? "figureCaption" : "tableCaption";
-                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) || !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
+                if (!metadata.PrototypeBindings.TryGetValue(binding, out var prototypeId) ||
+                        !metadata.Prototypes.TryGetValue(prototypeId, out var prototype))
                 {
-                    diagnostics.Add(new("YADG-REF-006", $"Reference formatting for '{id}' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.", true, location));
+                    diagnostics.Add(new("YADG-REF-006",
+                            $"Reference formatting for '{id}' requests label-number, but no {binding} prototype is selected. Bind a caption prototype with a literal label and one complete SEQ field.",
+                            true,
+                            location));
                     continue;
                 }
                 if (!HasCaptionLabel(prototype, out var reason))
                 {
-                    diagnostics.Add(new("YADG-REF-006", $"Reference formatting for '{id}' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.", true, location));
+                    diagnostics.Add(new("YADG-REF-006",
+                            $"Reference formatting for '{id}' requests label-number, but caption prototype '{prototypeId}' is ambiguous: {reason} Update the prototype to use one literal label followed by one complete SEQ field and {{caption}}.",
+                            true,
+                            location));
                     continue;
                 }
                 result[$"number:{id}"] = "label:" + bookmark;
             }
-            else result[$"number:{id}"] = target is YadgSection ? "section:" + bookmark : bookmark;
+            else
+            {
+                result[$"number:{id}"] = target is YadgSection ? "section:" + bookmark : bookmark;
+            }
         }
         return result;
     }
@@ -1826,9 +3633,15 @@ public static class WordAuthoring
         };
     }
 
-    private static bool HasEffectiveNumbering(int level, TemplateMetadata metadata, Styles? styles, Numbering? numbering)
+    private static bool HasEffectiveNumbering(
+        int level,
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering
+    )
     {
-        var styleId = StyleFor(metadata, $"heading{level}", $"Heading{level}"); return styles is not null && ResolveNumberingId(styles, styleId, numbering) is int id && numbering?.Descendants<NumberingInstance>().Any(n => n.NumberID?.Value == id) == true;
+        var styleId = StyleFor(metadata, $"heading{level}", $"Heading{level}"); return styles is not null && ResolveNumberingId(styles, styleId, numbering) is int id &&
+                numbering?.Descendants<NumberingInstance>().Any(n => n.NumberID?.Value == id) == true;
     }
 
     private static string BookmarkName(string id)

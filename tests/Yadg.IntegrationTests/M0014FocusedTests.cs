@@ -2,8 +2,8 @@ using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
-using Yadg.Core;
 using Yadg.Cli;
+using Yadg.Core;
 using Yadg.Word;
 
 namespace Yadg.IntegrationTests;
@@ -54,7 +54,9 @@ public sealed class M0014FocusedTests
         var cornerOccluded = TextDiagramParser.Parse(OccludedLowerRightCorner);
         Assert.True(cornerOccluded.Success, cornerOccluded.Error);
         Assert.False(cornerOccluded.Model!.HasInvalidOcclusion);
-        Assert.Contains(cornerOccluded.Model.Rectangles, rectangle => rectangle.Reconstructed && rectangle.Left == 0 && rectangle.Top == 0 && rectangle.Right == 9 && rectangle.Bottom == 4 && rectangle.CoveredBy?.Count == 1);
+        Assert.Contains(cornerOccluded.Model.Rectangles,
+    rectangle => rectangle.Reconstructed && rectangle.Left == 0 && rectangle.Top == 0 && rectangle.Right == 9 && rectangle.Bottom == 4 &&
+                rectangle.CoveredBy?.Count == 1);
         var uncovered = TextDiagramParser.Parse(UncoveredGap);
         Assert.True(uncovered.Success, uncovered.Error);
         Assert.True(uncovered.Model!.HasInvalidOcclusion);
@@ -69,7 +71,8 @@ public sealed class M0014FocusedTests
         Assert.NotEmpty(xml.Descendants(svg + "rect"));
         Assert.NotEmpty(xml.Descendants(svg + "text"));
         Assert.DoesNotContain(xml.Descendants(), node => node.Name.LocalName is "script" or "foreignObject");
-        Assert.DoesNotContain(xml.Descendants().Attributes().Where(attribute => attribute.Name.LocalName is "href" or "src"), attribute => !string.IsNullOrEmpty(attribute.Value));
+        Assert.DoesNotContain(xml.Descendants().Attributes().Where(attribute => attribute.Name.LocalName is "href" or "src"),
+                attribute => !string.IsNullOrEmpty(attribute.Value));
     }
 
     [Fact]
@@ -77,7 +80,11 @@ public sealed class M0014FocusedTests
     {
         var junctions = TextDiagramParser.Parse("┌─┬─┐\n│ │ │\n├─┼─┤\n│ │ │\n└─┴─┘");
         Assert.True(junctions.Success, junctions.Error);
-        foreach (var glyph in "─│┌┐└┘├┤┬┴┼") Assert.Contains(junctions.Model!.Cells, cell => cell.Glyph == glyph);
+        foreach (var glyph in "─│┌┐└┘├┤┬┴┼")
+        {
+            Assert.Contains(junctions.Model!.Cells, cell => cell.Glyph == glyph);
+        }
+
         var unicodeArrow = TextDiagramParser.Parse("───→");
         Assert.True(unicodeArrow.Model!.HasStrongGeometry);
         Assert.Contains("<path", unicodeArrow.Model.Svg, StringComparison.Ordinal);
@@ -98,7 +105,9 @@ public sealed class M0014FocusedTests
         const string verticalFlow = "┌───┐\n│ A │\n└───┘\n  ↓\n  ↓";
         var explicitFlow = MarkdownDocumentParser.Parse($"```diagram {{#vertical-flow}}\n{verticalFlow}\n```", "content.md");
         Assert.True(explicitFlow.IsValid, string.Join(Environment.NewLine, explicitFlow.Diagnostics));
-        Assert.Contains("<path", Assert.IsType<YadgFigure>(Assert.Single(explicitFlow.Document!.Blocks)).GeneratedSvg, StringComparison.Ordinal);
+        Assert.Contains("<path",
+                Assert.IsType<YadgFigure>(Assert.Single(explicitFlow.Document!.Blocks)).GeneratedSvg,
+                StringComparison.Ordinal);
     }
 
     [Fact]
@@ -106,9 +115,10 @@ public sealed class M0014FocusedTests
     {
         var config = WorkspaceValuesParser.Parse("---\nyadg:\n  version: 1\ndiagrams:\n  autoDetect: true\n---\n", "YADG.md", new List<Diagnostic>());
         Assert.True(config.DiagramsAutoDetect);
-        foreach (var invalidConfig in new[] { "---\nyadg:\n  version: 1\ndiagrams:\n  autoDetect: maybe\n---", "---\nyadg:\n  version: 1\ndiagrams:\n  other: true\n---" })
+        foreach (var invalidConfig in new[] { "---\nyadg:\n  version: 1\ndiagrams:\n  autoDetect: maybe\n---",
+                "---\nyadg:\n  version: 1\ndiagrams:\n  other: true\n---" })
         {
-            var diagnostics = new List<Diagnostic>();
+            List<Diagnostic> diagnostics = new();
             WorkspaceValuesParser.Parse(invalidConfig, "YADG.md", diagnostics);
             Assert.Contains(diagnostics, diagnostic => diagnostic.IsError);
         }
@@ -146,7 +156,7 @@ public sealed class M0014FocusedTests
     [Fact]
     public void Connector_crossing_box_boundary_continues_outside_without_clipping()
     {
-        var source = "┌───┐\n│───┼────→\n└───┘";
+        string source = "┌───┐\n│───┼────→\n└───┘";
         var parsed = TextDiagramParser.Parse(source);
         Assert.True(parsed.Success, parsed.Error);
         var rectangle = Assert.Single(parsed.Model!.Rectangles);
@@ -155,7 +165,8 @@ public sealed class M0014FocusedTests
         var svg = XDocument.Parse(parsed.Model.Svg);
         XNamespace ns = "http://www.w3.org/2000/svg";
         var rightEdge = rectangle.Right * 14 + 7;
-        Assert.Contains(svg.Descendants(ns + "line"), line =>
+        Assert.Contains(svg.Descendants(ns + "line"),
+    line =>
             double.Parse(line.Attribute("x2")!.Value, System.Globalization.CultureInfo.InvariantCulture) > rightEdge &&
             double.Parse(line.Attribute("y1")!.Value, System.Globalization.CultureInfo.InvariantCulture) == double.Parse(line.Attribute("y2")!.Value, System.Globalization.CultureInfo.InvariantCulture));
         Assert.Contains(svg.Descendants(ns + "path"), path => path.Attribute("d")!.Value.Contains("L", StringComparison.Ordinal));
@@ -170,7 +181,7 @@ public sealed class M0014FocusedTests
         File.Copy(fixture.Template, Path.Combine(templates, "template.docx"));
         File.WriteAllText(Path.Combine(fixture.Root, "YADG.md"), "---\nyadg:\n  version: 1\n---\n");
         File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Architecture {#architecture}\n\n```diagram {#broken}\nplain text\n```\n");
-        var error = new StringWriter();
+        StringWriter error = new();
         var previous = Console.Error;
         try
         {
@@ -200,13 +211,16 @@ public sealed class M0014FocusedTests
         Assert.Contains("flow", xml, StringComparison.Ordinal);
         var svgPart = document.MainDocumentPart.ImageParts.Single(part => part.ContentType == "image/svg+xml");
         using var svgStream = svgPart.GetStream();
-        using var reader = new StreamReader(svgStream);
+        using StreamReader reader = new(svgStream);
         Assert.Contains("Outer", reader.ReadToEnd(), StringComparison.Ordinal);
         var sourceSvg = Path.Combine(fixture.Root, "source.svg");
         File.WriteAllText(sourceSvg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>");
-        var fileFigure = new YadgFigure("source", "", "source.svg", Path.Combine(fixture.Root, "content.md"));
-        var imageDocument = new YadgDocument(new YadgBlock[] { fileFigure }, new Dictionary<string, YadgSection>(), new Dictionary<string, YadgTable>(), new Dictionary<string, YadgFigure> { ["source"] = fileFigure });
-        var imageDiagnostics = new List<Diagnostic>();
+        YadgFigure fileFigure = new("source", "", "source.svg", Path.Combine(fixture.Root, "content.md"));
+        YadgDocument imageDocument = new(new YadgBlock[] { fileFigure },
+                new Dictionary<string, YadgSection>(),
+                new Dictionary<string, YadgTable>(),
+                new Dictionary<string, YadgFigure> { ["source"] = fileFigure });
+        List<Diagnostic> imageDiagnostics = new();
         AssetValidation.AttachAndValidate(imageDocument, fixture.Root, imageDiagnostics);
         Assert.Contains(imageDiagnostics, diagnostic => diagnostic.Code == "YADG-FIGURE-006");
     }
@@ -215,7 +229,9 @@ public sealed class M0014FocusedTests
     public void Anonymous_diagram_remains_unregistered_and_authors_at_natural_position()
     {
         using var fixture = DiagramWorkspace.Create("{{content:architecture}}");
-        var parsed = MarkdownDocumentParser.Parse($"# Architecture {{#architecture}}\n\nBefore.\n\n```text\n{NestedBoxes}\n```\n\nAfter.", "content.md", diagramsAutoDetect: true);
+        var parsed = MarkdownDocumentParser.Parse($"# Architecture {{#architecture}}\n\nBefore.\n\n```text\n{NestedBoxes}\n```\n\nAfter.",
+                "content.md",
+                diagramsAutoDetect: true);
         Assert.True(parsed.IsValid, string.Join(Environment.NewLine, parsed.Diagnostics));
         Assert.Empty(parsed.Document!.Figures);
         Assert.IsType<YadgDiagram>(parsed.Document.FindSection("architecture")!.Body[1]);
@@ -262,12 +278,13 @@ public sealed class M0014FocusedTests
             var template = Path.Combine(root, "template.docx");
             using var document = WordprocessingDocument.Create(template, WordprocessingDocumentType.Document);
             var main = document.AddMainDocumentPart();
-            var styles = new Styles(new Style { Type = StyleValues.Paragraph, StyleId = "Caption" });
+            Styles styles = new(new Style { Type = StyleValues.Paragraph, StyleId = "Caption" });
             styles.Append(Enumerable.Range(1, 9).Select(level => new Style { Type = StyleValues.Paragraph, StyleId = $"Heading{level}" }));
             main.AddNewPart<StyleDefinitionsPart>().Styles = styles;
             main.StyleDefinitionsPart!.Styles!.Save();
             main.Document = new Document(new Body(
-                tags.Select(tag => (OpenXmlElement)new Paragraph(new Run(new Text(tag)))).Append(new SectionProperties(new PageSize { Width = 12240, Height = 15840 }, new PageMargin { Top = 1440, Bottom = 1440, Left = 1440, Right = 1440 }))));
+                tags.Select(tag => (OpenXmlElement)new Paragraph(new Run(new Text(tag)))).Append(new SectionProperties(new PageSize { Width = 12240, Height = 15840 },
+                    new PageMargin { Top = 1440, Bottom = 1440, Left = 1440, Right = 1440 }))));
             main.Document.Save();
             return new(root, template);
         }

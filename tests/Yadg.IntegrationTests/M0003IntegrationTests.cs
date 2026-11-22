@@ -12,7 +12,8 @@ public sealed class M0003IntegrationTests
     {
         using var workspace = StructuredWorkspace.Create();
         var loaded = WorkspaceLoader.Load(workspace.Root);
-        Assert.True(loaded.Document.Tables.ContainsKey("matrix"), string.Join(Environment.NewLine, loaded.Diagnostics) + " keys=" + string.Join(",", loaded.Document.Tables.Keys) + " blocks=" + string.Join(",", loaded.Document.Blocks.Select(b => b.GetType().Name)));
+        Assert.True(loaded.Document.Tables.ContainsKey("matrix"),
+                string.Join(Environment.NewLine, loaded.Diagnostics) + " keys=" + string.Join(",", loaded.Document.Tables.Keys) + " blocks=" + string.Join(",", loaded.Document.Blocks.Select(b => b.GetType().Name)));
         Assert.Contains("context-figure", loaded.Document.Figures.Keys);
         var check = RunCli(workspace.Root, "check");
         Assert.True(check.ExitCode == 0, check.Output);
@@ -44,14 +45,17 @@ public sealed class M0003IntegrationTests
         Assert.Contains("YADG-REF-002", duplicate.Output);
 
         File.Delete(Path.Combine(workspace.Root, "collision.md"));
-        File.WriteAllText(Path.Combine(workspace.Root, "unsupported.md"), "## Bad {#bad}\n\n- parent\n  - nested\n\n| A | B |\n|---|---|\n| 1 | 2 |");
+        File.WriteAllText(Path.Combine(workspace.Root, "unsupported.md"),
+                "## Bad {#bad}\n\n- parent\n  - nested\n\n| A | B |\n|---|---|\n| 1 | 2 |");
         var invalid = RunCli(workspace.Root, "check");
         Assert.NotEqual(0, invalid.ExitCode);
         Assert.DoesNotContain("YADG-LIST-001", invalid.Output);
         Assert.Contains("YADG-TABLE-001", invalid.Output);
 
         File.Delete(Path.Combine(workspace.Root, "unsupported.md"));
-        CreateTemplate(Path.Combine(workspace.Root, "YadgTemplates", "mismatch.docx"), "{{content:content}}", ("{{table:context-figure}}", "{{figure:context-figure}}"));
+        CreateTemplate(Path.Combine(workspace.Root, "YadgTemplates", "mismatch.docx"),
+                "{{content:content}}",
+                ("{{table:context-figure}}", "{{figure:context-figure}}"));
         using (var duplicateDocument = WordprocessingDocument.Open(Path.Combine(workspace.Root, "YadgTemplates", "mismatch.docx"), true))
         {
             duplicateDocument.MainDocumentPart!.Document.Body!.Append(new Paragraph(new Run(new Text("{{figure:context-figure}}"))));
@@ -88,7 +92,7 @@ public sealed class M0003IntegrationTests
 
     private static ProcessResult RunCli(string root, string command)
     {
-        var info = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "yadg.exe")) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        ProcessStartInfo info = new(Path.Combine(AppContext.BaseDirectory, "yadg.exe")) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         info.ArgumentList.Add(command); var process = Process.Start(info)!; process.WaitForExit(); return new(process.ExitCode, process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd());
     }
 
@@ -103,35 +107,63 @@ public sealed class M0003IntegrationTests
             var root = Path.Combine(Path.GetTempPath(), "yadg-m0003-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(root, "YadgTemplates")); Directory.CreateDirectory(Path.Combine(root, "YadgPreWords")); Directory.CreateDirectory(Path.Combine(root, "images"));
             File.WriteAllText(Path.Combine(root, "YADG.md"), "Synthetic structured workspace.");
-            File.WriteAllText(Path.Combine(root, "content.md"), "## Content {#content}\n\n- First\n- Second with **strong**\n\n1. One\n2. Two\n\n| Name | Protocol |\n|---|---|\n| Alpha | HTTPS |\n| Beta | SFTP |\n{#matrix}\n\n![System context](images/context.png){#context-figure}\n\n![JPEG logo](images/logo.jpg){#logo-figure}");
+            File.WriteAllText(Path.Combine(root, "content.md"),
+                    "## Content {#content}\n\n- First\n- Second with **strong**\n\n1. One\n2. Two\n\n| Name | Protocol |\n|---|---|\n| Alpha | HTTPS |\n| Beta | SFTP |\n{#matrix}\n\n![System context](images/context.png){#context-figure}\n\n![JPEG logo](images/logo.jpg){#logo-figure}");
             File.WriteAllBytes(Path.Combine(root, "images", "context.png"), LargePng());
             File.WriteAllBytes(Path.Combine(root, "images", "logo.jpg"), Jpeg());
             CreateTemplate(Path.Combine(root, "YadgTemplates", "natural.docx"), "{{content:content}}", null);
-            CreateTemplate(Path.Combine(root, "YadgTemplates", "relocated.docx"), "{{content:content}}", ("{{table:matrix}}", "{{figure:context-figure}}"));
+            CreateTemplate(Path.Combine(root, "YadgTemplates", "relocated.docx"),
+                    "{{content:content}}",
+                    ("{{table:matrix}}", "{{figure:context-figure}}"));
             return new(root);
         }
         public void Dispose() => Directory.Delete(Root, true);
     }
 
-    private static void CreateTemplate(string path, string contentTag, (string Table, string Figure)? direct)
+    private static void CreateTemplate(
+        string path,
+        string contentTag,
+        (string Table, string Figure)? direct
+    )
     {
         using var document = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();
         var stylesPart = main.AddNewPart<StyleDefinitionsPart>();
-        var styles = new Styles(new Style { Type = StyleValues.Paragraph, StyleId = "BodyText" }, new Style { Type = StyleValues.Paragraph, StyleId = "Caption" }, new Style { Type = StyleValues.Table, StyleId = "TableGrid" });
+        Styles styles = new(new Style { Type = StyleValues.Paragraph, StyleId = "BodyText" },
+                new Style { Type = StyleValues.Paragraph, StyleId = "Caption" },
+                new Style { Type = StyleValues.Table, StyleId = "TableGrid" });
         styles.Append(Enumerable.Range(1, 6).Select(i => new Style { Type = StyleValues.Paragraph, StyleId = $"Heading{i}" }));
-        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "ListBullet", StyleParagraphProperties = new StyleParagraphProperties(new NumberingProperties(new NumberingId { Val = 1 })) });
-        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "ListNumber", StyleParagraphProperties = new StyleParagraphProperties(new NumberingProperties(new NumberingId { Val = 2 })) });
+        styles.Append(new Style
+        {
+            Type = StyleValues.Paragraph,
+            StyleId = "ListBullet",
+            StyleParagraphProperties = new StyleParagraphProperties(new NumberingProperties(new NumberingId { Val = 1 }))
+        });
+        styles.Append(new Style
+        {
+            Type = StyleValues.Paragraph,
+            StyleId = "ListNumber",
+            StyleParagraphProperties = new StyleParagraphProperties(new NumberingProperties(new NumberingId { Val = 2 }))
+        });
         stylesPart.Styles = styles; stylesPart.Styles.Save();
         var numberingPart = main.AddNewPart<NumberingDefinitionsPart>();
         numberingPart.Numbering = new Numbering(
-            new AbstractNum(new Level(new StartNumberingValue { Val = 1 }, new NumberingFormat { Val = NumberFormatValues.Bullet }, new LevelText { Val = "•" })) { AbstractNumberId = 1 },
-            new AbstractNum(new Level(new StartNumberingValue { Val = 1 }, new NumberingFormat { Val = NumberFormatValues.Decimal }, new LevelText { Val = "%1." })) { AbstractNumberId = 2 },
+            new AbstractNum(new Level(new StartNumberingValue { Val = 1 },
+                new NumberingFormat { Val = NumberFormatValues.Bullet },
+                new LevelText { Val = "•" }))
+            { AbstractNumberId = 1 },
+            new AbstractNum(new Level(new StartNumberingValue { Val = 1 },
+                new NumberingFormat { Val = NumberFormatValues.Decimal },
+                new LevelText { Val = "%1." }))
+            { AbstractNumberId = 2 },
             new NumberingInstance { NumberID = 1, AbstractNumId = new AbstractNumId { Val = 1 } },
             new NumberingInstance { NumberID = 2, AbstractNumId = new AbstractNumId { Val = 2 } }); numberingPart.Numbering.Save();
-        var body = new Body(new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }), new Run(new Text("Prepared template"))), new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "BodyText" }), new Run(new Text(contentTag))));
+        Body body = new(new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }), new Run(new Text("Prepared template"))),
+                new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "BodyText" }), new Run(new Text(contentTag))));
         if (direct is not null) { body.Append(new Paragraph(new Run(new Text(direct.Value.Table))), new Paragraph(new Run(new Text(direct.Value.Figure)))); }
-        body.Append(new Paragraph(new Run(new Text("Unrelated template content"))), new SectionProperties(new PageSize { Width = 12240, Height = 15840 }, new PageMargin { Top = 1440, Bottom = 1440, Left = 1440, Right = 1440 }));
+        body.Append(new Paragraph(new Run(new Text("Unrelated template content"))),
+    new SectionProperties(new PageSize { Width = 12240, Height = 15840 },
+                new PageMargin { Top = 1440, Bottom = 1440, Left = 1440, Right = 1440 }));
         main.Document = new Document(body); main.Document.Save();
     }
 

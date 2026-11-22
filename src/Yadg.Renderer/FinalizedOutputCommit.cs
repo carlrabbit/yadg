@@ -2,7 +2,11 @@ namespace Yadg.Renderer;
 
 public static class FinalizedOutputCommit
 {
-    public static void Commit(string workspaceRoot, string stagedWords, string? stagedPdfs)
+    public static void Commit(
+        string workspaceRoot,
+        string stagedWords,
+        string? stagedPdfs
+    )
     {
         var root = Path.GetFullPath(workspaceRoot);
         var transaction = Path.Combine(root, ".yadg-render-commit-" + Guid.NewGuid().ToString("N"));
@@ -10,8 +14,8 @@ public static class FinalizedOutputCommit
         var pdfs = Path.Combine(root, "YadgPdfs");
         var oldWords = Path.Combine(transaction, "previous-words");
         var oldPdfs = Path.Combine(transaction, "previous-pdfs");
-        var movedOldWords = false; var movedOldPdfs = false;
-        var installedWords = false; var installedPdfs = false;
+        bool movedOldWords = false; bool movedOldPdfs = false;
+        bool installedWords = false; bool installedPdfs = false;
         try
         {
             var nextWords = Path.Combine(transaction, "YadgWords");
@@ -19,7 +23,10 @@ public static class FinalizedOutputCommit
             Directory.CreateDirectory(nextWords);
             CopyFiles(stagedWords, nextWords);
             Directory.CreateDirectory(nextPdfs);
-            if (stagedPdfs is not null) CopyFiles(stagedPdfs, nextPdfs);
+            if (stagedPdfs is not null)
+            {
+                CopyFiles(stagedPdfs, nextPdfs);
+            }
 
             if (Directory.Exists(words)) { Directory.Move(words, oldWords); movedOldWords = true; }
             if (Directory.Exists(pdfs)) { Directory.Move(pdfs, oldPdfs); movedOldPdfs = true; }
@@ -28,18 +35,41 @@ public static class FinalizedOutputCommit
         }
         catch
         {
-            if (installedWords && Directory.Exists(words)) Directory.Delete(words, true);
-            if (installedPdfs && Directory.Exists(pdfs)) Directory.Delete(pdfs, true);
-            if (movedOldWords && Directory.Exists(oldWords)) Directory.Move(oldWords, words);
-            if (movedOldPdfs && Directory.Exists(oldPdfs)) Directory.Move(oldPdfs, pdfs);
+            if (installedWords && Directory.Exists(words))
+            {
+                Directory.Delete(words, true);
+            }
+
+            if (installedPdfs && Directory.Exists(pdfs))
+            {
+                Directory.Delete(pdfs, true);
+            }
+
+            if (movedOldWords && Directory.Exists(oldWords))
+            {
+                Directory.Move(oldWords, words);
+            }
+
+            if (movedOldPdfs && Directory.Exists(oldPdfs))
+            {
+                Directory.Move(oldPdfs, pdfs);
+            }
+
             throw;
         }
-        finally { try { if (Directory.Exists(transaction)) Directory.Delete(transaction, true); } catch { } }
+        finally { try { if (Directory.Exists(transaction)) { Directory.Delete(transaction, true); } } catch { } }
     }
 
     private static void CopyFiles(string source, string destination)
     {
-        if (!Directory.Exists(source)) return;
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.TopDirectoryOnly)) File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+        if (!Directory.Exists(source))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.TopDirectoryOnly))
+        {
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+        }
     }
 }

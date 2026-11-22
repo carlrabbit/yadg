@@ -62,7 +62,11 @@ public sealed class M0010FocusedTests
     {
         var fixture = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tests", "fixtures", "m0010", "word-origin.docx");
         fixture = Path.GetFullPath(fixture);
-        if (!File.Exists(fixture)) return;
+        if (!File.Exists(fixture))
+        {
+            return;
+        }
+
         var root = Path.Combine(Path.GetTempPath(), "yadg-m0010-values-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
@@ -71,7 +75,8 @@ public sealed class M0010FocusedTests
             var model = Parse("# Architecture {#architecture}\n\nBody.");
             WordAuthoring.Author(fixture, output, model, new Dictionary<string, string> { ["story-value"] = "Focused value" });
             using var archive = ZipFile.OpenRead(output);
-            var xml = string.Join("\n", archive.Entries.Where(e => e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).Select(e => { using var reader = new StreamReader(e.Open(), Encoding.UTF8); return reader.ReadToEnd(); }));
+            var xml = string.Join("\n",
+                    archive.Entries.Where(e => e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).Select(e => { using StreamReader reader = new(e.Open(), Encoding.UTF8); return reader.ReadToEnd(); }));
             Assert.DoesNotContain("{{value:", xml, StringComparison.Ordinal);
             Assert.Contains("Focused value", xml, StringComparison.Ordinal);
         }
@@ -100,12 +105,13 @@ public sealed class M0010FocusedTests
             var template = Path.Combine(root, "template.docx");
             using var document = WordprocessingDocument.Create(template, WordprocessingDocumentType.Document);
             var main = document.AddMainDocumentPart();
-            var styles = new Styles(new Style { Type = StyleValues.Paragraph, StyleId = "BodyText" });
+            Styles styles = new(new Style { Type = StyleValues.Paragraph, StyleId = "BodyText" });
             styles.Append(Enumerable.Range(1, 9).Select(i => new Style { Type = StyleValues.Paragraph, StyleId = $"Heading{i}" }));
             main.AddNewPart<StyleDefinitionsPart>().Styles = styles;
             main.StyleDefinitionsPart!.Styles!.Save();
-            var body = new Body(
-                new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading4" }, new OutlineLevel { Val = outlineLevel }), new Run(new Text("Template context"))),
+            Body body = new(
+                new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading4" }, new OutlineLevel { Val = outlineLevel }),
+                    new Run(new Text("Template context"))),
                 new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "BodyText" }), new Run(new Text(tag))),
                 new Paragraph(new Run(new Text("Static after."))));
             main.Document = new Document(body);

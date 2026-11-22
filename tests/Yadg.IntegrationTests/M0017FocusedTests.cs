@@ -11,10 +11,12 @@ public sealed class M0017FocusedTests
     [Fact]
     public void Pipe_tables_use_ast_cells_and_keep_escaped_pipes_code_and_inline_semantics()
     {
-        var parsed = MarkdownDocumentParser.Parse("| Name | Detail |\n|---|---|\n| A\\|B | `x|y` and **strong** [link](https://example.test) [@topic] |\n{#matrix caption=\"Table caption\"}", "content.md");
+        var parsed = MarkdownDocumentParser.Parse("| Name | Detail |\n|---|---|\n| A\\|B | `x|y` and **strong** [link](https://example.test) [@topic] |\n{#matrix caption=\"Table caption\"}",
+                "content.md");
 
         Assert.True(parsed.IsValid, string.Join(Environment.NewLine, parsed.Diagnostics));
-        Assert.True(parsed.Document!.Tables.Count > 0, "Parsed block types: " + string.Join(",", parsed.Document.Blocks.Select(b => b.GetType().Name)) + "; diagnostics: " + string.Join(" | ", parsed.Diagnostics));
+        Assert.True(parsed.Document!.Tables.Count > 0,
+                "Parsed block types: " + string.Join(",", parsed.Document.Blocks.Select(b => b.GetType().Name)) + "; diagnostics: " + string.Join(" | ", parsed.Diagnostics));
         var table = Assert.Single(parsed.Document.Tables.Values);
         Assert.Equal("matrix", table.Id);
         Assert.Equal("Table caption", table.Caption);
@@ -30,21 +32,23 @@ public sealed class M0017FocusedTests
     [Fact]
     public void Grid_tables_preserve_cell_paragraphs_and_report_unsupported_cell_blocks()
     {
-        var source = "+-------+-------+\n| Name  | Detail|\n+=======+=======+\n| Alpha | First |\n|       | Second|\n+-------+-------+\n{#grid}";
+        string source = "+-------+-------+\n| Name  | Detail|\n+=======+=======+\n| Alpha | First |\n|       | Second|\n+-------+-------+\n{#grid}";
         var parsed = MarkdownDocumentParser.Parse(source, "grid.md");
 
         Assert.NotNull(parsed.Document);
-        Assert.True(parsed.Document!.Blocks.Any(block => block is YadgTable { Id: "grid" }), "Parsed block types: " + string.Join(",", parsed.Document.Blocks.Select(b => b.GetType().Name)) + "; diagnostics: " + string.Join(" | ", parsed.Diagnostics));
+        Assert.True(parsed.Document!.Blocks.Any(block => block is YadgTable { Id: "grid" }),
+                "Parsed block types: " + string.Join(",", parsed.Document.Blocks.Select(b => b.GetType().Name)) + "; diagnostics: " + string.Join(" | ", parsed.Diagnostics));
         var table = parsed.Document.Tables["grid"];
         Assert.All(table.GridHeader!, cell => Assert.Single(cell.Paragraphs));
-        Assert.Contains(table.GridRows!.SelectMany(row => row).SelectMany(cell => cell.Paragraphs).SelectMany(paragraph => paragraph), inline => inline is YadgSoftBreak or YadgHardBreak);
+        Assert.Contains(table.GridRows!.SelectMany(row => row).SelectMany(cell => cell.Paragraphs).SelectMany(paragraph => paragraph),
+                inline => inline is YadgSoftBreak or YadgHardBreak);
         Assert.DoesNotContain(parsed.Diagnostics, d => d.Code == "YADG-TABLE-004");
     }
 
     [Fact]
     public void Grid_tables_preserve_horizontal_and_vertical_merge_spans()
     {
-        var source = "+---+---+---+\n| AAAAA | B |\n+---+---+ B +\n| D | E | B |\n+ D +---+---+\n| D | CCCCC |\n+---+---+---+\n{#merge}";
+        string source = "+---+---+---+\n| AAAAA | B |\n+---+---+ B +\n| D | E | B |\n+ D +---+---+\n| D | CCCCC |\n+---+---+---+\n{#merge}";
         var parsed = MarkdownDocumentParser.Parse(source, "merge.md");
 
         Assert.True(parsed.IsValid, string.Join(Environment.NewLine, parsed.Diagnostics));
@@ -62,7 +66,7 @@ public sealed class M0017FocusedTests
         var table = Assert.Single(ast.OfType<Markdig.Extensions.Tables.Table>());
         var rows = table.OfType<Markdig.Extensions.Tables.TableRow>().ToArray();
         rows[1].Remove(rows[1].OfType<Markdig.Extensions.Tables.TableCell>().Last());
-        var diagnostics = new List<Diagnostic>();
+        List<Diagnostic> diagnostics = new();
         var converted = MarkdownDocumentParser.ConvertTable(table, "bad-grid", null, diagnostics, "bad-grid.md", "style");
 
         Assert.Null(converted);
@@ -77,7 +81,7 @@ public sealed class M0017FocusedTests
         var values = WorkspaceValuesParser.Parse("---\nyadg:\n  version: 1\n---\n", "YADG.md", new List<Diagnostic>());
         Assert.Equal("style", values.CodeInlinePolicy);
 
-        var source = "+-------+\n| Header|\n+=======+\n| - list|\n+-------+\n{#bad}";
+        string source = "+-------+\n| Header|\n+=======+\n| - list|\n+-------+\n{#bad}";
         var parsed = MarkdownDocumentParser.Parse(source, "grid.md");
         Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "YADG-TABLE-004");
     }
@@ -85,7 +89,7 @@ public sealed class M0017FocusedTests
     [Fact]
     public void Literal_code_nested_lists_quotes_tasks_and_strike_are_semantic_blocks()
     {
-        var source = "- outer\n  1. inner\n     - deep\n- [x] done\n- [ ] pending\n\n> quoted **text**\n>\n> > nested quote\n\n```csharp\n  exact()\n{#literal-code-line}\n\n```\n\n    indented()\n\nStruck ~~word~~ and `inline`";
+        string source = "- outer\n  1. inner\n     - deep\n- [x] done\n- [ ] pending\n\n> quoted **text**\n>\n> > nested quote\n\n```csharp\n  exact()\n{#literal-code-line}\n\n```\n\n    indented()\n\nStruck ~~word~~ and `inline`";
         var parsed = MarkdownDocumentParser.Parse(source, "blocks.md", codeInlinePolicy: "style");
 
         Assert.True(parsed.IsValid, string.Join(Environment.NewLine, parsed.Diagnostics));
@@ -115,7 +119,8 @@ public sealed class M0017FocusedTests
     public void Word_authoring_emits_multiline_cells_spans_strike_and_static_task_glyphs()
     {
         using var fixture = M0016FocusedTests.Fixture.Create();
-        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Intro {#intro}\n\n- [x] complete\n\n~~removed~~\n\n![Flow diagram](images/flow.png){#flow}\n\n| A | B |\n|---|---|\n| one | two |\n{#matrix caption=\"Matrix\"}\n");
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"),
+                "# Intro {#intro}\n\n- [x] complete\n\n~~removed~~\n\n![Flow diagram](images/flow.png){#flow}\n\n| A | B |\n|---|---|\n| one | two |\n{#matrix caption=\"Matrix\"}\n");
         var workspace = WorkspaceLoader.Load(fixture.Root);
         Assert.True(workspace.IsValid, string.Join(Environment.NewLine, workspace.Diagnostics));
         var analysis = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values, yolo: true);
@@ -134,7 +139,7 @@ public sealed class M0017FocusedTests
     {
         using var fixture = M0016FocusedTests.Fixture.Create();
         ConfigureGridTableBorders(fixture.Template);
-        var source = "# Intro {#intro}\n\n![Flow diagram](images/flow.png){#flow}\n\n+---+---+---+\n| AAAAA | B |\n+---+---+ B +\n| D | E | B |\n+ D +---+---+\n| D | CCCCC |\n+---+---+---+\n{#matrix caption=\"Interface matrix\"}\n";
+        string source = "# Intro {#intro}\n\n![Flow diagram](images/flow.png){#flow}\n\n+---+---+---+\n| AAAAA | B |\n+---+---+ B +\n| D | E | B |\n+ D +---+---+\n| D | CCCCC |\n+---+---+---+\n{#matrix caption=\"Interface matrix\"}\n";
         File.WriteAllText(Path.Combine(fixture.Root, "content.md"), source);
         var workspace = WorkspaceLoader.Load(fixture.Root);
         Assert.True(workspace.IsValid, string.Join(Environment.NewLine, workspace.Diagnostics));
@@ -147,7 +152,8 @@ public sealed class M0017FocusedTests
         Assert.Contains(table.Descendants<GridSpan>(), span => span.Val?.Value > 1);
         Assert.Contains(table.Descendants<VerticalMerge>(), merge => merge.Val?.Value == MergedCellValues.Restart);
         Assert.Contains(table.Descendants<VerticalMerge>(), merge => merge.Val?.Value == MergedCellValues.Continue);
-        Assert.All(table.Elements<TableRow>(), row => Assert.Equal(3, row.Elements<TableCell>().Sum(cell => cell.TableCellProperties?.GridSpan?.Val?.Value ?? 1)));
+        Assert.All(table.Elements<TableRow>(),
+                row => Assert.Equal(3, row.Elements<TableCell>().Sum(cell => cell.TableCellProperties?.GridSpan?.Val?.Value ?? 1)));
         var tableStyle = document.MainDocumentPart.StyleDefinitionsPart!.Styles!.Elements<Style>().Single(style => style.StyleId?.Value == "TableGrid");
         var styleBorders = Assert.IsType<StyleTableProperties>(tableStyle.StyleTableProperties).GetFirstChild<TableBorders>();
         Assert.NotNull(styleBorders?.TopBorder);
@@ -161,7 +167,8 @@ public sealed class M0017FocusedTests
     {
         using var fixture = M0016FocusedTests.Fixture.Create();
         ConfigureBlockPresentation(fixture.Template);
-        File.WriteAllText(Path.Combine(fixture.Root, "content.md"), "# Intro {#intro}\n\n> outer **bold**\n>\n> > nested quote\n\n```text\n  first  \n\n    second\n```\n\n        indented first\n\n            indented nested\n");
+        File.WriteAllText(Path.Combine(fixture.Root, "content.md"),
+                "# Intro {#intro}\n\n> outer **bold**\n>\n> > nested quote\n\n```text\n  first  \n\n    second\n```\n\n        indented first\n\n            indented nested\n");
         var workspace = WorkspaceLoader.Load(fixture.Root);
         Assert.True(workspace.IsValid, string.Join(Environment.NewLine, workspace.Diagnostics));
         var output = Path.Combine(fixture.Root, "block-presentation.docx");
@@ -177,14 +184,17 @@ public sealed class M0017FocusedTests
                     int.Parse(quoteParagraphs[0].ParagraphProperties!.Indentation?.Left?.Value ?? "0"));
 
         var codeParagraphs = body.Elements<Paragraph>().Where(paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "CodePresentation").ToArray();
-        Assert.Equal(new[] { "  first  ", "", "    second", "    indented first", "", "        indented nested" }, codeParagraphs.Select(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text))));
-        Assert.All(codeParagraphs, paragraph => Assert.NotEqual("PlacementNoise", paragraph.ParagraphProperties!.ParagraphStyleId?.Val?.Value));
+        Assert.Equal(new[] { "  first  ", "", "    second", "    indented first", "", "        indented nested" },
+                codeParagraphs.Select(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text))));
+        Assert.All(codeParagraphs,
+                paragraph => Assert.NotEqual("PlacementNoise", paragraph.ParagraphProperties!.ParagraphStyleId?.Val?.Value));
         Assert.All(codeParagraphs, paragraph => Assert.Null(paragraph.ParagraphProperties?.KeepNext));
         Assert.All(codeParagraphs, paragraph => Assert.Null(paragraph.ParagraphProperties?.KeepLines));
         var codeStyle = document.MainDocumentPart!.StyleDefinitionsPart!.Styles!.Elements<Style>().Single(style => style.StyleId?.Value == "CodePresentation");
         Assert.NotNull(codeStyle.StyleParagraphProperties?.KeepNext);
         Assert.NotNull(codeStyle.StyleParagraphProperties?.KeepLines);
-        Assert.DoesNotContain(body.Elements<Paragraph>(), paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "PlacementNoise");
+        Assert.DoesNotContain(body.Elements<Paragraph>(),
+                paragraph => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "PlacementNoise");
     }
 
     [Fact]
@@ -204,8 +214,10 @@ public sealed class M0017FocusedTests
         Assert.True(workspace.IsValid, string.Join(Environment.NewLine, workspace.Diagnostics));
         var analysis = WordAuthoring.Analyze(fixture.Template, workspace.Document, workspace.Values.Values);
 
-        Assert.Contains(analysis.Diagnostics, diagnostic => diagnostic.Code == "YADG-WORD-STYLE" && diagnostic.Message.Contains("QuotePresentation", StringComparison.Ordinal));
-        Assert.Contains(analysis.Diagnostics, diagnostic => diagnostic.Code == "YADG-WORD-STYLE" && diagnostic.Message.Contains("CodePresentation", StringComparison.Ordinal));
+        Assert.Contains(analysis.Diagnostics,
+                diagnostic => diagnostic.Code == "YADG-WORD-STYLE" && diagnostic.Message.Contains("QuotePresentation", StringComparison.Ordinal));
+        Assert.Contains(analysis.Diagnostics,
+                diagnostic => diagnostic.Code == "YADG-WORD-STYLE" && diagnostic.Message.Contains("CodePresentation", StringComparison.Ordinal));
     }
 
     private static void ConfigureBlockPresentation(string template)
@@ -213,8 +225,21 @@ public sealed class M0017FocusedTests
         using var document = WordprocessingDocument.Open(template, true);
         var main = document.MainDocumentPart!;
         var styles = main.StyleDefinitionsPart!.Styles!;
-        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "QuotePresentation", StyleName = new StyleName { Val = "Quote Presentation" }, StyleParagraphProperties = new StyleParagraphProperties(new Indentation { Left = "720" }) });
-        styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "CodePresentation", StyleName = new StyleName { Val = "Code Presentation" }, StyleParagraphProperties = new StyleParagraphProperties(new KeepNext(), new KeepLines()), StyleRunProperties = new StyleRunProperties(new RunFonts { Ascii = "Consolas", HighAnsi = "Consolas" }) });
+        styles.Append(new Style
+        {
+            Type = StyleValues.Paragraph,
+            StyleId = "QuotePresentation",
+            StyleName = new StyleName { Val = "Quote Presentation" },
+            StyleParagraphProperties = new StyleParagraphProperties(new Indentation { Left = "720" })
+        });
+        styles.Append(new Style
+        {
+            Type = StyleValues.Paragraph,
+            StyleId = "CodePresentation",
+            StyleName = new StyleName { Val = "Code Presentation" },
+            StyleParagraphProperties = new StyleParagraphProperties(new KeepNext(), new KeepLines()),
+            StyleRunProperties = new StyleRunProperties(new RunFonts { Ascii = "Consolas", HighAnsi = "Consolas" })
+        });
         styles.Append(new Style { Type = StyleValues.Paragraph, StyleId = "PlacementNoise", StyleName = new StyleName { Val = "Placement Noise" } });
         var body = main.Document.Body!;
         var closing = body.Elements<Paragraph>().Single(paragraph => string.Concat(paragraph.Descendants<Text>().Select(text => text.Text)).Trim() == "{{/yadg:frontmatter}}");
