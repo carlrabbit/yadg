@@ -9,17 +9,21 @@ public sealed class M0015RendererDiagnosticsTests
     {
         var libreOffice = Environment.GetEnvironmentVariable("YADG_LIBREOFFICE_PATH") ?? @"C:\Program Files\LibreOffice\program\soffice.com";
         var python = Path.Combine(Path.GetDirectoryName(libreOffice)!, "python.exe");
-        if (!File.Exists(python)) return; // The real Tier-4 workstation supplies LibreOffice's bundled UNO Python.
+        if (!File.Exists(python))
+        {
+            return; // The real Tier-4 workstation supplies LibreOffice's bundled UNO Python.
+        }
 
         var sidecar = Path.Combine(Path.GetTempPath(), "yadg-m0015-timeout-" + Guid.NewGuid().ToString("N") + ".py");
         try
         {
-            File.WriteAllText(sidecar, "import json,sys,time\n" +
+            File.WriteAllText(sidecar,
+                    "import json,sys,time\n" +
                 "sys.stdout.write('o' * 262144 + '\\n'); sys.stdout.flush()\n" +
                 "sys.stderr.write('e' * 262144 + '\\n'); sys.stderr.flush()\n" +
                 "print(json.dumps({'type':'progress','phase':'document load','status':'started','elapsedMs':1}), flush=True)\n" +
                 "time.sleep(30)\n");
-            var diagnostics = new List<RendererDiagnostic>();
+            List<RendererDiagnostic> diagnostics = new();
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var success = LibreOfficeRenderer.RunSidecar(python, sidecar, 1, "input-review.docx", "out.docx", "out.pdf", diagnostics, null, "review.docx", 10000);
             var elapsed = clock.Elapsed;

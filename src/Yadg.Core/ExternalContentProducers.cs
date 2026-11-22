@@ -7,9 +7,16 @@ public static class MermaidProducer
 {
     private const int TimeoutMilliseconds = 60_000;
 
-    public static YadgDocument RenderFigures(YadgDocument document, string workspaceRoot, WorkspaceValues values, List<Diagnostic> diagnostics, List<string> temporaryPaths, bool yolo = false)
+    public static YadgDocument RenderFigures(
+            YadgDocument document,
+            string workspaceRoot,
+            WorkspaceValues values,
+            List<Diagnostic> diagnostics,
+            List<string> temporaryPaths,
+            bool yolo = false
+        )
     {
-        var replacements = new Dictionary<string, YadgFigure>(StringComparer.Ordinal);
+        Dictionary<string, YadgFigure> replacements = new(StringComparer.Ordinal);
         foreach (var figure in document.Figures.Values.Where(f => f.GeneratedSource is not null))
         {
             if (!values.Producers.TryGetValue("mermaid", out var config))
@@ -28,17 +35,48 @@ public static class MermaidProducer
         var sections = document.References.ToDictionary(p => p.Key, p => p.Value with { Body = p.Value.Body.Select(Map).ToArray() }, StringComparer.Ordinal);
         var figures = document.Figures.ToDictionary(p => p.Key, p => replacements.TryGetValue(p.Key, out var replacement) ? replacement : p.Value, StringComparer.Ordinal);
         if (yolo)
+        {
             for (var i = diagnostics.Count - 1; i >= 0; i--)
-                if (diagnostics[i].Code.StartsWith("YADG-PRODUCER-", StringComparison.Ordinal)) diagnostics[i] = diagnostics[i] with { Code = "YADG-YOLO-PRODUCER-001", IsError = false, IsDegradation = true, Message = diagnostics[i].Message + "; fallback: visible Mermaid figure placeholder." };
+            {
+                if (diagnostics[i].Code.StartsWith("YADG-PRODUCER-", StringComparison.Ordinal))
+                {
+                    diagnostics[i] = diagnostics[i] with
+                    {
+                        Code = "YADG-YOLO-PRODUCER-001",
+                        IsError = false,
+                        IsDegradation = true,
+                        Message = diagnostics[i].Message + "; fallback: visible Mermaid figure placeholder."
+                    };
+                }
+            }
+        }
+
         return document with { Blocks = blocks, References = sections, Figures = figures };
     }
 
-    public static ImageAsset? RenderSource(string id, string source, string location, MermaidProducerConfiguration? config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths)
+    public static ImageAsset? RenderSource(
+            string id,
+            string source,
+            string location,
+            MermaidProducerConfiguration? config,
+            string workspaceRoot,
+            List<Diagnostic> diagnostics,
+            List<string> temporaryPaths
+        )
         => RenderSource(id, source, location, config, workspaceRoot, diagnostics, temporaryPaths, TimeoutMilliseconds);
 
-    internal static ImageAsset? RenderSource(string id, string source, string location, MermaidProducerConfiguration? config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths, int timeoutMilliseconds)
+    internal static ImageAsset? RenderSource(
+            string id,
+            string source,
+            string location,
+            MermaidProducerConfiguration? config,
+            string workspaceRoot,
+            List<Diagnostic> diagnostics,
+            List<string> temporaryPaths,
+            int timeoutMilliseconds
+        )
     {
-        var figure = new YadgFigure(id, string.Empty, "<generated-mermaid.png>", location, null, source);
+        YadgFigure figure = new(id, string.Empty, "<generated-mermaid.png>", location, null, source);
         if (config is null)
         {
             diagnostics.Add(new("YADG-PRODUCER-007", $"Mermaid source '{id}' requires configured producers.mermaid.", true, location));
@@ -48,7 +86,14 @@ public static class MermaidProducer
         return rendered;
     }
 
-    private static ImageAsset? RenderOne(YadgFigure figure, MermaidProducerConfiguration config, string workspaceRoot, List<Diagnostic> diagnostics, List<string> temporaryPaths, int timeoutMilliseconds)
+    private static ImageAsset? RenderOne(
+            YadgFigure figure,
+            MermaidProducerConfiguration config,
+            string workspaceRoot,
+            List<Diagnostic> diagnostics,
+            List<string> temporaryPaths,
+            int timeoutMilliseconds
+        )
     {
         var directory = Path.Combine(Path.GetTempPath(), "yadg-mermaid-" + Guid.NewGuid().ToString("N"));
         // Register ownership before any operation that can fail. Failed renders
@@ -56,14 +101,26 @@ public static class MermaidProducer
         temporaryPaths.Add(directory);
         var input = Path.Combine(directory, "input.mmd");
         var output = Path.Combine(directory, "output.png");
-        var succeeded = false;
+        bool succeeded = false;
         try
         {
             Directory.CreateDirectory(directory);
             File.WriteAllText(input, figure.GeneratedSource!, new UTF8Encoding(false));
             var executable = ResolveExecutable(config.Executable, workspaceRoot);
-            var psi = new ProcessStartInfo { FileName = executable, WorkingDirectory = workspaceRoot, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-            foreach (var argument in config.Arguments) psi.ArgumentList.Add(argument);
+            ProcessStartInfo psi = new()
+            {
+                FileName = executable,
+                WorkingDirectory = workspaceRoot,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            foreach (var argument in config.Arguments)
+            {
+                psi.ArgumentList.Add(argument);
+            }
+
             psi.ArgumentList.Add("-i"); psi.ArgumentList.Add(input); psi.ArgumentList.Add("-o"); psi.ArgumentList.Add(output);
             using var process = Process.Start(psi);
             if (process is null) { Fail(diagnostics, "YADG-PRODUCER-010", "Unable to start Mermaid producer.", figure); return null; }
@@ -78,7 +135,13 @@ public static class MermaidProducer
             }
             var detail = Bound(stderr.GetAwaiter().GetResult());
             _ = Bound(stdout.GetAwaiter().GetResult());
-            if (process.ExitCode != 0) { Fail(diagnostics, "YADG-PRODUCER-012", $"Mermaid producer exited with code {process.ExitCode}." + (detail.Length == 0 ? string.Empty : $" stderr: {detail}"), figure); return null; }
+            if (process.ExitCode != 0)
+            {
+                Fail(diagnostics,
+                        "YADG-PRODUCER-012",
+                        $"Mermaid producer exited with code {process.ExitCode}." + (detail.Length == 0 ? string.Empty : $" stderr: {detail}"),
+                        figure); return null;
+            }
             var dimensions = ReadPng(output);
             if (dimensions is null) { Fail(diagnostics, "YADG-PRODUCER-013", "Mermaid producer did not create a valid non-empty PNG.", figure); return null; }
             succeeded = true;
@@ -87,32 +150,66 @@ public static class MermaidProducer
         catch (Exception ex) { Fail(diagnostics, "YADG-PRODUCER-010", $"Unable to run Mermaid producer: {ex.Message}", figure); return null; }
         finally
         {
-            if (!succeeded && Directory.Exists(directory)) Directory.Delete(directory, true);
+            if (!succeeded && Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
         }
     }
 
     private static string ResolveExecutable(string executable, string workspaceRoot)
     {
-        if (Path.IsPathRooted(executable)) return executable;
-        if (executable.Contains(Path.DirectorySeparatorChar) || executable.Contains(Path.AltDirectorySeparatorChar)) return Path.GetFullPath(Path.Combine(workspaceRoot, executable));
+        if (Path.IsPathRooted(executable))
+        {
+            return executable;
+        }
+
+        if (executable.Contains(Path.DirectorySeparatorChar) || executable.Contains(Path.AltDirectorySeparatorChar))
+        {
+            return Path.GetFullPath(Path.Combine(workspaceRoot, executable));
+        }
+
         return executable;
     }
 
     private static (int Width, int Height)? ReadPng(string path)
     {
-        if (!File.Exists(path)) return null;
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
         var bytes = File.ReadAllBytes(path);
-        if (bytes.Length < 33 || bytes[0] != 137 || bytes[1] != 80 || bytes[2] != 78 || bytes[3] != 71 || bytes[4] != 13 || bytes[5] != 10 || bytes[6] != 26 || bytes[7] != 10) return null;
-        if (bytes[12] != 73 || bytes[13] != 72 || bytes[14] != 68 || bytes[15] != 82) return null;
+        if (bytes.Length < 33 || bytes[0] != 137 || bytes[1] != 80 || bytes[2] != 78 || bytes[3] != 71 || bytes[4] != 13 ||
+                bytes[5] != 10 ||
+    bytes[6] != 26 ||
+    bytes[7] != 10)
+        {
+            return null;
+        }
+
+        if (bytes[12] != 73 || bytes[13] != 72 || bytes[14] != 68 || bytes[15] != 82)
+        {
+            return null;
+        }
+
         var width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
         var height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
-        var position = 8; var hasIdat = false; var hasIend = false;
+        int position = 8; bool hasIdat = false; bool hasIend = false;
         while (position + 12 <= bytes.Length)
         {
             var length = (bytes[position] << 24) | (bytes[position + 1] << 16) | (bytes[position + 2] << 8) | bytes[position + 3];
-            if (length < 0 || position + 12L + length > bytes.Length) return null;
+            if (length < 0 || position + 12L + length > bytes.Length)
+            {
+                return null;
+            }
+
             var type = Encoding.ASCII.GetString(bytes, position + 4, 4);
-            if (type == "IDAT") hasIdat = true;
+            if (type == "IDAT")
+            {
+                hasIdat = true;
+            }
+
             if (type == "IEND") { hasIend = length == 0; break; }
             position += 12 + length;
         }
@@ -120,5 +217,10 @@ public static class MermaidProducer
     }
 
     private static string Bound(string text) => text.Length <= 4000 ? text.Trim() : text[..4000].Trim() + "…";
-    private static void Fail(List<Diagnostic> diagnostics, string code, string message, YadgFigure figure) => diagnostics.Add(new(code, message, true, figure.SourcePath));
+    private static void Fail(
+            List<Diagnostic> diagnostics,
+            string code,
+            string message,
+            YadgFigure figure
+        ) => diagnostics.Add(new(code, message, true, figure.SourcePath));
 }

@@ -43,7 +43,8 @@ public sealed class M0007IntegrationTests
         var rows = output.MainDocumentPart!.Document.Body!.Elements<Table>().Single().Elements<TableRow>().ToArray();
         Assert.Equal(2, rows.Length); // header and the following template-owned row
         Assert.Equal("Following", Logical(rows[1]));
-        Assert.DoesNotContain(output.MainDocumentPart.Document.Body.Descendants<Text>(), t => t.Text?.Contains("{{", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(output.MainDocumentPart.Document.Body.Descendants<Text>(),
+                t => t.Text?.Contains("{{", StringComparison.Ordinal) == true);
     }
 
     [Fact]
@@ -92,7 +93,7 @@ public sealed class M0007IntegrationTests
     private static string Logical(OpenXmlElement element) => string.Concat(element.Descendants<Text>().Select(t => t.Text));
     private static ProcessResult RunCli(string root, string command)
     {
-        var info = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "yadg.exe")) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        ProcessStartInfo info = new(Path.Combine(AppContext.BaseDirectory, "yadg.exe")) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         info.ArgumentList.Add(command); using var process = Process.Start(info)!; process.WaitForExit(); return new(process.ExitCode, process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd());
     }
     private sealed record ProcessResult(int ExitCode, string Output);
@@ -101,52 +102,84 @@ public sealed class M0007IntegrationTests
     {
         public string Root { get; }
         private TestWorkspace(string root) => Root = root;
-        public static TestWorkspace Create(string markdown, bool includeGeneratedPlacement = false, bool malformedPrototype = false, bool duplicateBinding = false, string? prototypeVariant = null)
+        public static TestWorkspace Create(
+                string markdown,
+                bool includeGeneratedPlacement = false,
+                bool malformedPrototype = false,
+                bool duplicateBinding = false,
+                string? prototypeVariant = null
+            )
         {
             var root = Path.Combine(Path.GetTempPath(), "yadg-m0007-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(root, "YadgTemplates")); Directory.CreateDirectory(Path.Combine(root, "YadgPreWords"));
             File.WriteAllText(Path.Combine(root, "YADG.md"), "Notes");
             File.WriteAllText(Path.Combine(root, "content.md"), markdown);
-            CreateTemplate(Path.Combine(root, "YadgTemplates", "prepared.docx"), includeGeneratedPlacement, malformedPrototype, duplicateBinding, prototypeVariant);
+            CreateTemplate(Path.Combine(root, "YadgTemplates", "prepared.docx"),
+                    includeGeneratedPlacement,
+                    malformedPrototype,
+                    duplicateBinding,
+                    prototypeVariant);
             return new(root);
         }
         public void Dispose() => Directory.Delete(Root, true);
     }
 
-    private static void CreateTemplate(string path, bool includeGeneratedPlacement, bool malformedPrototype, bool duplicateBinding, string? prototypeVariant)
+    private static void CreateTemplate(
+            string path,
+            bool includeGeneratedPlacement,
+            bool malformedPrototype,
+            bool duplicateBinding,
+            string? prototypeVariant
+        )
     {
         using var document = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();
-        var styles = new Styles(new Style { Type = StyleValues.Table, StyleId = "TableGrid" }, new Style { Type = StyleValues.Paragraph, StyleId = "Caption" });
+        Styles styles = new(new Style { Type = StyleValues.Table, StyleId = "TableGrid" },
+                new Style { Type = StyleValues.Paragraph, StyleId = "Caption" });
         main.AddNewPart<StyleDefinitionsPart>().Styles = styles;
-        var header = new TableRow(new TableCell(new Paragraph(new Run(new Text("Name")))), new TableCell(new Paragraph(new Run(new Text("Detail")))));
-        var marker = new TableRow(new TableCell(new Paragraph(new Run(new Text("{{table-rows:matrix}}")))));
-        var prototypeCell1 = new TableCell(new Paragraph(new Run(new RunProperties(new Color { Val = "FF0000" }), new Text("[")), new Run(new RunProperties(new Italic()), new Text("{{ce")), new Run(new RunProperties(new Italic()), new Text("ll}}")), new Run(new Text("]"))));
+        TableRow header = new(new TableCell(new Paragraph(new Run(new Text("Name")))), new TableCell(new Paragraph(new Run(new Text("Detail")))));
+        TableRow marker = new(new TableCell(new Paragraph(new Run(new Text("{{table-rows:matrix}}")))));
+        TableCell prototypeCell1 = new(new Paragraph(new Run(new RunProperties(new Color { Val = "FF0000" }), new Text("[")),
+                new Run(new RunProperties(new Italic()), new Text("{{ce")),
+                new Run(new RunProperties(new Italic()), new Text("ll}}")),
+                new Run(new Text("]"))));
         var prototypeCell2 = malformedPrototype
             ? new TableCell(new Paragraph(new Run(new Text("{{cell}} {{cell}}"))))
             : prototypeVariant switch
             {
                 "tag" => new TableCell(new Paragraph(new Run(new Text("{{cell}} {{value:missing}}")))),
-                "nested" => new TableCell(new Paragraph(new Run(new Text("{{cell}}"))), new Table(new TableRow(new TableCell(new Paragraph(new Run(new Text("nested"))))))),
+                "nested" => new TableCell(new Paragraph(new Run(new Text("{{cell}}"))),
+                new Table(new TableRow(new TableCell(new Paragraph(new Run(new Text("nested"))))))),
                 "grid" => new TableCell(new TableCellProperties(new GridSpan { Val = 2 }), new Paragraph(new Run(new Text("{{cell}}")))),
                 "vertical" => new TableCell(new TableCellProperties(new VerticalMerge()), new Paragraph(new Run(new Text("{{cell}}")))),
                 "paragraph" => new TableCell(new Paragraph(new Run(new Text("{{cell}}"))), new Paragraph(new Run(new Text("extra")))),
                 "field" => new TableCell(new Paragraph(new Run(new Text("{{cell}}")), new SimpleField { Instruction = " PAGE " })),
                 "bookmark" => new TableCell(new Paragraph(new BookmarkStart { Id = "1", Name = "old" }, new Run(new Text("{{cell}}")), new BookmarkEnd { Id = "1" })),
                 "drawing" => new TableCell(new Paragraph(new Run(new Text("{{cell}}"), new Drawing()))),
-                "control" => new TableCell(new Paragraph(new Run(new Text("{{cell}}"))), new SdtBlock(new SdtContentBlock(new Paragraph(new Run(new Text("control")))))),
+                "control" => new TableCell(new Paragraph(new Run(new Text("{{cell}}"))),
+                new SdtBlock(new SdtContentBlock(new Paragraph(new Run(new Text("control")))))),
                 _ => new TableCell(new Paragraph(new Run(new RunProperties(new Bold()), new Text("{{cell}}"))))
             };
-        var prototype = new TableRow(prototypeCell1, prototypeCell2);
-        var following = new TableRow(new TableCell(new Paragraph(new Run(new Text("Following"))), new TableCell(new Paragraph(new Run(new Text("row"))))));
-        var prepared = new Table(new TableProperties(new TableStyle { Val = "TableGrid" }), new TableGrid(new GridColumn(), new GridColumn()), header, marker, prototype, following);
-        var body = new Body(prepared);
+        TableRow prototype = new(prototypeCell1, prototypeCell2);
+        TableRow following = new(new TableCell(new Paragraph(new Run(new Text("Following"))), new TableCell(new Paragraph(new Run(new Text("row"))))));
+        Table prepared = new(new TableProperties(new TableStyle { Val = "TableGrid" }),
+                new TableGrid(new GridColumn(), new GridColumn()),
+                header,
+                marker,
+                prototype,
+                following);
+        Body body = new(prepared);
         if (duplicateBinding)
         {
             body.Append(new Table(new TableRow(new TableCell(new Paragraph(new Run(new Text("{{table-rows:matrix}}"))))),
-                new TableRow(new TableCell(new Paragraph(new Run(new Text("{{cell}}")))), new TableCell(new Paragraph(new Run(new Text("{{cell}}")))))));
+                new TableRow(new TableCell(new Paragraph(new Run(new Text("{{cell}}")))),
+                    new TableCell(new Paragraph(new Run(new Text("{{cell}}")))))));
         }
-        if (includeGeneratedPlacement) body.Append(new Paragraph(new Run(new Text("{{table:matrix}}"))));
+        if (includeGeneratedPlacement)
+        {
+            body.Append(new Paragraph(new Run(new Text("{{table:matrix}}"))));
+        }
+
         body.Append(new SectionProperties());
         main.Document = new Document(body);
         main.Document.Save();

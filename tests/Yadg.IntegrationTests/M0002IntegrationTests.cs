@@ -114,7 +114,9 @@ public sealed class M0002IntegrationTests
     public void Old_and_mixed_tags_are_rejected()
     {
         using var workspace = SyntheticWorkspace.Create();
-        CreateTemplate(Path.Combine(workspace.Root, "YadgTemplates", "old.docx"), "{{yadg:section:content:architecture}}", includeStyles: true);
+        CreateTemplate(Path.Combine(workspace.Root, "YadgTemplates", "old.docx"),
+                "{{yadg:section:content:architecture}}",
+                includeStyles: true);
         var oldResult = RunCli(workspace.Root, "check");
         Assert.Contains("YADG-TAG-001", oldResult.Output);
         CreateTemplate(Path.Combine(workspace.Root, "YadgTemplates", "mixed.docx"), "prefix {{content:architecture}}", includeStyles: true);
@@ -125,12 +127,20 @@ public sealed class M0002IntegrationTests
         Assert.Contains("YADG-WORD-LOCATION", tableResult.Output);
     }
 
-    private static ProcessResult RunCli(string root, string command, params string[] extraArguments)
+    private static ProcessResult RunCli(
+            string root,
+            string command,
+            params string[] extraArguments
+        )
     {
         var executable = Path.Combine(AppContext.BaseDirectory, "yadg.exe");
-        var startInfo = new ProcessStartInfo(executable) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        ProcessStartInfo startInfo = new(executable) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         startInfo.ArgumentList.Add(command);
-        foreach (var argument in extraArguments) startInfo.ArgumentList.Add(argument);
+        foreach (var argument in extraArguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
         var process = Process.Start(startInfo)!;
         process.WaitForExit();
         return new(process.ExitCode, process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd());
@@ -150,7 +160,8 @@ public sealed class M0002IntegrationTests
             Directory.CreateDirectory(Path.Combine(root, "YadgPreWords"));
             Directory.CreateDirectory(Path.Combine(root, ".ignored"));
             File.WriteAllText(Path.Combine(root, "YADG.md"), "Synthetic workspace notes.");
-            File.WriteAllText(Path.Combine(root, "a.md"), "# Architecture {#architecture}\n\nIntro *italic* and **bold**  \nnext.\n\n### Nested\n\nNested text.");
+            File.WriteAllText(Path.Combine(root, "a.md"),
+                    "# Architecture {#architecture}\n\nIntro *italic* and **bold**  \nnext.\n\n### Nested\n\nNested text.");
             File.WriteAllText(Path.Combine(root, "nested", "b.md"), "## Deployment {#deployment}\n\nDeploy text.");
             File.WriteAllText(Path.Combine(root, ".ignored", "ignored.md"), "# Ignored {#ignored}");
             File.WriteAllText(Path.Combine(root, "YadgTemplates", "ignored.md"), "# Not a source");
@@ -162,7 +173,11 @@ public sealed class M0002IntegrationTests
         public void Dispose() => Directory.Delete(Root, true);
     }
 
-    private static void CreateTemplate(string path, string tag, bool includeStyles)
+    private static void CreateTemplate(
+            string path,
+            string tag,
+            bool includeStyles
+        )
     {
         using var document = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();
@@ -174,8 +189,12 @@ public sealed class M0002IntegrationTests
             stylesPart.Styles.Save();
         }
         main.Document = new Document(new Body(
-            new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }, new OutlineLevel { Val = 0 }), new Run(new Text("Template heading"))),
-            new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "BodyText" }), new Run(new Text("{{")), new Run(new Text(tag[2..^2])), new Run(new Text("}}"))),
+            new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }, new OutlineLevel { Val = 0 }),
+                new Run(new Text("Template heading"))),
+            new Paragraph(new ParagraphProperties(new ParagraphStyleId { Val = "BodyText" }),
+                new Run(new Text("{{")),
+                new Run(new Text(tag[2..^2])),
+                new Run(new Text("}}"))),
             new Paragraph(new Run(new Text("Template-owned paragraph")))));
         main.Document.Save();
     }
