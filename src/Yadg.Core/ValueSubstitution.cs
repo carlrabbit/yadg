@@ -8,12 +8,12 @@ public static class ValueSubstitution
     private static readonly Regex ValuePrefix = new(@"\{\{value:", RegexOptions.Compiled);
 
     public static string Resolve(
-            string text,
-            IReadOnlyDictionary<string, string> values,
-            string location,
-            bool yolo,
-            List<Diagnostic> diagnostics
-        )
+        string text,
+        IReadOnlyDictionary<string, string> values,
+        string location,
+        bool yolo,
+        List<Diagnostic> diagnostics
+    )
     {
         var validStarts = Token.Matches(text).Cast<Match>().Select(match => match.Index).ToHashSet();
         foreach (Match prefix in ValuePrefix.Matches(text))
@@ -41,12 +41,12 @@ public static class ValueSubstitution
     }
 
     public static YadgDocument ApplyToDocument(
-            YadgDocument document,
-            IReadOnlyDictionary<string, string> values,
-            bool yolo,
-            List<Diagnostic> diagnostics,
-            string sourcePath = "Markdown source"
-        )
+        YadgDocument document,
+        IReadOnlyDictionary<string, string> values,
+        bool yolo,
+        List<Diagnostic> diagnostics,
+        string sourcePath = "Markdown source"
+    )
     {
         YadgInline Inline(YadgInline inline, string location) => inline switch
         {

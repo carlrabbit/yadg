@@ -55,11 +55,11 @@ public sealed class WordRenderer
     }
 
     private static RenderResult RenderOnSta(
-            string root,
-            IReadOnlyList<string> inputs,
-            string stage,
-            List<RendererDiagnostic> diagnostics
-        )
+        string root,
+        IReadOnlyList<string> inputs,
+        string stage,
+        List<RendererDiagnostic> diagnostics
+    )
     {
         object? app = null;
         try
@@ -187,11 +187,11 @@ public sealed class WordRenderer
     }
 
     private static RenderResult Fail(
-            List<RendererDiagnostic> diagnostics,
-            string code,
-            string message,
-            string? version = null
-        )
+        List<RendererDiagnostic> diagnostics,
+        string code,
+        string message,
+        string? version = null
+    )
     {
         diagnostics.Add(new(code, message));
         return new(false, diagnostics, version, ActualRenderer: "word");

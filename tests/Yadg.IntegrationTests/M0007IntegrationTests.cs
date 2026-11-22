@@ -103,12 +103,12 @@ public sealed class M0007IntegrationTests
         public string Root { get; }
         private TestWorkspace(string root) => Root = root;
         public static TestWorkspace Create(
-                string markdown,
-                bool includeGeneratedPlacement = false,
-                bool malformedPrototype = false,
-                bool duplicateBinding = false,
-                string? prototypeVariant = null
-            )
+            string markdown,
+            bool includeGeneratedPlacement = false,
+            bool malformedPrototype = false,
+            bool duplicateBinding = false,
+            string? prototypeVariant = null
+        )
         {
             var root = Path.Combine(Path.GetTempPath(), "yadg-m0007-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(root, "YadgTemplates")); Directory.CreateDirectory(Path.Combine(root, "YadgPreWords"));
@@ -125,12 +125,12 @@ public sealed class M0007IntegrationTests
     }
 
     private static void CreateTemplate(
-            string path,
-            bool includeGeneratedPlacement,
-            bool malformedPrototype,
-            bool duplicateBinding,
-            string? prototypeVariant
-        )
+        string path,
+        bool includeGeneratedPlacement,
+        bool malformedPrototype,
+        bool duplicateBinding,
+        string? prototypeVariant
+    )
     {
         using var document = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();

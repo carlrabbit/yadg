@@ -17,11 +17,11 @@ public sealed record WorkspaceValues(IReadOnlyDictionary<string, string> Values)
 
 public sealed record MermaidProducerConfiguration(string Executable, IReadOnlyList<string> Arguments);
 public sealed record PresentationDeclaration(
-            string Id,
-            string Template,
-            IReadOnlyList<string> Sources,
-            string Output
-        );
+    string Id,
+    string Template,
+    IReadOnlyList<string> Sources,
+    string Output
+);
 
 public static class WorkspaceValuesParser
 {
@@ -172,10 +172,10 @@ public static class WorkspaceValuesParser
     }
 
     public static WorkspaceValues Parse(
-            string text,
-            string location,
-            List<Diagnostic> diagnostics
-        )
+        string text,
+        string location,
+        List<Diagnostic> diagnostics
+    )
     {
         if (text.Length > 0 && text[0] == '\ufeff')
         {
@@ -492,11 +492,11 @@ public static class WorkspaceValuesParser
     }
 
     private static IReadOnlyList<PresentationDeclaration> ParsePresentations(
-            string[] lines,
-            int close,
-            string location,
-            List<Diagnostic> diagnostics
-        )
+        string[] lines,
+        int close,
+        string location,
+        List<Diagnostic> diagnostics
+    )
     {
         var start = -1;
         for (var i = 1; i < close; i++)
@@ -675,10 +675,10 @@ public static class WorkspaceValuesParser
         return results;
 
         void ParseField(
-                string text,
-                int lineNumber,
-                bool allowSourceKey
-            )
+            string text,
+            int lineNumber,
+            bool allowSourceKey
+        )
         {
             var colon = text.IndexOf(':');
             if (colon <= 0) { Error(diagnostics, "YADG-PRESENTATION-CONFIG-010", "Malformed presentation mapping entry.", location, lineNumber); return; }
@@ -768,12 +768,12 @@ public static class WorkspaceValuesParser
     }
 
     private static void Error(
-            List<Diagnostic> diagnostics,
-            string code,
-            string message,
-            string location,
-            int line
-        )
+        List<Diagnostic> diagnostics,
+        string code,
+        string message,
+        string location,
+        int line
+    )
     {
         int column = 1;
         try

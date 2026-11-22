@@ -8,13 +8,13 @@ public static class MermaidProducer
     private const int TimeoutMilliseconds = 60_000;
 
     public static YadgDocument RenderFigures(
-            YadgDocument document,
-            string workspaceRoot,
-            WorkspaceValues values,
-            List<Diagnostic> diagnostics,
-            List<string> temporaryPaths,
-            bool yolo = false
-        )
+        YadgDocument document,
+        string workspaceRoot,
+        WorkspaceValues values,
+        List<Diagnostic> diagnostics,
+        List<string> temporaryPaths,
+        bool yolo = false
+    )
     {
         Dictionary<string, YadgFigure> replacements = new(StringComparer.Ordinal);
         foreach (var figure in document.Figures.Values.Where(f => f.GeneratedSource is not null))
@@ -55,26 +55,26 @@ public static class MermaidProducer
     }
 
     public static ImageAsset? RenderSource(
-            string id,
-            string source,
-            string location,
-            MermaidProducerConfiguration? config,
-            string workspaceRoot,
-            List<Diagnostic> diagnostics,
-            List<string> temporaryPaths
-        )
+        string id,
+        string source,
+        string location,
+        MermaidProducerConfiguration? config,
+        string workspaceRoot,
+        List<Diagnostic> diagnostics,
+        List<string> temporaryPaths
+    )
         => RenderSource(id, source, location, config, workspaceRoot, diagnostics, temporaryPaths, TimeoutMilliseconds);
 
     internal static ImageAsset? RenderSource(
-            string id,
-            string source,
-            string location,
-            MermaidProducerConfiguration? config,
-            string workspaceRoot,
-            List<Diagnostic> diagnostics,
-            List<string> temporaryPaths,
-            int timeoutMilliseconds
-        )
+        string id,
+        string source,
+        string location,
+        MermaidProducerConfiguration? config,
+        string workspaceRoot,
+        List<Diagnostic> diagnostics,
+        List<string> temporaryPaths,
+        int timeoutMilliseconds
+    )
     {
         YadgFigure figure = new(id, string.Empty, "<generated-mermaid.png>", location, null, source);
         if (config is null)
@@ -87,13 +87,13 @@ public static class MermaidProducer
     }
 
     private static ImageAsset? RenderOne(
-            YadgFigure figure,
-            MermaidProducerConfiguration config,
-            string workspaceRoot,
-            List<Diagnostic> diagnostics,
-            List<string> temporaryPaths,
-            int timeoutMilliseconds
-        )
+        YadgFigure figure,
+        MermaidProducerConfiguration config,
+        string workspaceRoot,
+        List<Diagnostic> diagnostics,
+        List<string> temporaryPaths,
+        int timeoutMilliseconds
+    )
     {
         var directory = Path.Combine(Path.GetTempPath(), "yadg-mermaid-" + Guid.NewGuid().ToString("N"));
         // Register ownership before any operation that can fail. Failed renders
@@ -218,9 +218,9 @@ public static class MermaidProducer
 
     private static string Bound(string text) => text.Length <= 4000 ? text.Trim() : text[..4000].Trim() + "…";
     private static void Fail(
-            List<Diagnostic> diagnostics,
-            string code,
-            string message,
-            YadgFigure figure
-        ) => diagnostics.Add(new(code, message, true, figure.SourcePath));
+        List<Diagnostic> diagnostics,
+        string code,
+        string message,
+        YadgFigure figure
+    ) => diagnostics.Add(new(code, message, true, figure.SourcePath));
 }

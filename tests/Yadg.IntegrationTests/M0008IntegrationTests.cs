@@ -143,10 +143,10 @@ public sealed class M0008IntegrationTests
             return new(root);
         }
         public static TestWorkspace CreateTier3(
-                string bun,
-                string package,
-                string version
-            )
+            string bun,
+            string package,
+            string version
+        )
         {
             var root = Path.Combine(Path.GetTempPath(), "yadg-m0008-tier3-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(root, "YadgTemplates")); Directory.CreateDirectory(Path.Combine(root, "YadgPreWords"));

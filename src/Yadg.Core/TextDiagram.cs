@@ -4,30 +4,30 @@ using System.Text;
 namespace Yadg.Core;
 
 public sealed record DiagramCell(
-            int Row,
-            int Column,
-            char Glyph,
-            int Connections
-        );
+    int Row,
+    int Column,
+    char Glyph,
+    int Connections
+);
 public sealed record DiagramRectangle(
-            int Left,
-            int Top,
-            int Right,
-            int Bottom,
-            int ZOrder,
-            bool Reconstructed = false,
-            IReadOnlyList<DiagramRectangle>? CoveredBy = null
-        );
+    int Left,
+    int Top,
+    int Right,
+    int Bottom,
+    int ZOrder,
+    bool Reconstructed = false,
+    IReadOnlyList<DiagramRectangle>? CoveredBy = null
+);
 public sealed record TextDiagramModel(
-            int Width,
-            int Height,
-            IReadOnlyList<string> Rows,
-            IReadOnlyList<DiagramCell> Cells,
-            IReadOnlyList<DiagramRectangle> Rectangles,
-            string Svg,
-            bool HasStrongGeometry,
-            bool HasInvalidOcclusion
-        );
+    int Width,
+    int Height,
+    IReadOnlyList<string> Rows,
+    IReadOnlyList<DiagramCell> Cells,
+    IReadOnlyList<DiagramRectangle> Rectangles,
+    string Svg,
+    bool HasStrongGeometry,
+    bool HasInvalidOcclusion
+);
 public sealed record TextDiagramParseResult(TextDiagramModel? Model, string? Error)
 {
     public bool Success => Model is not null && Error is null;
@@ -106,8 +106,8 @@ public static class TextDiagramParser
             return new(null, $"Diagram grid dimensions must not exceed {MaxDimension} by {MaxDimension} cells.");
         }
 
-        int[rows.Length, width] raw = new int[rows.Length, width];
-        char[rows.Length, width] chars = new char[rows.Length, width];
+        int[,] raw = new int[rows.Length, width];
+        char[,] chars = new char[rows.Length, width];
         for (var r = 0; r < rows.Length; r++)
         {
             for (var c = 0; c < width; c++)
@@ -183,10 +183,10 @@ public static class TextDiagramParser
     }
 
     private static IReadOnlyList<DiagramRectangle> FindRectangles(
-            char[,] grid,
-            int height,
-            int width
-        )
+        char[,] grid,
+        int height,
+        int width
+    )
     {
         List<DiagramRectangle> result = new();
         for (var top = 0; top < height - 2; top++)
@@ -229,12 +229,12 @@ public static class TextDiagramParser
     }
 
     private static IReadOnlyList<DiagramRectangle> FindOccludedRectangles(
-            char[,] grid,
-            int height,
-            int width,
-            IReadOnlyList<DiagramRectangle> known,
-            out bool invalid
-        )
+        char[,] grid,
+        int height,
+        int width,
+        IReadOnlyList<DiagramRectangle> known,
+        out bool invalid
+    )
     {
         invalid = false;
         var result = known.ToList();
@@ -312,13 +312,13 @@ public static class TextDiagramParser
     }
 
     private static bool InspectEdge(
-            Func<int, int, char> get,
-            int start,
-            int end,
-            int fixedCoordinate,
-            bool horizontal,
-            List<(int X, int Y)> missing
-        )
+        Func<int, int, char> get,
+        int start,
+        int end,
+        int fixedCoordinate,
+        bool horizontal,
+        List<(int X, int Y)> missing
+    )
     {
         List<int> visible = new();
         List<int> edgeMissing = new();
@@ -358,17 +358,17 @@ public static class TextDiagramParser
     }
 
     private static bool IsCorner(
-            char value,
-            char unicode,
-            char ascii
-        ) => value == unicode || value == ascii;
+        char value,
+        char unicode,
+        char ascii
+    ) => value == unicode || value == ascii;
     private static bool IsStandaloneArrow(char value) => value is '→' or '←' or '↑' or '↓' or '►' or '◄' or '▲' or '▼';
     private static bool HorizontalEdge(
-            char[,] grid,
-            int row,
-            int left,
-            int right
-        )
+        char[,] grid,
+        int row,
+        int left,
+        int right
+    )
     {
         for (var c = left + 1; c < right; c++)
         {
@@ -381,11 +381,11 @@ public static class TextDiagramParser
         return true;
     }
     private static bool VerticalEdge(
-            char[,] grid,
-            int col,
-            int top,
-            int bottom
-        )
+        char[,] grid,
+        int col,
+        int top,
+        int bottom
+    )
     {
         for (var r = top + 1; r < bottom; r++)
         {
@@ -403,11 +403,11 @@ public static class TextDiagramParser
     private static int BitCount(int value) => System.Numerics.BitOperations.PopCount((uint)value);
 
     private static string ToSvg(
-            string[] rows,
-            int width,
-            IReadOnlyList<DiagramRectangle> rectangles,
-            IReadOnlyList<DiagramCell> cells
-        )
+        string[] rows,
+        int width,
+        IReadOnlyList<DiagramRectangle> rectangles,
+        IReadOnlyList<DiagramCell> cells
+    )
     {
         var svgWidth = width * CellWidth + CellWidth;
         var svgHeight = rows.Length * CellHeight + 6;

@@ -429,10 +429,10 @@ public static class Program
     }
 
     private sealed record DirectDocumentAnalysis(
-                YadgDocument Document,
-                IReadOnlyList<Diagnostic> Diagnostics,
-                bool IsValid
-            ) : IDisposable
+        YadgDocument Document,
+        IReadOnlyList<Diagnostic> Diagnostics,
+        bool IsValid
+    ) : IDisposable
     {
         public IReadOnlyList<string> TemporaryProducerDirectories { get; init; } = Array.Empty<string>();
         public void Dispose()
@@ -445,11 +445,11 @@ public static class Program
     }
 
     private static DirectDocumentAnalysis AnalyzeDirectDocument(
-            string[] templates,
-            string[] sources,
-            bool yolo,
-            WorkspaceValues values
-        )
+        string[] templates,
+        string[] sources,
+        bool yolo,
+        WorkspaceValues values
+    )
     {
         List<Diagnostic> diagnostics = new();
         if (templates.Length != 1 ||
@@ -545,12 +545,12 @@ public static class Program
     false);
 
     private static bool TryResolveDirectDocumentOutput(
-            string output,
-            string template,
-            string[] sources,
-            out string outputPath,
-            out string? error
-        )
+        string output,
+        string template,
+        string[] sources,
+        out string outputPath,
+        out string? error
+    )
     {
         outputPath = string.Empty; error = null;
         if (IsRemoteOrPattern(output) || Directory.Exists(output) ||
@@ -565,11 +565,11 @@ public static class Program
         new(name) { Description = description, AllowMultipleArgumentsPerToken = false };
 
     private static PresentationAnalysis AnalyzeDirectPresentation(
-            string[] templates,
-            string[] sources,
-            WorkspaceValues values,
-            bool yolo
-        )
+        string[] templates,
+        string[] sources,
+        WorkspaceValues values,
+        bool yolo
+    )
     {
         List<Diagnostic> diagnostics = new();
         if (templates.Length != 1)
@@ -618,10 +618,10 @@ public static class Program
     }
 
     private static PresentationAnalysis AnalyzeSelectedPresentation(
-            string id,
-            string? workspacePath,
-            bool yolo
-        )
+        string id,
+        string? workspacePath,
+        bool yolo
+    )
     {
         var workspace = WorkspaceLoader.LoadSelectedPresentation(workspacePath, id);
         var diagnostics = workspace.Diagnostics.ToList();
@@ -654,11 +654,11 @@ public static class Program
     }
 
     private static void BuildSelectedPresentation(
-            string id,
-            string? workspacePath,
-            bool yolo,
-            Action fail
-        )
+        string id,
+        string? workspacePath,
+        bool yolo,
+        Action fail
+    )
     {
         var workspace = WorkspaceLoader.LoadSelectedPresentation(workspacePath, id);
         var diagnostics = workspace.Diagnostics.ToList();
@@ -704,12 +704,12 @@ public static class Program
     }
 
     private static bool ValidateDirectInputs(
-            string template,
-            string[] sources,
-            out string templatePath,
-            out string[] sourcePaths,
-            out string? error
-        )
+        string template,
+        string[] sources,
+        out string templatePath,
+        out string[] sourcePaths,
+        out string? error
+    )
     {
         templatePath = string.Empty; sourcePaths = Array.Empty<string>(); error = null;
         if (IsRemoteOrPattern(template) || Directory.Exists(template) ||
@@ -737,12 +737,12 @@ public static class Program
     }
 
     private static bool TryResolveDirectOutput(
-            string output,
-            string template,
-            string[] sources,
-            out string outputPath,
-            out string? error
-        )
+        string output,
+        string template,
+        string[] sources,
+        out string outputPath,
+        out string? error
+    )
     {
         outputPath = string.Empty; error = null;
         if (IsRemoteOrPattern(output) || Directory.Exists(output) ||
@@ -786,11 +786,11 @@ public static class Program
     }
 
     private static bool BuildConfiguredPresentations(
-            YadgWorkspace workspace,
-            string stageRoot,
-            bool yolo,
-            out IReadOnlyList<Diagnostic> diagnostics
-        )
+        YadgWorkspace workspace,
+        string stageRoot,
+        bool yolo,
+        out IReadOnlyList<Diagnostic> diagnostics
+    )
     {
         List<Diagnostic> allDiagnostics = new();
         List<(WorkspaceLoader.ResolvedPresentation Deck, IReadOnlyList<PresentationSource> Sources)> loaded = new();
@@ -1117,11 +1117,11 @@ public static class Program
     }
 
     private static RenderResult RunStagedRenderer(
-            string rendererId,
-            string workspaceRoot,
-            string? rendererPath,
-            bool verbose
-        )
+        string rendererId,
+        string workspaceRoot,
+        string? rendererPath,
+        bool verbose
+    )
     {
         var stage = Path.Combine(workspaceRoot, ".yadg-yolo-stage-" + Guid.NewGuid().ToString("N"));
         try

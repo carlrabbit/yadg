@@ -1095,11 +1095,11 @@ public sealed class M0018FocusedTests
         }
 
         private static void AddPrototype(
-                PresentationPart presentationPart,
-                SlideLayoutPart layoutPart,
-                string layout,
-                IEnumerable<OpenXmlElement> content
-            )
+            PresentationPart presentationPart,
+            SlideLayoutPart layoutPart,
+            string layout,
+            IEnumerable<OpenXmlElement> content
+        )
         {
             var slide = presentationPart.AddNewPart<SlidePart>();
             slide.AddPart(layoutPart);
@@ -1147,24 +1147,24 @@ public sealed class M0018FocusedTests
                 new A.ChildExtents { Cx = 0L, Cy = 0L })));
 
         private static P.Shape Shape(
-                uint id,
-                string name,
-                string text,
-                long x,
-                long y,
-                long cx,
-                long cy
-            ) => TextShape(id, name, x, y, cx, cy, new A.Paragraph(new A.Run(new A.Text(text))));
+            uint id,
+            string name,
+            string text,
+            long x,
+            long y,
+            long cx,
+            long cy
+        ) => TextShape(id, name, x, y, cx, cy, new A.Paragraph(new A.Run(new A.Text(text))));
 
         private static P.Shape TextShape(
-                uint id,
-                string name,
-                long x,
-                long y,
-                long cx,
-                long cy,
-                params A.Paragraph[] paragraphs
-            ) => new(
+            uint id,
+            string name,
+            long x,
+            long y,
+            long cx,
+            long cy,
+            params A.Paragraph[] paragraphs
+        ) => new(
             new P.NonVisualShapeProperties(new P.NonVisualDrawingProperties { Id = id, Name = name },
                 new P.NonVisualShapeDrawingProperties(),
                 new P.ApplicationNonVisualDrawingProperties()),

@@ -8,49 +8,49 @@ using System.Text.Json;
 namespace Yadg.Renderer;
 
 public sealed record RendererDiagnostic(
-            string Code,
-            string Message,
-            string? Location = null
-        )
+    string Code,
+    string Message,
+    string? Location = null
+)
 {
     public override string ToString() => Location is null ? $"{Code}: {Message}" : $"{Code}: {Location}: {Message}";
 }
 
 public sealed record RenderResult(
-            bool Success,
-            IReadOnlyList<RendererDiagnostic> Diagnostics,
-            string? RuntimeVersion = null,
-            string? Executable = null,
-            string? ProfileIdentity = null,
-            string ActualRenderer = "unknown"
-        );
+    bool Success,
+    IReadOnlyList<RendererDiagnostic> Diagnostics,
+    string? RuntimeVersion = null,
+    string? Executable = null,
+    string? ProfileIdentity = null,
+    string ActualRenderer = "unknown"
+);
 
 public sealed class LibreOfficeRenderer
 {
     private const int TimeoutMs = 30000;
 
     public RenderResult Render(
-            string workspaceRoot,
-            string? rendererPath = null,
-            Action<string>? verbose = null
-        )
+        string workspaceRoot,
+        string? rendererPath = null,
+        Action<string>? verbose = null
+    )
     {
         var renderClock = Stopwatch.StartNew();
         void Log(string message) => verbose?.Invoke($"[renderer +{renderClock.Elapsed.TotalSeconds:F3}s] {message}");
         void StartPhase(string phase, string? input = null) => Log($"phase started: {phase}" + (input is null ? string.Empty : $"; input={input}"));
         void Timed(
-                string phase,
-                Stopwatch clock,
-                string? input = null
-            ) => Log($"phase complete: {phase}; elapsed={clock.Elapsed.TotalMilliseconds:F0}ms" + (input is null ? string.Empty : $"; input={input}"));
+            string phase,
+            Stopwatch clock,
+            string? input = null
+        ) => Log($"phase complete: {phase}; elapsed={clock.Elapsed.TotalMilliseconds:F0}ms" + (input is null ? string.Empty : $"; input={input}"));
         RenderResult FailWithTotal(
-                List<RendererDiagnostic> items,
-                string code,
-                string message,
-                string? version = null,
-                string? executable = null,
-                string? profile = null
-            )
+            List<RendererDiagnostic> items,
+            string code,
+            string message,
+            string? version = null,
+            string? executable = null,
+            string? profile = null
+        )
         {
             Timed("total render", renderClock);
             return Fail(items, code, message, version, executable, profile);
@@ -179,11 +179,11 @@ public sealed class LibreOfficeRenderer
     }
 
     private static Process? StartOffice(
-            string executable,
-            string profile,
-            int port,
-            List<RendererDiagnostic> diagnostics
-        )
+        string executable,
+        string profile,
+        int port,
+        List<RendererDiagnostic> diagnostics
+    )
     {
         var profileUrl = new Uri(profile + Path.DirectorySeparatorChar).AbsoluteUri;
         ProcessStartInfo info = new(executable,
@@ -195,17 +195,17 @@ public sealed class LibreOfficeRenderer
     }
 
     internal static bool RunSidecar(
-            string python,
-            string sidecar,
-            int port,
-            string input,
-            string docx,
-            string pdf,
-            List<RendererDiagnostic> diagnostics,
-            Action<string>? verbose,
-            string inputIdentity,
-            int timeoutMs = TimeoutMs
-        )
+        string python,
+        string sidecar,
+        int port,
+        string input,
+        string docx,
+        string pdf,
+        List<RendererDiagnostic> diagnostics,
+        Action<string>? verbose,
+        string inputIdentity,
+        int timeoutMs = TimeoutMs
+    )
     {
         ProcessStartInfo info = new(python)
         {
@@ -284,17 +284,17 @@ public sealed class LibreOfficeRenderer
     }
 
     private sealed record SidecarPhase(
-                string Current,
-                string? Completed,
-                string? Message
-            );
+        string Current,
+        string? Completed,
+        string? Message
+    );
 
     private static async Task DrainSidecarStdoutAsync(
-            StreamReader reader,
-            StringBuilder output,
-            object sync,
-            Action<SidecarPhase> phaseObserved
-        )
+        StreamReader reader,
+        StringBuilder output,
+        object sync,
+        Action<SidecarPhase> phaseObserved
+    )
     {
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
@@ -332,10 +332,10 @@ public sealed class LibreOfficeRenderer
     }
 
     private static async Task CaptureChildOutputAsync(
-            StreamReader reader,
-            StringBuilder destination,
-            object sync
-        )
+        StreamReader reader,
+        StringBuilder destination,
+        object sync
+    )
     {
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
@@ -357,11 +357,11 @@ public sealed class LibreOfficeRenderer
     }
 
     private static async Task DrainChildOutputAsync(
-            StreamReader stdout,
-            StreamReader stderr,
-            Action<string>? onOutput,
-            Action<string>? onError
-        )
+        StreamReader stdout,
+        StreamReader stderr,
+        Action<string>? onOutput,
+        Action<string>? onError
+    )
     {
         await Task.WhenAll(DrainOne(stdout, onOutput), DrainOne(stderr, onError)).ConfigureAwait(false);
         static async Task DrainOne(StreamReader reader, Action<string>? sink)
@@ -375,7 +375,7 @@ public sealed class LibreOfficeRenderer
 
                 return;
             }
-            char[4096] buffer = new char[4096];
+            char[] buffer = new char[4096];
             while (await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false) > 0) { }
         }
     }
@@ -480,12 +480,12 @@ public sealed class LibreOfficeRenderer
         }
     }
     private static RenderResult Fail(
-            List<RendererDiagnostic> diagnostics,
-            string code,
-            string message,
-            string? version = null,
-            string? executable = null,
-            string? profile = null
-        )
+        List<RendererDiagnostic> diagnostics,
+        string code,
+        string message,
+        string? version = null,
+        string? executable = null,
+        string? profile = null
+    )
     { diagnostics.Add(new(code, message)); return new(false, diagnostics, version, executable, profile, "libreoffice"); }
 }

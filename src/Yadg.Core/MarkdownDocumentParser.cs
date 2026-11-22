@@ -21,12 +21,12 @@ public static class MarkdownDocumentParser
     private static readonly Regex MermaidOpening = new("^\\s*`{3,}\\s*(?<info>mermaid.*)$", RegexOptions.Compiled);
 
     public static ParseResult Parse(
-            string markdown,
-            string location = "<input>",
-            string thematicBreakPolicy = "error",
-            string codeInlinePolicy = "style",
-            bool diagramsAutoDetect = false
-        )
+        string markdown,
+        string location = "<input>",
+        string thematicBreakPolicy = "error",
+        string codeInlinePolicy = "style",
+        bool diagramsAutoDetect = false
+    )
     {
         var pipeline = new MarkdownPipelineBuilder().UsePipeTables().UseGridTables().UseGenericAttributes().UseEmphasisExtras(EmphasisExtraOptions.Strikethrough).UseTaskLists().Build();
         List<Diagnostic> diagnostics = new();
@@ -185,26 +185,26 @@ public static class MarkdownDocumentParser
     }
 
     private static void AddGlobal(
-            string id,
-            object value,
-            Dictionary<string, YadgSection> sections,
-            Dictionary<string, YadgTable> tables,
-            Dictionary<string, YadgFigure> figures,
-            List<Diagnostic> diagnostics,
-            string location
-        )
+        string id,
+        object value,
+        Dictionary<string, YadgSection> sections,
+        Dictionary<string, YadgTable> tables,
+        Dictionary<string, YadgFigure> figures,
+        List<Diagnostic> diagnostics,
+        string location
+    )
     {
         if (sections.ContainsKey(id) || tables.ContainsKey(id) || figures.ContainsKey(id)) { diagnostics.Add(new("YADG-REF-002", $"Duplicate stable ID '{id}' across workspace object types.", true, location)); return; }
         switch (value) { case YadgSection section: sections.Add(id, section); break; case YadgTable table: tables.Add(id, table); break; case YadgFigure figure: figures.Add(id, figure); break; }
     }
 
     private static void AddReference<T>(
-            Dictionary<string, T> target,
-            string id,
-            T value,
-            List<Diagnostic> diagnostics,
-            string location
-        ) where T : class
+        Dictionary<string, T> target,
+        string id,
+        T value,
+        List<Diagnostic> diagnostics,
+        string location
+    ) where T : class
     {
         if (!target.TryAdd(id, value))
         {
@@ -213,20 +213,20 @@ public static class MarkdownDocumentParser
     }
 
     private static YadgBlock? ConvertBlock(
-            Block block,
-            List<Diagnostic> diagnostics,
-            string location,
-            IReadOnlyList<(string Text, string? Id)> headings,
-            ref int headingOrdinal,
-            IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures,
-            ref int figureOrdinal,
-            IReadOnlyList<(string? Id, string? Caption)> mermaidMetadata,
-            ref int mermaidOrdinal,
-            string thematicBreakPolicy,
-            string codeInlinePolicy,
-            bool diagramsAutoDetect,
-            string[] sourceLines
-        )
+        Block block,
+        List<Diagnostic> diagnostics,
+        string location,
+        IReadOnlyList<(string Text, string? Id)> headings,
+        ref int headingOrdinal,
+        IReadOnlyList<(string Id, string Alt, string Path, bool HasTitle)> figures,
+        ref int figureOrdinal,
+        IReadOnlyList<(string? Id, string? Caption)> mermaidMetadata,
+        ref int mermaidOrdinal,
+        string thematicBreakPolicy,
+        string codeInlinePolicy,
+        bool diagramsAutoDetect,
+        string[] sourceLines
+    )
     {
         if (block is ThematicBreakBlock)
         {
@@ -396,13 +396,13 @@ public static class MarkdownDocumentParser
     }
 
     internal static YadgTable? ConvertTable(
-            Table table,
-            string? id,
-            string? caption,
-            List<Diagnostic> diagnostics,
-            string location,
-            string codeInlinePolicy
-        )
+        Table table,
+        string? id,
+        string? caption,
+        List<Diagnostic> diagnostics,
+        string location,
+        string codeInlinePolicy
+    )
     {
         if (string.IsNullOrWhiteSpace(id))
         {
@@ -439,7 +439,7 @@ public static class MarkdownDocumentParser
             return false;
         }
 
-        bool[rows.Count, width] covered = new bool[rows.Count, width];
+        bool[,] covered = new bool[rows.Count, width];
         foreach (var (row, rowIndex) in rows.Select((value, index) => (value, index)))
         {
             foreach (var cell in row.OfType<TableCell>())
@@ -500,11 +500,11 @@ public static class MarkdownDocumentParser
     }
 
     private static YadgTableCell ConvertTableCell(
-            TableCell cell,
-            List<Diagnostic> diagnostics,
-            string location,
-            string codeInlinePolicy
-        )
+        TableCell cell,
+        List<Diagnostic> diagnostics,
+        string location,
+        string codeInlinePolicy
+    )
     {
         List<IReadOnlyList<YadgInline>> paragraphs = new();
         foreach (var block in cell)
@@ -530,12 +530,12 @@ public static class MarkdownDocumentParser
     }
 
     private static YadgList ConvertList(
-            ListBlock list,
-            List<Diagnostic> diagnostics,
-            string location,
-            string codeInlinePolicy,
-            int level
-        )
+        ListBlock list,
+        List<Diagnostic> diagnostics,
+        string location,
+        string codeInlinePolicy,
+        int level
+    )
     {
         List<YadgListItem> items = new();
         foreach (var item in list.OfType<ListItemBlock>())
@@ -573,13 +573,12 @@ public static class MarkdownDocumentParser
         return new YadgList(list.IsOrdered, items, level);
     }
 
-
     private static IReadOnlyList<YadgInline> ConvertInlines(
-            ContainerInline? container,
-            List<Diagnostic> diagnostics,
-            string location,
-            string codeInlinePolicy = "error"
-        )
+        ContainerInline? container,
+        List<Diagnostic> diagnostics,
+        string location,
+        string codeInlinePolicy = "error"
+    )
     {
         List<YadgInline> result = new();
         if (container is null)
@@ -646,11 +645,11 @@ public static class MarkdownDocumentParser
     }
 
     private static Diagnostic Positioned(
-            string code,
-            string message,
-            MarkdownObject node,
-            string location
-        )
+        string code,
+        string message,
+        MarkdownObject node,
+        string location
+    )
     {
         if (node.Line < 1)
         {
@@ -700,10 +699,10 @@ public static class MarkdownDocumentParser
     private static string InlineText(ContainerInline? inline) => inline is null ? string.Empty : string.Concat(inline.Select(i => i switch { LiteralInline literal => literal.Content.ToString(), EmphasisInline emphasis => InlineText(emphasis), LineBreakInline => " ", _ => string.Empty }));
 
     public static (IReadOnlyList<YadgBlock>? Blocks, Diagnostic? Diagnostic) Resolve(
-            YadgDocument document,
-            SectionReference reference,
-            string location = "<template>"
-        )
+        YadgDocument document,
+        SectionReference reference,
+        string location = "<template>"
+    )
     {
         var section = document.FindSection(reference.Id); return section is null ? (null, new("YADG-REF-001", $"Unresolved stable section ID '{reference.Id}'.", true, location)) : (section.Select(reference.Selection), null);
     }

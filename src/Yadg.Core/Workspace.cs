@@ -1,13 +1,13 @@
 namespace Yadg.Core;
 
 public sealed record YadgWorkspace(
-            string Root,
-            IReadOnlyList<string> Sources,
-            IReadOnlyList<string> Templates,
-            YadgDocument Document,
-            WorkspaceValues Values,
-            IReadOnlyList<Diagnostic> Diagnostics
-        )
+    string Root,
+    IReadOnlyList<string> Sources,
+    IReadOnlyList<string> Templates,
+    YadgDocument Document,
+    WorkspaceValues Values,
+    IReadOnlyList<Diagnostic> Diagnostics
+)
 {
     public IReadOnlyList<WorkspaceLoader.ResolvedPresentation> Presentations { get; init; } = Array.Empty<WorkspaceLoader.ResolvedPresentation>();
     public List<string> TemporaryProducerDirectories { get; } = new();
@@ -156,10 +156,10 @@ public static class WorkspaceLoader
     }
 
     private static YadgWorkspace Invalid(
-            string root,
-            List<Diagnostic> diagnostics,
-            Diagnostic diagnostic
-        )
+        string root,
+        List<Diagnostic> diagnostics,
+        Diagnostic diagnostic
+    )
     {
         diagnostics.Add(diagnostic);
         return new(root,
@@ -179,10 +179,10 @@ public static class WorkspaceLoader
             new Dictionary<string, YadgFigure>());
 
     private static void Enumerate(
-            string directory,
-            List<string> files,
-            List<Diagnostic> diagnostics
-        )
+        string directory,
+        List<string> files,
+        List<Diagnostic> diagnostics
+    )
     {
         IEnumerable<string> entries;
         try { entries = Directory.EnumerateFileSystemEntries(directory); }
@@ -251,11 +251,11 @@ public static class WorkspaceLoader
     name.Equals("YadgPresentations", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<ResolvedPresentation> ResolvePresentations(
-            string root,
-            string templateDirectory,
-            IReadOnlyList<PresentationDeclaration> declarations,
-            List<Diagnostic> diagnostics
-        )
+        string root,
+        string templateDirectory,
+        IReadOnlyList<PresentationDeclaration> declarations,
+        List<Diagnostic> diagnostics
+    )
     {
         List<ResolvedPresentation> resolved = new();
         HashSet<string> outputs = new(StringComparer.OrdinalIgnoreCase);
@@ -346,10 +346,10 @@ public static class WorkspaceLoader
     }
 
     public sealed record ResolvedPresentation(
-                PresentationDeclaration Declaration,
-                string TemplatePath,
-                IReadOnlyList<string> SourcePaths
-            );
+        PresentationDeclaration Declaration,
+        string TemplatePath,
+        IReadOnlyList<string> SourcePaths
+    );
 
     private static bool PathEquals(string left, string right) => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
 }

@@ -1,11 +1,11 @@
 namespace Yadg.Core;
 
 public sealed record PublishResult(
-            bool Success,
-            IReadOnlyList<Diagnostic> Diagnostics,
-            string? Destination = null,
-            int PublishedCount = 0
-        );
+    bool Success,
+    IReadOnlyList<Diagnostic> Diagnostics,
+    string? Destination = null,
+    int PublishedCount = 0
+);
 
 public static class Publisher
 {
@@ -16,10 +16,10 @@ public static class Publisher
     }
 
     public static PublishResult Publish(
-            string workspaceRoot,
-            string? cliPath,
-            string? configuredPath
-        )
+        string workspaceRoot,
+        string? cliPath,
+        string? configuredPath
+    )
     {
         List<Diagnostic> diagnostics = new();
         var root = Path.GetFullPath(workspaceRoot);

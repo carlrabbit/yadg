@@ -121,10 +121,10 @@ public sealed class M0003IntegrationTests
     }
 
     private static void CreateTemplate(
-            string path,
-            string contentTag,
-            (string Table, string Figure)? direct
-        )
+        string path,
+        string contentTag,
+        (string Table, string Figure)? direct
+    )
     {
         using var document = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();

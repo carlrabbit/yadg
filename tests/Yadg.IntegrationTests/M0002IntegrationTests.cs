@@ -128,10 +128,10 @@ public sealed class M0002IntegrationTests
     }
 
     private static ProcessResult RunCli(
-            string root,
-            string command,
-            params string[] extraArguments
-        )
+        string root,
+        string command,
+        params string[] extraArguments
+    )
     {
         var executable = Path.Combine(AppContext.BaseDirectory, "yadg.exe");
         ProcessStartInfo startInfo = new(executable) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
@@ -174,10 +174,10 @@ public sealed class M0002IntegrationTests
     }
 
     private static void CreateTemplate(
-            string path,
-            string tag,
-            bool includeStyles
-        )
+        string path,
+        string tag,
+        bool includeStyles
+    )
     {
         using var document = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();

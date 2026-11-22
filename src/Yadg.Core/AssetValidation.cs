@@ -3,11 +3,11 @@ namespace Yadg.Core;
 public static class AssetValidation
 {
     public static YadgDocument AttachAndValidate(
-            YadgDocument document,
-            string workspaceRoot,
-            List<Diagnostic> diagnostics,
-            bool yolo = false
-        )
+        YadgDocument document,
+        string workspaceRoot,
+        List<Diagnostic> diagnostics,
+        bool yolo = false
+    )
     {
         Dictionary<string, YadgFigure> figures = new(StringComparer.Ordinal);
         foreach (var figure in document.Figures.Values)

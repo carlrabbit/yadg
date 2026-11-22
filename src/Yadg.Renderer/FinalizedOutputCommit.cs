@@ -3,10 +3,10 @@ namespace Yadg.Renderer;
 public static class FinalizedOutputCommit
 {
     public static void Commit(
-            string workspaceRoot,
-            string stagedWords,
-            string? stagedPdfs
-        )
+        string workspaceRoot,
+        string stagedWords,
+        string? stagedPdfs
+    )
     {
         var root = Path.GetFullPath(workspaceRoot);
         var transaction = Path.Combine(root, ".yadg-render-commit-" + Guid.NewGuid().ToString("N"));

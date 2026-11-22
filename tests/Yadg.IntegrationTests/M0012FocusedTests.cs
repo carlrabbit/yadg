@@ -709,10 +709,10 @@ public sealed class M0012FocusedTests
     private static string Text(Paragraph paragraph) => string.Concat(paragraph.Descendants<Text>().Select(t => t.Text));
 
     private static YadgDocument Parse(
-            string markdown,
-            string thematic = "error",
-            string code = "error"
-        )
+        string markdown,
+        string thematic = "error",
+        string code = "error"
+    )
     {
         var result = MarkdownDocumentParser.Parse(markdown, "content.md", thematic, code);
         Assert.True(result.IsValid, string.Join(Environment.NewLine, result.Diagnostics));
@@ -792,10 +792,10 @@ public sealed class M0012FocusedTests
             numbering.Numbering.Save(); main.Document.Save();
         }
         public void AddListStyle(
-                string name,
-                string id,
-                int numberId
-            )
+            string name,
+            string id,
+            int numberId
+        )
         {
             using var doc = WordprocessingDocument.Open(Template, true); var main = doc.MainDocumentPart!;
             main.StyleDefinitionsPart!.Styles!.Append(new Style

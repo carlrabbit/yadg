@@ -31,16 +31,16 @@ public static class PresentationAuthoring
     private static readonly Regex AnyControl = new(@"\{\{[^{}]*\}\}", RegexOptions.Compiled);
 
     public static PresentationAnalysis Analyze(
-            string templatePath,
-            IEnumerable<PresentationSource> sources,
-            string effectiveRoot,
-            string inlineCodePolicy = "style",
-            string thematicBreakPolicy = "error",
-            IReadOnlyDictionary<string, string>? values = null,
-            bool yolo = false,
-            IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null,
-            bool diagramsAutoDetect = false
-        )
+        string templatePath,
+        IEnumerable<PresentationSource> sources,
+        string effectiveRoot,
+        string inlineCodePolicy = "style",
+        string thematicBreakPolicy = "error",
+        IReadOnlyDictionary<string, string>? values = null,
+        bool yolo = false,
+        IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null,
+        bool diagramsAutoDetect = false
+    )
     {
         var document = PresentationMarkdownParser.Parse(sources, inlineCodePolicy, thematicBreakPolicy, yolo, diagramsAutoDetect);
         var diagnostics = document.Diagnostics.ToList();
@@ -93,11 +93,11 @@ public static class PresentationAuthoring
     }
 
     private static PresentationDocument SubstituteSourceValues(
-            PresentationDocument document,
-            IReadOnlyDictionary<string, string> values,
-            bool yolo,
-            List<Diagnostic> diagnostics
-        )
+        PresentationDocument document,
+        IReadOnlyDictionary<string, string> values,
+        bool yolo,
+        List<Diagnostic> diagnostics
+    )
     {
         PresentationInline Inline(PresentationInline inline, string location) => inline switch
         {
@@ -144,17 +144,17 @@ public static class PresentationAuthoring
     }
 
     public static IReadOnlyList<Diagnostic> Build(
-            string templatePath,
-            IEnumerable<PresentationSource> sources,
-            string effectiveRoot,
-            string outputPath,
-            string inlineCodePolicy = "style",
-            string thematicBreakPolicy = "error",
-            IReadOnlyDictionary<string, string>? values = null,
-            bool yolo = false,
-            IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null,
-            bool diagramsAutoDetect = false
-        )
+        string templatePath,
+        IEnumerable<PresentationSource> sources,
+        string effectiveRoot,
+        string outputPath,
+        string inlineCodePolicy = "style",
+        string thematicBreakPolicy = "error",
+        IReadOnlyDictionary<string, string>? values = null,
+        bool yolo = false,
+        IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers = null,
+        bool diagramsAutoDetect = false
+    )
     {
         var sourceArray = sources.ToArray();
         using var analysis = Analyze(templatePath,
@@ -170,11 +170,11 @@ public static class PresentationAuthoring
     }
 
     public static IReadOnlyList<Diagnostic> BuildAnalyzed(
-            string templatePath,
-            PresentationAnalysis analysis,
-            string effectiveRoot,
-            string outputPath
-        )
+        string templatePath,
+        PresentationAnalysis analysis,
+        string effectiveRoot,
+        string outputPath
+    )
     {
         if (!analysis.IsValid)
         {
@@ -221,13 +221,13 @@ public static class PresentationAuthoring
     }
 
     private static PresentationDocument ResolveImages(
-            PresentationDocument document,
-            string root,
-            IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers,
-            List<Diagnostic> diagnostics,
-            List<string> temporary,
-            bool yolo
-        )
+        PresentationDocument document,
+        string root,
+        IReadOnlyDictionary<string, MermaidProducerConfiguration>? producers,
+        List<Diagnostic> diagnostics,
+        List<string> temporary,
+        bool yolo
+    )
     {
         var slides = document.Slides.Select(slide => slide with
         {
@@ -294,12 +294,12 @@ public static class PresentationAuthoring
     private static readonly Regex ValueToken = new(@"\{\{value:(?<id>[A-Za-z][A-Za-z0-9_-]*)\}\}", RegexOptions.Compiled);
 
     private static void SubstitutePrototypeValues(
-            SlidePart slide,
-            IReadOnlyDictionary<string, string> values,
-            string sourcePath,
-            bool yolo,
-            List<Diagnostic> diagnostics
-        )
+        SlidePart slide,
+        IReadOnlyDictionary<string, string> values,
+        string sourcePath,
+        bool yolo,
+        List<Diagnostic> diagnostics
+    )
     {
         foreach (var paragraph in slide.Slide.Descendants<A.Paragraph>())
         {
@@ -322,7 +322,7 @@ public static class PresentationAuthoring
                 continue;
             }
 
-            int[textNodes.Length] starts = new int[textNodes.Length];
+            int[] starts = new int[textNodes.Length];
             for (var i = 1; i < textNodes.Length; i++)
             {
                 starts[i] = starts[i - 1] + textNodes[i - 1].Text.Length;
@@ -361,12 +361,12 @@ public static class PresentationAuthoring
     }
 
     private static void ValidatePrototypeValues(
-            SlidePart slide,
-            IReadOnlyDictionary<string, string> values,
-            string sourcePath,
-            bool yolo,
-            List<Diagnostic> diagnostics
-        )
+        SlidePart slide,
+        IReadOnlyDictionary<string, string> values,
+        string sourcePath,
+        bool yolo,
+        List<Diagnostic> diagnostics
+    )
     {
         foreach (var paragraph in slide.Slide.Descendants<A.Paragraph>())
         {
@@ -379,10 +379,10 @@ public static class PresentationAuthoring
     }
 
     private static Dictionary<string, SlidePart> DiscoverPrototypes(
-            PresentationPart part,
-            List<Diagnostic> diagnostics,
-            string templatePath
-        )
+        PresentationPart part,
+        List<Diagnostic> diagnostics,
+        string templatePath
+    )
     {
         Dictionary<string, SlidePart> result = new(StringComparer.Ordinal);
         foreach (var slidePart in part.SlideParts)
@@ -424,13 +424,13 @@ public static class PresentationAuthoring
     }
 
     private static void ValidateSelectedPrototypes(
-            PresentationPart package,
-            PresentationDocument document,
-            IReadOnlyDictionary<string, SlidePart> prototypes,
-            List<Diagnostic> diagnostics,
-            string templatePath,
-            bool yolo = false
-        )
+        PresentationPart package,
+        PresentationDocument document,
+        IReadOnlyDictionary<string, SlidePart> prototypes,
+        List<Diagnostic> diagnostics,
+        string templatePath,
+        bool yolo = false
+    )
     {
         foreach (var slide in document.Slides)
         {
@@ -641,11 +641,11 @@ public static class PresentationAuthoring
     }
 
     private static void AuthorSlide(
-            SlidePart slidePart,
-            PresentationSlide slide,
-            string root,
-            List<Diagnostic> diagnostics
-        )
+        SlidePart slidePart,
+        PresentationSlide slide,
+        string root,
+        List<Diagnostic> diagnostics
+    )
     {
         foreach (var shape in slidePart.Slide.Descendants<P.Shape>().Where(shape => shape.TextBody is not null).ToArray())
         {
@@ -699,11 +699,11 @@ public static class PresentationAuthoring
     }
 
     private static void ReplaceShapeText(
-            P.Shape shape,
-            string text,
-            A.Paragraph? exemplar,
-            string marker = "{{title}}"
-        )
+        P.Shape shape,
+        string text,
+        A.Paragraph? exemplar,
+        string marker = "{{title}}"
+    )
     {
         var body = shape.TextBody!;
         var markerParagraph = body.Elements<A.Paragraph>().FirstOrDefault(paragraph => paragraph.InnerText.Contains(marker, StringComparison.Ordinal));
@@ -719,10 +719,10 @@ public static class PresentationAuthoring
     }
 
     private static void ReplaceShapeTitle(
-            P.Shape shape,
-            PresentationSlide slide,
-            SlidePart slidePart
-        )
+        P.Shape shape,
+        PresentationSlide slide,
+        SlidePart slidePart
+    )
     {
         var body = shape.TextBody!;
         var markerParagraph = body.Elements<A.Paragraph>().Single(paragraph => paragraph.InnerText.Contains("{{title}}", StringComparison.Ordinal));
@@ -734,12 +734,12 @@ public static class PresentationAuthoring
     }
 
     private static void ReplaceTextRegion(
-            P.Shape shape,
-            string token,
-            IReadOnlyList<PresentationBlock> blocks,
-            List<Diagnostic> diagnostics,
-            SlidePart slidePart
-        )
+        P.Shape shape,
+        string token,
+        IReadOnlyList<PresentationBlock> blocks,
+        List<Diagnostic> diagnostics,
+        SlidePart slidePart
+    )
     {
         var body = shape.TextBody!;
         var paragraphs = body.Elements<A.Paragraph>().ToArray();
@@ -796,14 +796,14 @@ public static class PresentationAuthoring
     }
 
     private static void FlattenList(
-            PresentationList list,
-            int level,
-            List<A.Paragraph> output,
-            A.Paragraph exemplar,
-            List<Diagnostic> diagnostics,
-            SlidePart slidePart,
-            A.RunProperties? codeProperties
-        )
+        PresentationList list,
+        int level,
+        List<A.Paragraph> output,
+        A.Paragraph exemplar,
+        List<Diagnostic> diagnostics,
+        SlidePart slidePart,
+        A.RunProperties? codeProperties
+    )
     {
         foreach (var item in list.Items)
         {
@@ -826,12 +826,12 @@ public static class PresentationAuthoring
     }
 
     private static A.Paragraph NewParagraph(
-            A.Paragraph exemplar,
-            IReadOnlyList<PresentationInline> inlines,
-            int? listLevel = null,
-            SlidePart? slidePart = null,
-            A.RunProperties? codeProperties = null
-        )
+        A.Paragraph exemplar,
+        IReadOnlyList<PresentationInline> inlines,
+        int? listLevel = null,
+        SlidePart? slidePart = null,
+        A.RunProperties? codeProperties = null
+    )
     {
         var result = (A.Paragraph)exemplar.CloneNode(true);
         foreach (var child in result.ChildElements.Where(child => child is A.Run or A.Break or A.Field).ToArray())
@@ -856,14 +856,14 @@ public static class PresentationAuthoring
     }
 
     private static void AppendInlineRuns(
-            A.Paragraph paragraph,
-            PresentationInline inline,
-            A.RunProperties? baseProperties,
-            A.EndParagraphRunProperties? end,
-            SlidePart? slidePart,
-            string? hyperlinkDestination = null,
-            A.RunProperties? codeProperties = null
-        )
+        A.Paragraph paragraph,
+        PresentationInline inline,
+        A.RunProperties? baseProperties,
+        A.EndParagraphRunProperties? end,
+        SlidePart? slidePart,
+        string? hyperlinkDestination = null,
+        A.RunProperties? codeProperties = null
+    )
     {
         switch (inline)
         {
@@ -982,13 +982,13 @@ public static class PresentationAuthoring
     private static bool IsCodeSample(A.Run run) => run.Elements<A.Text>().Count() == 1 && run.Elements<A.Text>().Single().Text == "{{codeInline}}";
     private static int CountCodeSamples(OpenXmlElement element) => element.Descendants<A.Run>().Count(IsCodeSample);
     private static void AddCodeExemplarDiagnostic(
-            List<Diagnostic> diagnostics,
-            string scope,
-            int column,
-            int count,
-            bool yolo,
-            string templatePath
-        )
+        List<Diagnostic> diagnostics,
+        string scope,
+        int column,
+        int count,
+        bool yolo,
+        string templatePath
+    )
     {
         if (yolo)
         {
@@ -1050,11 +1050,11 @@ public static class PresentationAuthoring
     private static int ParagraphFontSize(A.Paragraph paragraph) => paragraph.Descendants<A.RunProperties>().Select(properties => (properties.FontSize?.Value)).Max() ?? 0;
 
     private static void InsertPicture(
-            SlidePart part,
-            P.Shape sourceShape,
-            string path,
-            string alt
-        )
+        SlidePart part,
+        P.Shape sourceShape,
+        string path,
+        string alt
+    )
     {
         var xfrm = sourceShape.ShapeProperties?.Transform2D ?? throw new InvalidDataException("Image prototype shape has no transform bounds.");
         var offset = xfrm.Offset!; var extents = xfrm.Extents!;
@@ -1083,12 +1083,12 @@ public static class PresentationAuthoring
     }
 
     private static void InsertSvgPicture(
-            SlidePart part,
-            P.Shape sourceShape,
-            string svg,
-            string alt,
-            string sourcePath
-        )
+        SlidePart part,
+        P.Shape sourceShape,
+        string svg,
+        string alt,
+        string sourcePath
+    )
     {
         try
         {
@@ -1153,11 +1153,11 @@ public static class PresentationAuthoring
     }
 
     private static void ReplaceTable(
-            P.GraphicFrame frame,
-            PresentationTable content,
-            List<Diagnostic> diagnostics,
-            SlidePart slidePart
-        )
+        P.GraphicFrame frame,
+        PresentationTable content,
+        List<Diagnostic> diagnostics,
+        SlidePart slidePart
+    )
     {
         var table = frame.Graphic?.GraphicData?.GetFirstChild<A.Table>() ?? throw new InvalidDataException("Table region has no native table.");
         var rows = table.Elements<A.TableRow>().ToArray();
@@ -1203,10 +1203,10 @@ public static class PresentationAuthoring
     }
 
     private static void ReplaceCell(
-            A.TableCell cell,
-            IReadOnlyList<PresentationInline> content,
-            SlidePart slidePart
-        )
+        A.TableCell cell,
+        IReadOnlyList<PresentationInline> content,
+        SlidePart slidePart
+    )
     {
         var old = cell.Elements<A.TextBody>().SingleOrDefault();
         if (old is null) { old = new A.TextBody(new A.BodyProperties(), new A.ListStyle()); cell.AppendChild(old); }
@@ -1218,10 +1218,10 @@ public static class PresentationAuthoring
     }
 
     private static string? ResolveImage(
-            string root,
-            PresentationImage image,
-            out string? error
-        )
+        string root,
+        PresentationImage image,
+        out string? error
+    )
     {
         error = null;
         try

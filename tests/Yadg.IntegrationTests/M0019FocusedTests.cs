@@ -312,11 +312,11 @@ public sealed class M0019FocusedTests
     }
 
     private static void AssertFailedProducerIsCleaned(
-            string expectedDiagnostic,
-            MermaidProducerConfiguration configuration,
-            string workspaceRoot,
-            int? timeoutMilliseconds = null
-        )
+        string expectedDiagnostic,
+        MermaidProducerConfiguration configuration,
+        string workspaceRoot,
+        int? timeoutMilliseconds = null
+    )
     {
         List<string> temporaryDirectories = new();
         List<Diagnostic> diagnostics = new();

@@ -13,32 +13,32 @@ namespace Yadg.Word;
 
 public enum PlacementKind { Section, Table, Figure }
 public sealed record TemplatePlacement(
-            Paragraph Anchor,
-            PlacementKind Kind,
-            string Id,
-            SectionReference? SectionReference = null,
-            int ContextLevel = 0,
-            int RootLevel = 0
-        );
+    Paragraph Anchor,
+    PlacementKind Kind,
+    string Id,
+    SectionReference? SectionReference = null,
+    int ContextLevel = 0,
+    int RootLevel = 0
+);
 public sealed record PreparedTableBinding(
-            Table Table,
-            TableRow MarkerRow,
-            TableRow PrototypeRow,
-            string Id
-        );
+    Table Table,
+    TableRow MarkerRow,
+    TableRow PrototypeRow,
+    string Id
+);
 public sealed record CaptionPrototype(
-            string Id,
-            Paragraph Paragraph,
-            int SequenceFields,
-            int CaptionPlaceholders
-        );
+    string Id,
+    Paragraph Paragraph,
+    int SequenceFields,
+    int CaptionPlaceholders
+);
 public sealed record TemplateMetadata(
-            int Version,
-            IReadOnlyDictionary<string, string> Styles,
-            IReadOnlyDictionary<string, string> PrototypeBindings,
-            IReadOnlyDictionary<string, CaptionPrototype> Prototypes,
-            IReadOnlyList<Paragraph> ControlParagraphs
-        )
+    int Version,
+    IReadOnlyDictionary<string, string> Styles,
+    IReadOnlyDictionary<string, string> PrototypeBindings,
+    IReadOnlyDictionary<string, CaptionPrototype> Prototypes,
+    IReadOnlyList<Paragraph> ControlParagraphs
+)
 {
     public IReadOnlyDictionary<string, CaptionPrototype> ListItemPrototypes { get; init; } = new Dictionary<string, CaptionPrototype>(StringComparer.Ordinal);
     public IReadOnlyDictionary<string, string> HyperlinkRelationships { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -64,11 +64,11 @@ public sealed record TemplateMetadata(
     Array.Empty<Paragraph>());
 }
 public sealed record TemplateAnalysis(
-            IReadOnlyList<TemplatePlacement> Placements,
-            IReadOnlyList<Diagnostic> Diagnostics,
-            TemplateMetadata Metadata,
-            IReadOnlyList<PreparedTableBinding>? PreparedBindings = null
-        )
+    IReadOnlyList<TemplatePlacement> Placements,
+    IReadOnlyList<Diagnostic> Diagnostics,
+    TemplateMetadata Metadata,
+    IReadOnlyList<PreparedTableBinding>? PreparedBindings = null
+)
 {
     public IReadOnlyDictionary<string, PresentationResolution> Presentation { get; init; } = new Dictionary<string, PresentationResolution>(StringComparer.Ordinal);
     public bool IsValid => Diagnostics.All(d => !d.IsError);
@@ -77,23 +77,23 @@ public sealed record TemplateAnalysis(
 public enum PresentationSourceKind { Prototype, ContextualExample, ConfiguredResource, CompatibilityDefault, RelatedTemplateResource, BuiltinFallback, PlainRepresentation, VisiblePlaceholder }
 public enum PresentationCapability { None, Paragraph, Character, Table, BulletNumbering, OrderedNumbering, OutlineLevel, SequenceField, PreparedRow, ContextualFormatting }
 public sealed record PresentationResolution(
-            string Role,
-            bool StrictResolved,
-            PresentationSourceKind? SourceKind,
-            string? SourceId,
-            string? DisplayName,
-            PresentationCapability RequiredCapability,
-            bool CapabilitySatisfied,
-            string? YoloRelatedCandidate,
-            string? YoloBuiltinFallback,
-            IReadOnlyList<Diagnostic> Diagnostics
-        );
+    string Role,
+    bool StrictResolved,
+    PresentationSourceKind? SourceKind,
+    string? SourceId,
+    string? DisplayName,
+    PresentationCapability RequiredCapability,
+    bool CapabilitySatisfied,
+    string? YoloRelatedCandidate,
+    string? YoloBuiltinFallback,
+    IReadOnlyList<Diagnostic> Diagnostics
+);
 internal enum ListNumberingCapability { None, Bullet, Ordered }
 internal sealed record PresentationResolutionSet(
-            TemplateMetadata Metadata,
-            IReadOnlyDictionary<string, PresentationResolution> Roles,
-            IReadOnlyList<Diagnostic> Diagnostics
-        );
+    TemplateMetadata Metadata,
+    IReadOnlyDictionary<string, PresentationResolution> Roles,
+    IReadOnlyList<Diagnostic> Diagnostics
+);
 
 public sealed class WordAuthoringException(Diagnostic diagnostic) : Exception(diagnostic.ToString())
 {
@@ -107,17 +107,17 @@ public static class WordAuthoring
     private static readonly Regex PreparedTag = new(@"^\{\{table-rows:([A-Za-z][A-Za-z0-9_-]*)\}\}$", RegexOptions.Compiled);
     private static readonly Regex CellTag = new(@"\{\{cell\}\}", RegexOptions.Compiled);
     private sealed record ComplexFieldRange(
-                string Instruction,
-                OpenXmlElement BeginNode,
-                OpenXmlElement? SeparateNode,
-                OpenXmlElement? EndNode,
-                bool ContainsNestedField
-            );
+        string Instruction,
+        OpenXmlElement BeginNode,
+        OpenXmlElement? SeparateNode,
+        OpenXmlElement? EndNode,
+        bool ContainsNestedField
+    );
     private sealed record CaptionLabelRange(
-                OpenXmlElement FirstNode,
-                OpenXmlElement LastNode,
-                string Label
-            );
+        OpenXmlElement FirstNode,
+        OpenXmlElement LastNode,
+        string Label
+    );
     private sealed class ComplexFieldState(OpenXmlElement beginNode)
     {
         public OpenXmlElement BeginNode { get; } = beginNode;
@@ -252,24 +252,24 @@ public static class WordAuthoring
     private static string? DescribeCandidate(Style? style) => style is null ? null : $"{style.StyleName?.Val?.Value ?? style.StyleId?.Value} (id={style.StyleId?.Value})";
 
     public static TemplateAnalysis Analyze(
-            string templatePath,
-            YadgDocument model,
-            IReadOnlyDictionary<string, string>? values = null,
-            bool yolo = false
-        )
+        string templatePath,
+        YadgDocument model,
+        IReadOnlyDictionary<string, string>? values = null,
+        bool yolo = false
+    )
     {
         using var document = WordprocessingDocument.Open(templatePath, false);
         return AnalyzeOpen(document, templatePath, model, values ?? new Dictionary<string, string>(StringComparer.Ordinal), yolo: yolo);
     }
 
     private static TemplateAnalysis AnalyzeOpen(
-            WordprocessingDocument document,
-            string templatePath,
-            YadgDocument model,
-            IReadOnlyDictionary<string, string> values,
-            TemplateMetadata? supplied = null,
-            bool yolo = false
-        )
+        WordprocessingDocument document,
+        string templatePath,
+        YadgDocument model,
+        IReadOnlyDictionary<string, string> values,
+        TemplateMetadata? supplied = null,
+        bool yolo = false
+    )
     {
         List<Diagnostic> diagnostics = new();
         List<TemplatePlacement> placements = new();
@@ -576,16 +576,16 @@ public static class WordAuthoring
     private static bool IsDeferredBlockRole(string role) => role is "blockquote" or "codeBlock";
 
     private static TemplateMetadata ResolveUsedBlockPresentation(
-            TemplateMetadata metadata,
-            YadgDocument model,
-            IReadOnlyList<TemplatePlacement> placements,
-            Styles? styles,
-            Numbering? numbering,
-            string location,
-            bool yolo,
-            List<Diagnostic> diagnostics,
-            IDictionary<string, PresentationResolution> resolutions
-        )
+        TemplateMetadata metadata,
+        YadgDocument model,
+        IReadOnlyList<TemplatePlacement> placements,
+        Styles? styles,
+        Numbering? numbering,
+        string location,
+        bool yolo,
+        List<Diagnostic> diagnostics,
+        IDictionary<string, PresentationResolution> resolutions
+    )
     {
         HashSet<string> required = new(StringComparer.Ordinal);
         foreach (var placement in placements)
@@ -697,12 +697,12 @@ public static class WordAuthoring
     }
 
     private static TemplateMetadata RecoverListPrototypes(
-            TemplateMetadata metadata,
-            Styles? styles,
-            Numbering? numbering,
-            List<Diagnostic> diagnostics,
-            string location
-        )
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering,
+        List<Diagnostic> diagnostics,
+        string location
+    )
     {
         Dictionary<string, string> bindings = new(metadata.PrototypeBindings, StringComparer.Ordinal);
         Dictionary<string, CaptionPrototype> prototypes = new(metadata.ListItemPrototypes, StringComparer.Ordinal);
@@ -753,12 +753,12 @@ public static class WordAuthoring
     }
 
     public static void Author(
-            string templatePath,
-            string outputPath,
-            YadgDocument model,
-            IReadOnlyDictionary<string, string>? values = null,
-            bool yolo = false
-        )
+        string templatePath,
+        string outputPath,
+        YadgDocument model,
+        IReadOnlyDictionary<string, string>? values = null,
+        bool yolo = false
+    )
     {
         values ??= new Dictionary<string, string>(StringComparer.Ordinal);
         using (var analysisDocument = WordprocessingDocument.Open(templatePath, false))
@@ -878,21 +878,21 @@ public static class WordAuthoring
     private static string StripSectionPrefix(string value) => value.StartsWith("section:", StringComparison.Ordinal) ? value[8..] : value;
 
     private static void AnalyzeParagraphs(
-            IEnumerable<Paragraph> paragraphs,
-            string templatePath,
-            YadgDocument model,
-            Styles? styles,
-            Numbering? numbering,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, PresentationResolution> presentation,
-            List<TemplatePlacement> placements,
-            List<PreparedTableBinding> prepared,
-            List<Diagnostic> diagnostics,
-            IReadOnlyDictionary<string, string> values,
-            string location,
-            Body? body = null,
-            bool yolo = false
-        )
+        IEnumerable<Paragraph> paragraphs,
+        string templatePath,
+        YadgDocument model,
+        Styles? styles,
+        Numbering? numbering,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        List<TemplatePlacement> placements,
+        List<PreparedTableBinding> prepared,
+        List<Diagnostic> diagnostics,
+        IReadOnlyDictionary<string, string> values,
+        string location,
+        Body? body = null,
+        bool yolo = false
+    )
     {
         int paragraphIndex = 0;
         foreach (var paragraph in paragraphs)
@@ -1016,12 +1016,12 @@ public static class WordAuthoring
         => paragraph.Ancestors().Any(element => element.LocalName == "txbxContent") ? $"{fallback}/text box" : fallback;
 
     private static DocxLocation HumanLocation(
-            Paragraph paragraph,
-            string templatePath,
-            string story,
-            int ordinal,
-            Styles? styles
-        )
+        Paragraph paragraph,
+        string templatePath,
+        string story,
+        int ordinal,
+        Styles? styles
+    )
     {
         var near = BoundExcerpt(ParagraphText(paragraph));
         List<string> headings = new();
@@ -1082,12 +1082,12 @@ public static class WordAuthoring
     }
 
     private static void AnalyzePreparedTables(
-            Body body,
-            string location,
-            YadgDocument model,
-            List<PreparedTableBinding> bindings,
-            List<Diagnostic> diagnostics
-        )
+        Body body,
+        string location,
+        YadgDocument model,
+        List<PreparedTableBinding> bindings,
+        List<Diagnostic> diagnostics
+    )
     {
         foreach (var table in body.Descendants<Table>().Where(t => t.Ancestors<Table>().FirstOrDefault() is null))
         {
@@ -1131,10 +1131,10 @@ public static class WordAuthoring
         => string.Concat(paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).Select(t => t.Text));
 
     private static int ResolveTemplateContext(
-            Body body,
-            Paragraph placement,
-            Styles? styles
-        )
+        Body body,
+        Paragraph placement,
+        Styles? styles
+    )
     {
         foreach (var paragraph in body.Elements<Paragraph>().TakeWhile(p => !ReferenceEquals(p, placement)).Reverse())
         {
@@ -1177,12 +1177,12 @@ public static class WordAuthoring
     }
 
     private static void ValidatePrototype(
-            TableRow prototype,
-            YadgTable semantic,
-            string id,
-            string location,
-            List<Diagnostic> diagnostics
-        )
+        TableRow prototype,
+        YadgTable semantic,
+        string id,
+        string location,
+        List<Diagnostic> diagnostics
+    )
     {
         if ((semantic.GridHeader ?? Array.Empty<YadgTableCell>()).Concat(semantic.GridRows?.SelectMany(r => r) ?? Array.Empty<YadgTableCell>()).Any(cell => cell.ColumnSpan > 1 || cell.RowSpan > 1 || cell.Paragraphs.Count != 1))
         {
@@ -1255,19 +1255,19 @@ public static class WordAuthoring
     }
 
     private static void ValidateBlocks(
-            IEnumerable<YadgBlock> blocks,
-            Styles? styles,
-            Numbering? numbering,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, PresentationResolution> presentation,
-            Paragraph anchor,
-            DocxLocation location,
-            List<Diagnostic> diagnostics,
-            int contextLevel = 0,
-            SectionSelection selection = SectionSelection.Section,
-            int rootLevel = 0,
-            bool yolo = false
-        )
+        IEnumerable<YadgBlock> blocks,
+        Styles? styles,
+        Numbering? numbering,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        Paragraph anchor,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        int contextLevel = 0,
+        SectionSelection selection = SectionSelection.Section,
+        int rootLevel = 0,
+        bool yolo = false
+    )
     {
         foreach (var block in blocks)
         {
@@ -1328,17 +1328,17 @@ public static class WordAuthoring
     }
 
     private static TemplateMetadata ResolveUsedCodeInlineStyle(
-            TemplateMetadata metadata,
-            YadgDocument model,
-            IReadOnlyList<TemplatePlacement> placements,
-            IReadOnlyList<PreparedTableBinding> prepared,
-            Styles? styles,
-            Numbering? numbering,
-            List<Diagnostic> diagnostics,
-            string location,
-            bool yolo,
-            out PresentationResolution? resolution
-        )
+        TemplateMetadata metadata,
+        YadgDocument model,
+        IReadOnlyList<TemplatePlacement> placements,
+        IReadOnlyList<PreparedTableBinding> prepared,
+        Styles? styles,
+        Numbering? numbering,
+        List<Diagnostic> diagnostics,
+        string location,
+        bool yolo,
+        out PresentationResolution? resolution
+    )
     {
         resolution = null;
         IEnumerable<YadgBlock> selectedBlocks()
@@ -1413,15 +1413,15 @@ public static class WordAuthoring
     }
 
     private static void ValidateList(
-            YadgList list,
-            Styles? styles,
-            Numbering? numbering,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, PresentationResolution> presentation,
-            DocxLocation location,
-            List<Diagnostic> diagnostics,
-            bool yolo = false
-        )
+        YadgList list,
+        Styles? styles,
+        Numbering? numbering,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        bool yolo = false
+    )
     {
         var role = list.Ordered ? "ordered" : "unordered";
         presentation.TryGetValue(role, out var resolution);
@@ -1489,10 +1489,10 @@ public static class WordAuthoring
     }
 
     private static int? ResolveParagraphNumberingId(
-            Paragraph paragraph,
-            Styles? styles,
-            Numbering? numbering = null
-        )
+        Paragraph paragraph,
+        Styles? styles,
+        Numbering? numbering = null
+    )
     {
         var direct = paragraph.ParagraphProperties?.NumberingProperties?.NumberingId?.Val?.Value;
         if (direct is not null)
@@ -1531,10 +1531,10 @@ public static class WordAuthoring
     }
 
     private static int? ResolveNumberingId(
-            Styles styles,
-            string styleId,
-            Numbering? numbering
-        )
+        Styles styles,
+        string styleId,
+        Numbering? numbering
+    )
     {
         var direct = ResolveNumberingId(styles, styleId);
         if (direct is not null)
@@ -1564,12 +1564,12 @@ public static class WordAuthoring
     }
 
     private static PresentationResolutionSet ResolvePresentation(
-            TemplateMetadata metadata,
-            Styles? styles,
-            Numbering? numbering,
-            string location,
-            bool yolo
-        )
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering,
+        string location,
+        bool yolo
+    )
     {
         var available = styles?.Elements<Style>().ToArray() ?? Array.Empty<Style>();
         Dictionary<string, string> resolvedStyles = new(StringComparer.Ordinal);
@@ -1758,12 +1758,12 @@ public static class WordAuthoring
     }
 
     private static bool RoleCapabilitySatisfied(
-            string role,
-            Style style,
-            Style[] styles,
-            Numbering? numbering,
-            PresentationCapability capability
-        )
+        string role,
+        Style style,
+        Style[] styles,
+        Numbering? numbering,
+        PresentationCapability capability
+    )
     {
         if (capability == PresentationCapability.BulletNumbering)
         {
@@ -1808,10 +1808,10 @@ public static class WordAuthoring
     private static int ParagraphLevel(Paragraph paragraph) => paragraph.ParagraphProperties?.NumberingProperties?.NumberingLevelReference?.Val?.Value ?? 0;
 
     private static ListNumberingCapability GetStyleListCapability(
-            Styles styles,
-            Numbering? numbering,
-            string? styleId
-        )
+        Styles styles,
+        Numbering? numbering,
+        string? styleId
+    )
     {
         if (string.IsNullOrWhiteSpace(styleId) || numbering is null)
         {
@@ -1848,11 +1848,11 @@ public static class WordAuthoring
     }
 
     private static ListNumberingCapability ListCapability(
-            Styles? styles,
-            Numbering? numbering,
-            int numberId,
-            int levelIndex
-        )
+        Styles? styles,
+        Numbering? numbering,
+        int numberId,
+        int levelIndex
+    )
     {
         if (numbering is null)
         {
@@ -1878,11 +1878,11 @@ public static class WordAuthoring
     }
 
     private static Style? FindRoleCandidate(
-            Style[] styles,
-            string role,
-            StyleValues expected,
-            Numbering? numbering
-        )
+        Style[] styles,
+        string role,
+        StyleValues expected,
+        Numbering? numbering
+    )
     {
         IEnumerable<Style> eligible = styles.Where(s => s.Type?.Value == expected);
         if (role is "unordered" or "ordered")
@@ -1924,10 +1924,10 @@ public static class WordAuthoring
     private static string NormalizeVisibleName(string value) => Regex.Replace(value.Trim(), @"\s+", " ").ToUpperInvariant();
 
     private static int RoleSpecificHintRank(
-            Style style,
-            Style[] styles,
-            string role
-        )
+        Style style,
+        Style[] styles,
+        string role
+    )
     {
         if (role is not ("unordered" or "ordered"))
         {
@@ -1960,14 +1960,14 @@ public static class WordAuthoring
     private static string StyleTypeName(StyleValues? type) => type == StyleValues.Paragraph ? "paragraph" : type == StyleValues.Character ? "character" : type == StyleValues.Table ? "table" : type == StyleValues.Numbering ? "numbering" : "unknown";
 
     private static void ValidateTable(
-            YadgTable table,
-            Styles? styles,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, PresentationResolution> presentation,
-            DocxLocation location,
-            List<Diagnostic> diagnostics,
-            bool yolo
-        )
+        YadgTable table,
+        Styles? styles,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        bool yolo
+    )
     {
         if (presentation.TryGetValue("generatedTable", out var tableResolution) && !tableResolution.StrictResolved && !yolo)
         {
@@ -1993,15 +1993,15 @@ public static class WordAuthoring
     }
 
     private static void ValidateFigure(
-            YadgFigure figure,
-            Styles? styles,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, PresentationResolution> presentation,
-            Paragraph anchor,
-            DocxLocation location,
-            List<Diagnostic> diagnostics,
-            bool yolo = false
-        )
+        YadgFigure figure,
+        Styles? styles,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, PresentationResolution> presentation,
+        Paragraph anchor,
+        DocxLocation location,
+        List<Diagnostic> diagnostics,
+        bool yolo = false
+    )
     {
         if (figure.Asset is null && figure.GeneratedSvg is null)
         {
@@ -2031,17 +2031,17 @@ public static class WordAuthoring
 
     private static bool HasStyle(Styles? styles, string id) => styles?.Descendants<Style>().Any(s => s.StyleId?.Value == id) == true;
     private static string StyleFor(
-            TemplateMetadata metadata,
-            string role,
-            string fallback
-        ) => metadata.Styles.TryGetValue(role, out var value) ? value : fallback;
+        TemplateMetadata metadata,
+        string role,
+        string fallback
+    ) => metadata.Styles.TryGetValue(role, out var value) ? value : fallback;
 
     private static int EffectiveHeadingLevel(
-            int sourceLevel,
-            int contextLevel,
-            SectionSelection selection,
-            int rootLevel
-        )
+        int sourceLevel,
+        int contextLevel,
+        SectionSelection selection,
+        int rootLevel
+    )
         => selection == SectionSelection.Section
             ? contextLevel + 1 + (sourceLevel - rootLevel)
             : contextLevel + (sourceLevel - rootLevel);
@@ -2060,11 +2060,11 @@ public static class WordAuthoring
     }
 
     private static void PopulatePreparedTable(
-            PreparedTableBinding binding,
-            YadgTable semantic,
-            IReadOnlyDictionary<string, string> targets,
-            TemplateMetadata metadata
-        )
+        PreparedTableBinding binding,
+        YadgTable semantic,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
         var prototype = binding.PrototypeRow;
         foreach (var sourceRow in semantic.Rows)
@@ -2083,11 +2083,11 @@ public static class WordAuthoring
     }
 
     private static void PopulatePreparedCell(
-            Paragraph prototype,
-            IReadOnlyList<YadgInline> source,
-            IReadOnlyDictionary<string, string> targets,
-            TemplateMetadata metadata
-        )
+        Paragraph prototype,
+        IReadOnlyList<YadgInline> source,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
         var combined = LogicalText(prototype);
         var start = combined.IndexOf("{{cell}}", StringComparison.Ordinal);
@@ -2171,11 +2171,11 @@ public static class WordAuthoring
     }
 
     private static IReadOnlyList<Run> CreatePreparedRuns(
-            IReadOnlyList<YadgInline> source,
-            IReadOnlyDictionary<string, string> targets,
-            RunProperties? baseProperties,
-            TemplateMetadata metadata
-        )
+        IReadOnlyList<YadgInline> source,
+        IReadOnlyDictionary<string, string> targets,
+        RunProperties? baseProperties,
+        TemplateMetadata metadata
+    )
     {
         Paragraph temporary = new();
         AppendInlines(temporary, source, targets, metadata: metadata);
@@ -2225,15 +2225,15 @@ public static class WordAuthoring
     }
 
     private static IEnumerable<OpenXmlElement> CreateElements(
-            YadgBlock block,
-            Paragraph anchor,
-            WordprocessingDocument document,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, string> targets,
-            bool yolo = false,
-            int quoteDepth = 0,
-            Styles? styles = null
-        )
+        YadgBlock block,
+        Paragraph anchor,
+        WordprocessingDocument document,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        bool yolo = false,
+        int quoteDepth = 0,
+        Styles? styles = null
+    )
     {
         switch (block)
         {
@@ -2306,14 +2306,14 @@ public static class WordAuthoring
     }
 
     private static Paragraph CreateBlockQuoteParagraph(
-            YadgParagraph block,
-            Paragraph anchor,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, string> targets,
-            int quoteDepth,
-            bool yolo,
-            Styles? styles
-        )
+        YadgParagraph block,
+        Paragraph anchor,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        int quoteDepth,
+        bool yolo,
+        Styles? styles
+    )
     {
         var style = StyleFor(metadata, "blockquote", "Quote");
         Paragraph paragraph = new();
@@ -2359,14 +2359,14 @@ public static class WordAuthoring
     }
 
     private static IEnumerable<OpenXmlElement> CreateListElements(
-            YadgList list,
-            Paragraph anchor,
-            WordprocessingDocument document,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, string> targets,
-            bool yolo,
-            Dictionary<bool, int> builtins
-        )
+        YadgList list,
+        Paragraph anchor,
+        WordprocessingDocument document,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        bool yolo,
+        Dictionary<bool, int> builtins
+    )
     {
         if (list.Level > 8)
         {
@@ -2387,11 +2387,11 @@ public static class WordAuthoring
     }
 
     private static Paragraph CreateParagraph(
-            YadgBlock block,
-            Paragraph anchor,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, string> targets
-        )
+        YadgBlock block,
+        Paragraph anchor,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets
+    )
     {
         Paragraph paragraph = new();
         if (block is YadgHeading heading)
@@ -2419,15 +2419,15 @@ public static class WordAuthoring
     }
 
     private static Paragraph CreateListParagraph(
-            YadgListItem item,
-            bool ordered,
-            int level,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, string> targets,
-            WordprocessingDocument document,
-            bool yolo,
-            Dictionary<bool, int> builtins
-        )
+        YadgListItem item,
+        bool ordered,
+        int level,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets,
+        WordprocessingDocument document,
+        bool yolo,
+        Dictionary<bool, int> builtins
+    )
     {
         var key = ordered ? "orderedListItem" : "unorderedListItem";
         if (metadata.PrototypeBindings.TryGetValue(key, out var prototypeId) &&
@@ -2458,10 +2458,10 @@ public static class WordAuthoring
     }
 
     private static int GetBuiltinNumbering(
-            WordprocessingDocument document,
-            bool ordered,
-            Dictionary<bool, int> cache
-        )
+        WordprocessingDocument document,
+        bool ordered,
+        Dictionary<bool, int> cache
+    )
     {
         if (cache.TryGetValue(ordered, out var existing))
         {
@@ -2489,11 +2489,11 @@ public static class WordAuthoring
     }
 
     private static void ReplaceListItemPlaceholder(
-            Paragraph paragraph,
-            IReadOnlyList<YadgInline> inlines,
-            IReadOnlyDictionary<string, string> targets,
-            TemplateMetadata metadata
-        )
+        Paragraph paragraph,
+        IReadOnlyList<YadgInline> inlines,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
         var texts = paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).ToArray();
         var combined = string.Concat(texts.Select(t => t.Text));
@@ -2568,10 +2568,10 @@ public static class WordAuthoring
     }
 
     private static Table CreateTable(
-            YadgTable table,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, string> targets
-        )
+        YadgTable table,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets
+    )
     {
         var selectedStyle = StyleFor(metadata, "generatedTable", "TableGrid");
         TableProperties properties = new(new TableLayout { Type = TableLayoutValues.Autofit }, new TableLook { FirstRow = OnOffValue.FromBoolean(true) });
@@ -2587,7 +2587,7 @@ public static class WordAuthoring
         result.Append(new TableGrid(Enumerable.Range(0, width).Select(_ => new GridColumn())));
         if (gridHeader is not null)
         {
-            YadgTableCell?[width] active = new YadgTableCell?[width];
+            YadgTableCell?[] active = new YadgTableCell?[width];
             result.Append(CreateGridRow(gridHeader, true, width, active, targets, metadata, table.Id));
             if (gridRows is not null)
             {
@@ -2635,14 +2635,14 @@ public static class WordAuthoring
     }
 
     private static TableRow CreateGridRow(
-            IReadOnlyList<YadgTableCell> cells,
-            bool header,
-            int width,
-            YadgTableCell?[] active,
-            IReadOnlyDictionary<string, string> targets,
-            TemplateMetadata metadata,
-            string tableId
-        )
+        IReadOnlyList<YadgTableCell> cells,
+        bool header,
+        int width,
+        YadgTableCell?[] active,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata,
+        string tableId
+    )
     {
         TableRow row = new();
         if (header)
@@ -2700,12 +2700,12 @@ public static class WordAuthoring
     }
 
     private static TableCell CreateCell(
-            IReadOnlyList<IReadOnlyList<YadgInline>> paragraphs,
-            int? columnSpan,
-            MergedCellValues? verticalMerge,
-            IReadOnlyDictionary<string, string> targets,
-            TemplateMetadata metadata
-        )
+        IReadOnlyList<IReadOnlyList<YadgInline>> paragraphs,
+        int? columnSpan,
+        MergedCellValues? verticalMerge,
+        IReadOnlyDictionary<string, string> targets,
+        TemplateMetadata metadata
+    )
     {
         TableCellProperties props = new();
         if (columnSpan is int span)
@@ -2734,10 +2734,10 @@ public static class WordAuthoring
     }
 
     private static Paragraph CreateFigureParagraph(
-            YadgFigure figure,
-            Paragraph anchor,
-            WordprocessingDocument document
-        )
+        YadgFigure figure,
+        Paragraph anchor,
+        WordprocessingDocument document
+    )
     {
         if (figure.GeneratedSvg is not null)
         {
@@ -2763,11 +2763,11 @@ public static class WordAuthoring
     }
 
     private static Paragraph CreateSvgParagraph(
-            string svg,
-            string name,
-            Paragraph anchor,
-            WordprocessingDocument document
-        )
+        string svg,
+        string name,
+        Paragraph anchor,
+        WordprocessingDocument document
+    )
     {
         var root = System.Xml.Linq.XDocument.Parse(svg).Root ?? throw new InvalidDataException("Generated diagram SVG has no root element.");
         var sourceWidth = double.Parse(root.Attribute("width")!.Value, System.Globalization.CultureInfo.InvariantCulture);
@@ -2804,12 +2804,12 @@ public static class WordAuthoring
     }
 
     private static Paragraph CreateCaption(
-            string targetId,
-            string text,
-            string binding,
-            TemplateMetadata metadata,
-            IReadOnlyDictionary<string, string> targets
-        )
+        string targetId,
+        string text,
+        string binding,
+        TemplateMetadata metadata,
+        IReadOnlyDictionary<string, string> targets
+    )
     {
         if (metadata.PrototypeBindings.TryGetValue(binding, out var id) && metadata.Prototypes.TryGetValue(id, out var prototype))
         {
@@ -2841,13 +2841,13 @@ public static class WordAuthoring
     }
 
     private static void AppendInlines(
-            Paragraph paragraph,
-            IReadOnlyList<YadgInline> inlines,
-            IReadOnlyDictionary<string, string> targets,
-            bool italic = false,
-            bool bold = false,
-            TemplateMetadata? metadata = null
-        )
+        Paragraph paragraph,
+        IReadOnlyList<YadgInline> inlines,
+        IReadOnlyDictionary<string, string> targets,
+        bool italic = false,
+        bool bold = false,
+        TemplateMetadata? metadata = null
+    )
     {
         foreach (var inline in inlines)
         {
@@ -2934,10 +2934,10 @@ public static class WordAuthoring
     }
 
     private static TemplateMetadata ReadMetadata(
-            Body body,
-            string location,
-            List<Diagnostic> diagnostics
-        )
+        Body body,
+        string location,
+        List<Diagnostic> diagnostics
+    )
     {
         var paragraphs = body.Elements<Paragraph>().ToArray();
         var nonEmpty = paragraphs.FirstOrDefault(p => !string.IsNullOrWhiteSpace(ParagraphText(p)));
@@ -3118,10 +3118,10 @@ public static class WordAuthoring
     }
 
     private static void ReplaceLogicalText(
-            Paragraph paragraph,
-            string oldText,
-            string replacement
-        )
+        Paragraph paragraph,
+        string oldText,
+        string replacement
+    )
     {
         var texts = paragraph.Descendants<Text>().Where(t => t.Ancestors<Paragraph>().FirstOrDefault() == paragraph).ToArray(); var combined = string.Concat(texts.Select(t => t.Text)); var at = combined.IndexOf(oldText, StringComparison.Ordinal);
         if (at < 0)
@@ -3203,10 +3203,10 @@ public static class WordAuthoring
     }
 
     private static void InsertBookmarkAroundNodes(
-            OpenXmlElement firstNode,
-            OpenXmlElement lastNode,
-            string name
-        )
+        OpenXmlElement firstNode,
+        OpenXmlElement lastNode,
+        string name
+    )
     {
         var safe = Regex.Replace(name, "[^A-Za-z0-9_]", "_");
         if (!char.IsLetter(safe[0]))
@@ -3241,11 +3241,11 @@ public static class WordAuthoring
     }
 
     private static bool TryGetCaptionLabelRange(
-            Paragraph paragraph,
-            bool requirePlaceholder,
-            out CaptionLabelRange? range,
-            out string reason
-        )
+        Paragraph paragraph,
+        bool requirePlaceholder,
+        out CaptionLabelRange? range,
+        out string reason
+    )
     {
         range = null;
         var simpleSequences = paragraph.Descendants<SimpleField>().Where(field => IsSequenceInstruction(field.Instruction?.Value)).ToArray();
@@ -3332,10 +3332,10 @@ public static class WordAuthoring
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static bool IsDirectFieldBoundary(
-            OpenXmlElement node,
-            FieldCharValues type,
-            Paragraph paragraph
-        ) =>
+        OpenXmlElement node,
+        FieldCharValues type,
+        Paragraph paragraph
+    ) =>
         node is FieldChar field && field.FieldCharType?.Value == type &&
             field.Ancestors<Run>().FirstOrDefault()?.Parent == paragraph;
 
@@ -3391,14 +3391,14 @@ public static class WordAuthoring
     }
 
     private static void ValidateReferences(
-            WordprocessingDocument document,
-            string location,
-            YadgDocument model,
-            TemplateMetadata metadata,
-            IReadOnlyList<TemplatePlacement> placements,
-            IReadOnlyList<PreparedTableBinding> prepared,
-            List<Diagnostic> diagnostics
-        )
+        WordprocessingDocument document,
+        string location,
+        YadgDocument model,
+        TemplateMetadata metadata,
+        IReadOnlyList<TemplatePlacement> placements,
+        IReadOnlyList<PreparedTableBinding> prepared,
+        List<Diagnostic> diagnostics
+    )
     {
         var styles = document.MainDocumentPart?.StyleDefinitionsPart?.Styles; var numbering = document.MainDocumentPart?.NumberingDefinitionsPart?.Numbering;
         var targets = BuildTargets(model, placements, prepared, metadata, styles, numbering, diagnostics, location);
@@ -3462,11 +3462,11 @@ public static class WordAuthoring
     }
 
     private static IReadOnlyDictionary<string, string> BuildTargets(
-            YadgDocument model,
-            TemplateAnalysis analysis,
-            WordprocessingDocument document,
-            string location
-        )
+        YadgDocument model,
+        TemplateAnalysis analysis,
+        WordprocessingDocument document,
+        string location
+    )
     {
         List<Diagnostic> diagnostics = new(); var result = BuildTargets(model,
                 analysis.Placements,
@@ -3485,15 +3485,15 @@ public static class WordAuthoring
     }
 
     private static Dictionary<string, string> BuildTargets(
-            YadgDocument model,
-            IReadOnlyList<TemplatePlacement> placements,
-            IReadOnlyList<PreparedTableBinding> prepared,
-            TemplateMetadata metadata,
-            Styles? styles,
-            Numbering? numbering,
-            List<Diagnostic> diagnostics,
-            string location
-        )
+        YadgDocument model,
+        IReadOnlyList<TemplatePlacement> placements,
+        IReadOnlyList<PreparedTableBinding> prepared,
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering,
+        List<Diagnostic> diagnostics,
+        string location
+    )
     {
         var direct = placements.Where(p => p.Kind is PlacementKind.Table or PlacementKind.Figure).Select(p => (p.Kind, p.Id)).ToHashSet();
         foreach (var binding in prepared)
@@ -3634,11 +3634,11 @@ public static class WordAuthoring
     }
 
     private static bool HasEffectiveNumbering(
-            int level,
-            TemplateMetadata metadata,
-            Styles? styles,
-            Numbering? numbering
-        )
+        int level,
+        TemplateMetadata metadata,
+        Styles? styles,
+        Numbering? numbering
+    )
     {
         var styleId = StyleFor(metadata, $"heading{level}", $"Heading{level}"); return styles is not null && ResolveNumberingId(styles, styleId, numbering) is int id &&
                 numbering?.Descendants<NumberingInstance>().Any(n => n.NumberID?.Value == id) == true;

@@ -18,12 +18,12 @@ public static class PresentationMarkdownParser
     private static readonly Regex AutoDiagramInfo = new("^text\\s+\\{#(?<id>[A-Za-z][A-Za-z0-9_-]*)(?:\\s+caption=\"(?<caption>[^\"]*)\")?\\}$", RegexOptions.Compiled);
 
     public static PresentationDocument Parse(
-            IEnumerable<PresentationSource> sources,
-            string inlineCodePolicy = "style",
-            string thematicBreakPolicy = "error",
-            bool yolo = false,
-            bool diagramsAutoDetect = false
-        )
+        IEnumerable<PresentationSource> sources,
+        string inlineCodePolicy = "style",
+        string thematicBreakPolicy = "error",
+        bool yolo = false,
+        bool diagramsAutoDetect = false
+    )
     {
         List<Diagnostic> diagnostics = new();
         List<PresentationSlide> slides = new();
@@ -281,13 +281,13 @@ public static class PresentationMarkdownParser
     }
 
     private static PresentationBlock? ConvertBlock(
-            Block block,
-            string inlineCodePolicy,
-            string sourcePath,
-            List<Diagnostic> diagnostics,
-            string[]? sourceLines = null,
-            bool diagramsAutoDetect = false
-        )
+        Block block,
+        string inlineCodePolicy,
+        string sourcePath,
+        List<Diagnostic> diagnostics,
+        string[]? sourceLines = null,
+        bool diagramsAutoDetect = false
+    )
     {
         if (block is FencedCodeBlock fenced)
         {
@@ -420,11 +420,11 @@ public static class PresentationMarkdownParser
     }
 
     private static PresentationList ConvertList(
-            ListBlock list,
-            string inlineCodePolicy,
-            string sourcePath,
-            List<Diagnostic> diagnostics
-        )
+        ListBlock list,
+        string inlineCodePolicy,
+        string sourcePath,
+        List<Diagnostic> diagnostics
+    )
     {
         List<PresentationListItem> items = new();
         foreach (var item in list.OfType<ListItemBlock>())
@@ -451,19 +451,19 @@ public static class PresentationMarkdownParser
     }
 
     private static IReadOnlyList<PresentationInline> CellInlines(
-            TableCell cell,
-            string inlineCodePolicy,
-            string sourcePath,
-            List<Diagnostic> diagnostics
-        ) =>
+        TableCell cell,
+        string inlineCodePolicy,
+        string sourcePath,
+        List<Diagnostic> diagnostics
+    ) =>
         cell.OfType<ParagraphBlock>().SelectMany(paragraph => ConvertInlines(paragraph.Inline, inlineCodePolicy, sourcePath, diagnostics)).ToArray();
 
     private static IReadOnlyList<PresentationInline> ConvertInlines(
-            ContainerInline? container,
-            string inlineCodePolicy,
-            string sourcePath,
-            List<Diagnostic> diagnostics
-        )
+        ContainerInline? container,
+        string inlineCodePolicy,
+        string sourcePath,
+        List<Diagnostic> diagnostics
+    )
     {
         List<PresentationInline> result = new();
         if (container is null)
@@ -511,13 +511,13 @@ public static class PresentationMarkdownParser
     }
 
     private static void ValidatePayload(
-            IReadOnlyList<PresentationBlock> blocks,
-            PresentationRegionType type,
-            SlideBuilder slide,
-            string region,
-            string source,
-            List<Diagnostic> diagnostics
-        )
+        IReadOnlyList<PresentationBlock> blocks,
+        PresentationRegionType type,
+        SlideBuilder slide,
+        string region,
+        string source,
+        List<Diagnostic> diagnostics
+    )
     {
         if (blocks.Count == 0) { diagnostics.Add(new("YADG-PPT-MD-016", $"Slide '{slide.Title}' region '{region}' requires content.", true, Location(source, slide.Line))); return; }
         var valid = type switch
@@ -548,10 +548,10 @@ public static class PresentationMarkdownParser
     private static string InlineText(ContainerInline? inline) => inline is null ? string.Empty : string.Concat(inline.Select(child => child switch { LiteralInline literal => literal.Content.ToString(), CodeInline code => code.Content, ContainerInline nested => InlineText(nested), _ => string.Empty }));
     private static string Location(string source, int line) => $"{source}:{Math.Max(1, line + 1)}";
     private sealed record SlideBuilder(
-                string Title,
-                string Layout,
-                int Line,
-                int Ordinal,
-                IReadOnlyList<PresentationInline> TitleInlines
-            );
+        string Title,
+        string Layout,
+        int Line,
+        int Ordinal,
+        IReadOnlyList<PresentationInline> TitleInlines
+    );
 }

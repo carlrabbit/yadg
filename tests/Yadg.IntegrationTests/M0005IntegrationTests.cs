@@ -72,10 +72,10 @@ public sealed class M0005IntegrationTests
     }
 
     private static string Run(
-            string executable,
-            string arguments,
-            string workingDirectory
-        )
+        string executable,
+        string arguments,
+        string workingDirectory
+    )
     {
         using var process = Process.Start(new ProcessStartInfo(executable, arguments)
         {
@@ -87,10 +87,10 @@ public sealed class M0005IntegrationTests
     }
 
     private static ProcessResult RunCli(
-            string root,
-            string command,
-            params string[] arguments
-        )
+        string root,
+        string command,
+        params string[] arguments
+    )
     {
         ProcessStartInfo info = new(Path.Combine(AppContext.BaseDirectory, "yadg.exe")) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false }; info.ArgumentList.Add(command);
         foreach (var argument in arguments)
